@@ -96,7 +96,11 @@ Here, we pass the processed DataFrame, define the columns for the images `fn_col
 
 
 ```
-dls = MedImageDataLoaders.from_df(df, fn_col='t1_path', label_col='gender', resample=1, item_tfms=[ZNormalization(), PadOrCrop(size=256)], bs=4)
+dls = MedImageDataLoaders.from_df(df, fn_col='t1_path', 
+                                  label_col='gender', 
+                                  resample=1, 
+                                  item_tfms=[ZNormalization(), PadOrCrop(size=256)], 
+                                  bs=4)
 ```
 
 We can now take a look at a batch of images in the training set using `show_batch`:
