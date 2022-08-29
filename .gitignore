@@ -151,3 +151,6 @@ checklink/cookies.txt
 
 #Dataset folder
 data/
+
+#Models
+models/
