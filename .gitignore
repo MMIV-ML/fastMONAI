@@ -148,3 +148,6 @@ checklink/cookies.txt
 
 # Quarto
 .quarto
+
+#Dataset folder
+data/
