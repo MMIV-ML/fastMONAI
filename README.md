@@ -5,6 +5,17 @@ Overview
 
 ![](https://github.com/skaliy/skaliy.github.io/blob/master/assets/fastmonai_v1.png?raw=true)
 
+A low-code Python-based open source deep learning library built on top
+of [fastai](https://github.com/fastai/fastai),
+[MONAI](https://monai.io/), and
+[TorchIO](https://torchio.readthedocs.io/).
+
+fastMONAI simplifies the use of state-of-the-art deep learning
+techniques in 3D medical image analysis for solving classification,
+regression, and segmentation tasks. fastMONAI provides the users with
+functionalities to step through data loading, preprocessing, training,
+and result interpretations.
+
 <b>Note:</b> This documentation is also available as interactive
 notebooks.
 
@@ -18,15 +29,16 @@ notebooks.
 
 If you want to install an editable version of fastMONAI run:
 
-- `git clone https://github.com/skaliy/fastMONAI.git`
-- `pip install -e '.[dev]'`
+- `git clone https://github.com/MMIV-ML/fastMONAI`
+- `pip install -e 'fastMONAI[dev]'`
 
 ## How to use fastMONAI
 
 The best way to get started using fastMONAI is to read the paper and
 look at the step-by-step tutorial-like notebooks to learn how to train
 your own models on different tasks (e.g., classification, regression,
-segmentation). See the docs for more information.
+segmentation). See the docs at https://fastmonai.no/ for more
+information.
 
 ## Citing fastMONAI
 
