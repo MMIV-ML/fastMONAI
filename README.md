@@ -10,9 +10,9 @@ notebooks.
 
 ## Installing
 
-### Upload to pypi and conda:
+### From PyPI
 
-> TODO
+`pip install fastMONAI`
 
 ### From Github
 
