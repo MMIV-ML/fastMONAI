@@ -16,7 +16,7 @@ format:
 
 website:
   title: "fastMONAI"
-  site-url: "https://MMIV-ML.github.io/fastMONAI/"
+  site-url: "https://MMIV-ML.github.io/fastMONAI"
   description: "fastMONAI library"
   twitter-card: true
   open-graph: true
