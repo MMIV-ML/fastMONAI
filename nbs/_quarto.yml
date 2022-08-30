@@ -16,20 +16,20 @@ format:
 
 website:
   title: "fastMONAI"
-  site-url: "https://MMIV-ML.github.io/fastMONAI/"
+  site-url: "https://mmiv-ml.github.io/fastMONAI/"
   description: "fastMONAI library"
   twitter-card: true
   open-graph: true
   reader-mode: true
   repo-branch: master
-  repo-url: "https://github.com/MMIV-ML/fastMONAI/"
+  repo-url: "https://github.com/MMIV-ML/fastMONAI"
   repo-actions: [issue]
   navbar:
     background: primary
     search: true
     right:
       - icon: github
-        href: "https://github.com/MMIV-ML/fastMONAI/"
+        href: "https://github.com/MMIV-ML/fastMONAI"
   sidebar:
     style: "floating"
 
