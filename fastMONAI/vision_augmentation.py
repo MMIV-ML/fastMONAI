@@ -45,8 +45,7 @@ def do_pad_or_crop(o, target_shape, padding_mode, mask_name, dtype=torch.Tensor)
 
 # %% ../nbs/03_vision_augment.ipynb 9
 class PadOrCrop(DisplayedTransform):
-    '''Resize image using TorchIO `CropOrPad`: https://torchio.readthedocs.io/_modules/torchio/transforms/preprocessing/spatial/crop_or_pad.html#CropOrPad
-    '''
+    '''Resize image using TorchIO `CropOrPad`.'''
 
     order=0
     def __init__(self, size, padding_mode=0, mask_name=None):
@@ -63,17 +62,16 @@ def _do_z_normalization(o, masking_method, channel_wise):
     normalized_tensor = torch.zeros(o.shape)
 
     if channel_wise:
-        #return torch.Tensor([z_normalization(c[None])[0] for idx, c in enumerate(o)])
-        for idx, c in enumerate(o):
+        for idx, c in enumerate(o): 
             normalized_tensor[idx] = z_normalization(c[None])[0]
+            
     else: normalized_tensor = z_normalization(o)
 
     return normalized_tensor
 
 # %% ../nbs/03_vision_augment.ipynb 12
 class ZNormalization(DisplayedTransform):
-    '''TorchIO ZNormalization: https://torchio.readthedocs.io/_modules/torchio/transforms/preprocessing/intensity/z_normalization.html#ZNormalization
-    '''
+    '''Apply TorchIO `ZNormalization`.'''
 
     order=0
     def __init__(self, masking_method=None, channel_wise=True):
@@ -102,8 +100,7 @@ def _do_rand_ghosting(o, intensity, p):
 
 # %% ../nbs/03_vision_augment.ipynb 17
 class RandomGhosting(DisplayedTransform):
-    '''Torchio RandomGhosting: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_ghosting.html#RandomGhosting
-    '''
+    '''Apply TorchIO `RandomGhosting`.'''
 
     split_idx,order=0,1
 
@@ -121,8 +118,8 @@ def _do_rand_spike(o, num_spikes, intensity, p):
 
 # %% ../nbs/03_vision_augment.ipynb 20
 class RandomSpike(DisplayedTransform):
-    '''Torchio RandomSpike: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_spike.html#RandomSpike
-    '''
+    '''Apply TorchIO `RandomSpike`.'''
+    
     split_idx,order=0,1
 
     def __init__(self, num_spikes=1, intensity=(1, 3), p=0.5):
@@ -139,8 +136,7 @@ def _do_rand_noise(o, mean, std, p):
 
 # %% ../nbs/03_vision_augment.ipynb 23
 class RandomNoise(DisplayedTransform):
-    '''Torchio RandomNoise: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_noise.html#RandomNoise
-    '''
+    '''Apply TorchIO `RandomNoise`.'''
 
     split_idx,order=0,1
 
@@ -158,8 +154,7 @@ def _do_rand_biasfield(o, coefficients, order, p):
 
 # %% ../nbs/03_vision_augment.ipynb 26
 class RandomBiasField(DisplayedTransform):
-    '''Torchio RandomBiasField: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_bias_field.html#RandomBiasField
-    '''
+    '''Apply TorchIO `RandomBiasField`.'''
 
     split_idx,order=0,1
 
@@ -173,12 +168,11 @@ class RandomBiasField(DisplayedTransform):
 def _do_rand_blur(o, std, p):
 
     add_blur = tio.RandomBlur(std=std, p=p)
-    return add_blur(o) #return torch tensor
+    return add_blur(o) 
 
 # %% ../nbs/03_vision_augment.ipynb 29
 class RandomBlur(DisplayedTransform):
-    '''Torchio RandomBiasField: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_bias_field.html#RandomBiasField
-    '''
+    '''Apply TorchIO `RandomBiasField`.'''
 
     split_idx,order=0,1
 
@@ -192,12 +186,11 @@ class RandomBlur(DisplayedTransform):
 def _do_rand_gamma(o, log_gamma, p):
 
     add_gamma = tio.RandomGamma(log_gamma=log_gamme, p=p)
-    return add_gamma(o) #return torch tensor
+    return add_gamma(o) 
 
 # %% ../nbs/03_vision_augment.ipynb 32
 class RandomGamma(DisplayedTransform):
-    '''Torchio RandomGamma: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_gamma.html#RandomGamma
-    '''
+    '''Apply TorchIO `RandomGamma`.'''
 
 
     split_idx,order=0,1
@@ -216,8 +209,7 @@ def _do_rand_motion(o, degrees, translation, num_transforms, image_interpolation
 
 # %% ../nbs/03_vision_augment.ipynb 35
 class RandomMotion(DisplayedTransform):
-    '''Torchio RandomMotion: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/intensity/random_motion.html#RandomMotion
-    '''
+    '''Apply TorchIO `RandomMotion`.'''
 
     split_idx,order=0,1
 
@@ -229,31 +221,28 @@ class RandomMotion(DisplayedTransform):
 
 # %% ../nbs/03_vision_augment.ipynb 38
 class RandomElasticDeformation(CustomDictTransform):
-    '''Torchio RandomElasticDeformation: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/spatial/random_elastic_deformation.html#RandomElasticDeformation
-    '''
+    '''Apply TorchIO `RandomElasticDeformation`.'''
 
-    def __init__(self,num_control_points=7, max_displacement=7.5, image_interpolation='linear', p=0.5): #nearest for segmentation tasks
+    def __init__(self,num_control_points=7, max_displacement=7.5, image_interpolation='linear', p=0.5): 
         super().__init__(tio.RandomElasticDeformation(num_control_points=num_control_points, max_displacement=max_displacement, image_interpolation=image_interpolation, p=p))
 
 # %% ../nbs/03_vision_augment.ipynb 40
 class RandomAffine(CustomDictTransform):
-    '''Torchio RandomMotion: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/spatial/random_affine.html#RandomAffine
-    '''
+    '''Apply TorchIO `RandomMotion`.'''
 
     def __init__(self, scales=0, degrees=10, translation=0, isotropic=False, image_interpolation='linear', p=0.5): 
         super().__init__(tio.RandomAffine(scales=scales, degrees=degrees, translation=translation, isotropic=isotropic, image_interpolation=image_interpolation, p=p))
 
 # %% ../nbs/03_vision_augment.ipynb 42
 class RandomFlip(CustomDictTransform):
-    '''Torchio RandomFlip: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/spatial/random_flip.html#RandomFlip
-    '''
+    '''Apply TorchIO `RandomFlip`.'''
 
     def __init__(self, axes='LR', p=0.5):
         super().__init__(tio.RandomFlip(axes=axes, flip_probability=p))
 
 # %% ../nbs/03_vision_augment.ipynb 44
 class OneOf(CustomDictTransform):
-    '''Torchio OneOf: https://torchio.readthedocs.io/_modules/torchio/transforms/augmentation/composition.html#OneOf
-    '''
+    '''Apply only one of the given transforms using TorchIO `OneOf`.'''
+
     def __init__(self, transform_dict, p=1):
         super().__init__(tio.OneOf(transform_dict, p=p))
