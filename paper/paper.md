@@ -20,7 +20,7 @@ affiliations:
    index: 1
  - name: Mohn Medical Imaging and Visualization Centre, Department of Radiology, Haukeland University Hospital, Bergen, Norway
    index: 2
-date: August 2021
+date: August 2022
 bibliography: paper.bib
 ---
 ## Summary
