@@ -19,7 +19,19 @@ and result interpretations.
 <b>Note:</b> This documentation is also available as interactive
 notebooks.
 
-## Installing
+# Getting started
+
+## Run through the tutorials in Google Colab
+
+| Notebook                                                                                                                                                                                                                                     | 1-Click Notebook                                                                                                                                                                                   |
+|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [09a_tutorial_classification.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/master/nbs/09a_tutorial_classification.ipynb) <br>shows how to construct a binary classification model based on MRI data.                             | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/nbs/09a_tutorial_classification.ipynb)          |
+| [09b_tutorial_regression.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/master/nbs/09b_tutorial_regression.ipynb) <br>shows how to construct a model to predict the age of a subject from MRI scans (“brain age”).                | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/nbs/09b_tutorial_regression.ipynb)              |
+| [09c_tutorial_binary_segmentation.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/master/nbs/09c_tutorial_binary_segmentation.ipynb) <br>shows how to do binary segmentation (extract the left atrium from monomodal cardiac MRI). | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/nbs/09c_tutorial_binary_segmentation.ipynb)     |
+| [09d_tutorial_multiclass_segmentation.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/master/nbs/09d_tutorial_multiclass_segmentation.ipynb) <br>shows how to perform segmentation from multimodal MRI (brain tumor segmentation). | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/nbs/09d_tutorial_multiclass_segmentation.ipynb) |
+| [09e_tutorial_inference.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/master/nbs/09e_tutorial_inference.ipynb) <br>shows how to perform inference with a model trained on a segmentation task (brain tumor).                     | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/nbs/09e_tutorial_inference.ipynb)               |
+
+## Installing fastMONAI locally
 
 ### From PyPI
 
@@ -32,7 +44,7 @@ If you want to install an editable version of fastMONAI run:
 - `git clone https://github.com/MMIV-ML/fastMONAI`
 - `pip install -e 'fastMONAI[dev]'`
 
-## How to use fastMONAI
+# How to use fastMONAI
 
 The best way to get started using fastMONAI is to read the paper and
 look at the step-by-step tutorial-like notebooks to learn how to train
@@ -40,7 +52,11 @@ your own models on different tasks (e.g., classification, regression,
 segmentation). See the docs at https://fastmonai.no/ for more
 information.
 
-## Citing fastMONAI
+# How to contribute
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md)
+
+# Citing fastMONAI
 
     @article{kaliyugarasan2022fastMONAI,
       title={fastMONAI: a low-code deep learning library for medical image analysis},
