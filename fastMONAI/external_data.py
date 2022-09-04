@@ -64,7 +64,21 @@ def download_ixi_data(path:(str, Path)='../data' # Path to the directory where t
     path = Path(path)/'IXI'
     img_path = path/'T1_images' 
 
-    download_and_extract(url=MURLs.IXI_DATA, filepath=path/'IXI-T1.tar', output_dir=img_path)
+    # Check whether image data already present in img_path:
+    is_extracted=False
+    try:
+        if len(list(img_path.iterdir())) >= 581: # 581 imgs in the IXI dataset
+            is_extracted=True
+            print(f"Images already downloaded and extracted to {img_path}")
+    except:
+        is_extracted=False
+
+    # Download and extract images
+    if not is_extracted: 
+        download_and_extract(url=MURLs.IXI_DATA, filepath=path/'IXI-T1.tar', 
+                             output_dir=img_path)
+
+    # Download demographic info
     download_url(url=MURLs.IXI_DEMOGRAPHIC_INFORMATION, filepath=path/'IXI.xls')
 
     processed_df = _process_ixi_xls(xls_path=path/'IXI.xls', img_path=img_path)
