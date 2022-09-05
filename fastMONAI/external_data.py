@@ -75,8 +75,9 @@ def download_ixi_data(path:(str, Path)='../data' # Path to the directory where t
 
     # Download and extract images
     if not is_extracted: 
-        download_and_extract(url=MURLs.IXI_DATA, filepath=path/'IXI-T1.tar', 
-                             output_dir=img_path)
+        download_and_extract(url=MURLs.IXI_DATA, filepath=path/'IXI-T1.tar', output_dir=img_path)
+        (path/'IXI-T1.tar').unlink()
+
 
     # Download demographic info
     download_url(url=MURLs.IXI_DEMOGRAPHIC_INFORMATION, filepath=path/'IXI.xls')
