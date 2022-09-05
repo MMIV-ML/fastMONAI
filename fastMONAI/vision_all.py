@@ -5,7 +5,7 @@ from .vision_data import *
 from .vision_augmentation import *
 from .vision_loss import * 
 from .vision_metrics import *
-from .vision_utils import * 
+from .utils import * 
 from .external_data import *
 from .dataset_info import *
 
