@@ -36,4 +36,5 @@ def check_colab_gpu():
                     "\n3. Click **'SAVE'**\n"
                     f"{'#'*80}")
     
-    if not torch.cuda.is_available(): print(colab_gpu_msg)
+    if torch.cuda.is_available(): return 'GPU attached.'
+    else: return colab_gpu_msg
