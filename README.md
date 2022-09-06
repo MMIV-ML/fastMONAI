@@ -5,6 +5,9 @@ Overview
 
 ![](https://raw.githubusercontent.com/skaliy/skaliy.github.io/master/assets/fastmonai_v1.png)
 
+![CI](https://github.com/MMIV-ML/fastMONAI/workflows/CI/badge.svg)
+[![PyPI](https://img.shields.io/pypi/v/fastMONAI?color=blue&label=pypi%20version.png)](https://pypi.org/project/fastMONAI)
+
 A low-code Python-based open source deep learning library built on top
 of [fastai](https://github.com/fastai/fastai),
 [MONAI](https://monai.io/), and
