@@ -7,7 +7,7 @@ Overview
 
 ![CI](https://github.com/MMIV-ML/fastMONAI/workflows/CI/badge.svg)
 [![Docs](https://github.com/MMIV-ML/fastMONAI/actions/workflows/deploy.yaml/badge.svg)](https://fastmonai.no)
-[![PyPI](https://img.shields.io/pypi/v/fastMONAI?label=PyPI%20version&logo=python&logoColor=white.png)](https://pypi.org/project/fastMONAI)
+[![PyPI](https://img.shields.io/pypi/v/fastMONAI?color=blue&label=PyPI%20version&logo=python&logoColor=white.png)](https://pypi.org/project/fastMONAI)
 
 A low-code Python-based open source deep learning library built on top
 of [fastai](https://github.com/fastai/fastai),
