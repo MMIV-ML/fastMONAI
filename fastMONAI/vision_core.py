@@ -10,7 +10,24 @@ from torchio import ScalarImage, LabelMap, ToCanonical, Resample
 import pickle
 import warnings
 
-# %% ../nbs/01_vision_core.ipynb 5
+# %% ../nbs/01_vision_core.ipynb 4
+def _preprocess(o, reorder, resample): 
+    org_metadata = {}
+    
+    if reorder:
+        org_metadata['orientation'] = o.orientation
+        transform = ToCanonical()
+        o = transform(o)
+    
+    if resample and not all(np.isclose(o.spacing, resample)):
+            org_metadata['spacing'], org_metadata['org_size']  = list(o.spacing), o.shape[1:]
+
+            transform = Resample(resample)
+            o = transform(o)
+    
+    return o, org_metadata
+
+# %% ../nbs/01_vision_core.ipynb 6
 def _load(fn:str, dtype=None):
     '''Private method to load image as either ScalarImage or LabelMap.
 
@@ -25,8 +42,8 @@ def _load(fn:str, dtype=None):
     if dtype is MedMask: return LabelMap(fn)
     else: return ScalarImage(fn)
 
-# %% ../nbs/01_vision_core.ipynb 6
-def _multi_channel(img_fns:list, dtype=None):
+# %% ../nbs/01_vision_core.ipynb 7
+def _multi_channel(img_fns:list, reorder:bool, resample:list, dtype=None):
     '''Private method to load multisequence data.
 
     Args:
@@ -38,12 +55,13 @@ def _multi_channel(img_fns:list, dtype=None):
 
     img_list = []
     for fn in img_fns:
-        o = _load(o, dtype=dtype).data[0]
-        img_list.append(o)
+        o = _load(fn, dtype=dtype)
+        o,_ = _preprocess(o, reorder, resample)
+        img_list.append(o.data[0])            
 
     return torch.stack(img_list, dim=0)
 
-# %% ../nbs/01_vision_core.ipynb 7
+# %% ../nbs/01_vision_core.ipynb 8
 def med_img_reader(fn:(str, Path), # Image path
                    dtype=torch.Tensor, # Datatype (MedImage, MedMask, torch.Tensor)
                    resample:list=None, # Wheter to resample image to different voxel sizes and image dimensions.
@@ -53,28 +71,18 @@ def med_img_reader(fn:(str, Path), # Image path
     '''Load a medical image data. 4D tensor is returned as `dtype` if `only_tensor` is True, otherwise return ScalerImage or LabelMap.'''
 
     if ';' in fn:
-        img_fns = o.split(';')
-        return _multi_channel(img_fns, dtype=dtype)
+        img_fns = fn.split(';')
+        return _multi_channel(img_fns, reorder, resample, dtype=dtype)
+        #add return metadata option to get original information
 
     o = _load(fn, dtype=dtype)
-    org_metadata = {}
-    
-    if reorder:
-        org_metadata['orientation'] = o.orientation
-        transform = ToCanonical()
-        o = transform(o)
-    
-    if resample and not all(np.isclose(o.spacing, resample)):
-            org_metadata['spacing'], org_metadata['org_size']  = list(o.spacing), o.shape[1:]
-
-            transform = Resample(resample)
-            o = transform(o)
+    o, org_metadata = _preprocess(o, reorder, resample)
 
     if only_tensor: return dtype(o.data.type(torch.float))
 
     return o, org_metadata
 
-# %% ../nbs/01_vision_core.ipynb 9
+# %% ../nbs/01_vision_core.ipynb 10
 class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
     '''A class to bypass metaclass conflict:
     https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html
@@ -82,7 +90,7 @@ class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
 
     pass
 
-# %% ../nbs/01_vision_core.ipynb 10
+# %% ../nbs/01_vision_core.ipynb 11
 class MedBase(torch.Tensor, metaclass=MetaResolver):
     '''A class that represents an image object. Metaclass casts x to this class if it is of type cls._bypass_type.'''
 
@@ -123,12 +131,12 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
 
     def __repr__(self): return f'{self.__class__.__name__} mode={self.mode} size={"x".join([str(d) for d in self.size])}'
 
-# %% ../nbs/01_vision_core.ipynb 11
+# %% ../nbs/01_vision_core.ipynb 12
 class MedImage(MedBase):
     '''Subclass of MedBase that represents an image object.'''
     pass
 
-# %% ../nbs/01_vision_core.ipynb 12
+# %% ../nbs/01_vision_core.ipynb 13
 class MedMask(MedBase):
     '''Subclass of MedBase that represents an mask object.'''
     _show_args = {'alpha':0.5, 'cmap':'tab20'}
