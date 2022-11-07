@@ -25,6 +25,9 @@ def _preprocess(o, reorder, resample):
             transform = Resample(resample)
             o = transform(o)
     
+    if MedBase.affine_matrix is None:
+        MedBase.affine_matrix = o.affine
+    
     return o, org_metadata
 
 # %% ../nbs/01_vision_core.ipynb 6
@@ -97,6 +100,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     _bypass_type=torch.Tensor
     _show_args = {'cmap':'gray'}
     resample, reorder = None, False
+    affine_matrix = None
 
     @classmethod
     def create(cls, fn:(Path,str, torch.Tensor), **kwargs):
