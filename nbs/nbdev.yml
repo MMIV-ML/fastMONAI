@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "fastMONAI"
+  site-url: "https://fastmonai.no/"
+  description: "fastMONAI library"
+  repo-branch: master
+  repo-url: "https://github.com/MMIV-ML/fastMONAI"

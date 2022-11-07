@@ -31,7 +31,7 @@ class CustomDictTransform(ItemTransform):
         img, y_true = x
 
         if isinstance(y_true, (MedMask)):
-            aug = self.aug(tio.Subject(img=tio.ScalarImage(tensor=img), mask=tio.LabelMap(tensor=y_true)))
+            aug = self.aug(tio.Subject(img=tio.ScalarImage(tensor=img, affine=MedImage.affine_matrix), mask=tio.LabelMap(tensor=y_true, affine=MedImage.affine_matrix)))
             return MedImage.create(aug['img'].data), MedMask.create(aug['mask'].data)
         else:
             aug = self.aug(tio.Subject(img=tio.ScalarImage(tensor=img)))
@@ -185,7 +185,7 @@ class RandomBlur(DisplayedTransform):
 # %% ../nbs/03_vision_augment.ipynb 31
 def _do_rand_gamma(o, log_gamma, p):
 
-    add_gamma = tio.RandomGamma(log_gamma=log_gamme, p=p)
+    add_gamma = tio.RandomGamma(log_gamma=log_gamma, p=p)
     return add_gamma(o) 
 
 # %% ../nbs/03_vision_augment.ipynb 32
@@ -228,10 +228,10 @@ class RandomElasticDeformation(CustomDictTransform):
 
 # %% ../nbs/03_vision_augment.ipynb 40
 class RandomAffine(CustomDictTransform):
-    '''Apply TorchIO `RandomMotion`.'''
+    '''Apply TorchIO `RandomAffine`.'''
 
-    def __init__(self, scales=0, degrees=10, translation=0, isotropic=False, image_interpolation='linear', p=0.5): 
-        super().__init__(tio.RandomAffine(scales=scales, degrees=degrees, translation=translation, isotropic=isotropic, image_interpolation=image_interpolation, p=p))
+    def __init__(self, scales=0, degrees=10, translation=0, isotropic=False, image_interpolation='linear', default_pad_value=0., p=0.5): 
+        super().__init__(tio.RandomAffine(scales=scales, degrees=degrees, translation=translation, isotropic=isotropic, image_interpolation=image_interpolation, default_pad_value=default_pad_value, p=p))
 
 # %% ../nbs/03_vision_augment.ipynb 42
 class RandomFlip(CustomDictTransform):
