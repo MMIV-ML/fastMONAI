@@ -7,7 +7,7 @@ __all__ = ['show_med_img']
 from fastai.data.all import *
 from torchio.visualization import rotate
 
-# %% ../nbs/00_vision_plot.ipynb 4
+# %% ../nbs/00_vision_plot.ipynb 3
 def _get_slice(image, channel:int, indices:(int, list), anatomical_plane:int, voxel_size:(int, list)):
     '''A private method to get a 2D tensor and aspect ratio for plotting. Modified code from torchio function `plot_volume`.'''
 
@@ -39,7 +39,7 @@ def _get_slice(image, channel:int, indices:(int, list), anatomical_plane:int, vo
 
     return sliced_img, aspect
 
-# %% ../nbs/00_vision_plot.ipynb 5
+# %% ../nbs/00_vision_plot.ipynb 4
 @delegates(plt.Axes.imshow, keep=True, but=['shape', 'imlim'])
 def show_med_img(im, ctx, channel:int, indices:(int, list), anatomical_plane:int, voxel_size:(int, list), ax=None, figsize=None, title=None, **kwargs):
     '''Show a PyTorch image on `ax`. Modified code from fastai function `show_image`.'''
