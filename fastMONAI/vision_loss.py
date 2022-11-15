@@ -55,23 +55,24 @@ class TverskyFocalLoss(_Loss):
         sigmoid: bool = False,
         softmax: bool = False,
         reduction: str = "mean",
-        gamma: float = 2.0,
-        focal_weight: (float, int, torch.Tensor) = None,
-        lambda_dice: float = 1.0,
-        lambda_focal: float = 1.0,
-        alpha = 0.7, 
-        beta = 0.3
+        gamma: float = 2,
+        #focal_weight: (float, int, torch.Tensor) = None,
+        #lambda_dice: float = 1.0,
+        #lambda_focal: float = 1.0,
+        alpha = 0.5, 
+        beta = 0.99
     ) -> None:
 
         super().__init__()
         self.tversky = TverskyLoss(to_onehot_y=to_onehot_y, include_background=include_background, sigmoid=sigmoid, softmax=softmax, alpha=alpha, beta=beta)
-        self.focal = FocalLoss(to_onehot_y=to_onehot_y, include_background=include_background, gamma=gamma, weight=focal_weight, reduction=reduction)
+        #self.focal = FocalLoss(to_onehot_y=to_onehot_y, include_background=include_background, gamma=gamma, weight=focal_weight, reduction=reduction)
         
-        if lambda_dice < 0.0: raise ValueError("lambda_dice should be no less than 0.0.")
-        if lambda_focal < 0.0: raise ValueError("lambda_focal should be no less than 0.0.")
-        self.lambda_dice = lambda_dice
-        self.lambda_focal = lambda_focal
+        #if lambda_dice < 0.0: raise ValueError("lambda_dice should be no less than 0.0.")
+        #if lambda_focal < 0.0: raise ValueError("lambda_focal should be no less than 0.0.")
+        #self.lambda_dice = lambda_dice
+        #self.lambda_focal = lambda_focal
         self.to_onehot_y = to_onehot_y
+        self.gamma = gamma
         self.include_background = include_background
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -90,6 +91,8 @@ class TverskyFocalLoss(_Loss):
         n_pred_ch = input.shape[1]
 
         tversky_loss = self.tversky(input, target)
-        focal_loss = self.focal(input, target)
-        total_loss: torch.Tensor = self.lambda_dice * tversky_loss + self.lambda_focal * focal_loss
+        #focal_loss = self.focal(input, target)
+        total_loss: torch.Tensor = 1 - ((1 - tversky_loss)**self.gamma) #tversky_loss
+        #print(total_loss,total_loss.shape)
+        #tversky_loss +  focal_loss
         return total_loss
