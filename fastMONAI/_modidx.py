@@ -193,4 +193,5 @@ d = { 'settings': { 'branch': 'master',
                                           'fastMONAI.vision_metrics.multi_hausdorff_distance': ( 'vision_metrics.html#multi_hausdorff_distance',
                                                                                                  'fastMONAI/vision_metrics.py')},
             'fastMONAI.vision_plot': { 'fastMONAI.vision_plot._get_slice': ('vision_plot.html#_get_slice', 'fastMONAI/vision_plot.py'),
-                                       'fastMONAI.vision_plot.show_med_img': ( 'vision_plot.html#show_med_img', 'fastMONAI/vision_plot.py')}}}
+                                       'fastMONAI.vision_plot.show_med_img': ( 'vision_plot.html#show_med_img',
+                                                                               'fastMONAI/vision_plot.py')}}}

@@ -18,9 +18,7 @@ def calculate_dsc(pred, targ):
 
 # %% ../nbs/05_vision_metrics.ipynb 4
 def calculate_haus(pred, targ):
-    ''' MONAI `compute_hausdorff_distance`:
-    https://docs.monai.io/en/stable/_modules/monai/metrics/hausdorff_distance.html#compute_hausdorff_distance
-    '''
+    ''' MONAI `compute_hausdorff_distance`'''
 
     return torch.Tensor([compute_hausdorff_distance(p[None], t[None]) for p, t in list(zip(pred,targ))])
 
