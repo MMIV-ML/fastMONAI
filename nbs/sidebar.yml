@@ -2,7 +2,7 @@ website:
   sidebar:
     contents:
       - index.ipynb
-      - 00_vision_core_plot.ipynb
+      - 00_vision_plot.ipynb
       - 01_vision_core.ipynb
       - 02_vision_data.ipynb
       - 03_vision_augment.ipynb
