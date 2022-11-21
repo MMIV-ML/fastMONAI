@@ -8,7 +8,7 @@ website:
       - 03_vision_augment.ipynb
       - 04_vision_loss_functions.ipynb
       - 05_vision_metrics.ipynb
-      - 06_utils.ipynb
+      - 06a_utils.ipynb
       - 07_dataset_info.ipynb
       - 08_external_data.ipynb
       - section: Tutorials
