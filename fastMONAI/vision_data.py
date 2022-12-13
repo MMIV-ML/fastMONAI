@@ -2,12 +2,13 @@
 
 # %% auto 0
 __all__ = ['pred_to_multiclass_mask', 'batch_pred_to_multiclass_mask', 'pred_to_binary_mask', 'MedDataBlock', 'MedMaskBlock',
-           'MedImageDataLoaders', 'show_batch', 'show_results', 'plot_top_losses']
+           'MedImageDataLoaders', 'show_batch', 'show_results', 'plot_top_losses', 'inference']
 
 # %% ../nbs/02_vision_data.ipynb 2
 from fastai.data.all import *
 from fastai.vision.data import *
 from .vision_core import *
+from .vision_augmentation import do_pad_or_crop, do_resize
 
 # %% ../nbs/02_vision_data.ipynb 5
 def pred_to_multiclass_mask(pred:torch.Tensor # [C,W,H,D] activation tensor
@@ -175,3 +176,28 @@ def plot_top_losses(x: MedImage, y:TensorMultiCategory, samples, outs, raws, los
     for i,l in enumerate(["target", "predicted", "probabilities", "loss"]):
         rows = [b.show(ctx=r, label=l, channel=channel, indices=indices, anatomical_plane=anatomical_plane, **kwargs) for b,r in zip(outs.itemgot(i),rows)]
     display_df(pd.DataFrame(rows))
+
+# %% ../nbs/02_vision_data.ipynb 29
+def inference(learn_inf, reorder, resample, fn:str, save_path:(str,Path)=None): 
+    '''Predict on new data using exported model'''         
+
+    org_img = load(fn)
+    input_img, org_size = preprocess(org_img, reorder, resample)    
+        
+    pred, *_ = learn_inf.predict(input_img.data);
+    
+    pred_mask = do_pad_or_crop(pred.float(), input_img.shape[1:], padding_mode=0, mask_name=None)
+    input_img.set_data(pred_mask)
+    
+    input_img = do_resize(org_size, image_interpolation='nearest')
+    
+    reoriented_array = to_original_orientation(input_img.as_sitk(), ('').join(org_img.orientation))
+    
+    org_img.set_data(reoriented_array)
+
+    if save_path:
+        save_fn = 'pred_' + Path(fn).parts[-1]
+        save_fn = Path(save_path)/save_fn
+        org_img.save(save_fn)
+
+    return org_img
