@@ -8,12 +8,14 @@ website:
       - 03_vision_augment.ipynb
       - 04_vision_loss_functions.ipynb
       - 05_vision_metrics.ipynb
-      - 06a_utils.ipynb
-      - 07_dataset_info.ipynb
-      - 08_external_data.ipynb
+      - 06_vision_inference.ipynb
+      - 07_utils.ipynb
+      - 08_dataset_info.ipynb
+      - 09_external_data.ipynb
       - section: Tutorials
         contents:
-        - 09a_tutorial_classification.ipynb
-        - 09b_tutorial_regression.ipynb
-        - 09c_tutorial_binary_segmentation.ipynb
-        - 09d_tutorial_multiclass_segmentation.ipynb
+        - 10a_tutorial_classification.ipynb
+        - 10b_tutorial_regression.ipynb
+        - 10c_tutorial_binary_segmentation.ipynb
+        - 10d_tutorial_multiclass_segmentation.ipynb
+        - 10e_tutorial_inference.ipynb
