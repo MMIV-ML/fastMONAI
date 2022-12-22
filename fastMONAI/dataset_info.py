@@ -73,7 +73,7 @@ class MedDataset():
             dict: A dictionary with information about the image file
         '''
 
-        o,_ = med_img_reader(fn, dtype=self.dtype, reorder=self.reorder, only_tensor=False)
+        _,o,_ = med_img_reader(fn, dtype=self.dtype, reorder=self.reorder, only_tensor=False)
 
         info_dict = {'path': fn,  'dim_0': o.shape[1],  'dim_1': o.shape[2],  'dim_2' :o.shape[3],
                      'voxel_0': round(o.spacing[0], 4), 'voxel_1': round(o.spacing[1], 4), 'voxel_2': round(o.spacing[2], 4),
