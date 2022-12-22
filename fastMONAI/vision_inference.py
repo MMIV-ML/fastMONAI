@@ -6,26 +6,41 @@ __all__ = ['inference', 'pred_postprocess']
 # %% ../nbs/06_vision_inference.ipynb 1
 import numpy as np
 from pathlib import Path
-from .vision_core import *
-from .vision_augmentation import do_pad_or_crop, do_resize
+from torchio import Resize
 from scipy.ndimage import label
+from .vision_core import *
+from .vision_augmentation import do_pad_or_crop
 from skimage.morphology import remove_small_objects
+from SimpleITK import DICOMOrient, GetArrayFromImage
 
 # %% ../nbs/06_vision_inference.ipynb 3
+def _to_original_orientation(input_img, org_orientation):
+    
+    orientation_itk = DICOMOrient(input_img, org_orientation)
+    reoriented_array =  GetArrayFromImage(orientation_itk).transpose()
+    
+    return reoriented_array[None]
+
+# %% ../nbs/06_vision_inference.ipynb 4
+def _do_resize(o, target_shape, image_interpolation='linear', label_interpolation='nearest'):
+    '''Resample images so the output shape matches the given target shape.'''
+    resize = Resize(target_shape, image_interpolation=image_interpolation, label_interpolation=label_interpolation)
+    return resize(o)
+
+# %% ../nbs/06_vision_inference.ipynb 5
 def inference(learn_inf, reorder, resample, fn:(Path,str), save_path:(str,Path)=None): 
     '''Predict on new data using exported model'''         
 
-    org_img = load(fn)
-    input_img, org_size = preprocess(org_img, reorder, resample)    
+    org_img, input_img, org_size = med_img_reader(fn, reorder, resample, only_tensor=False)
         
     pred, *_ = learn_inf.predict(input_img.data);
     
     pred_mask = do_pad_or_crop(pred.float(), input_img.shape[1:], padding_mode=0, mask_name=None)
     input_img.set_data(pred_mask)
     
-    input_img = do_resize(input_img, org_size, image_interpolation='nearest')
+    input_img = _do_resize(input_img, org_size, image_interpolation='nearest')
     
-    reoriented_array = to_original_orientation(input_img.as_sitk(), ('').join(org_img.orientation))
+    reoriented_array = _to_original_orientation(input_img.as_sitk(), ('').join(org_img.orientation))
     
     org_img.set_data(reoriented_array)
 
@@ -36,7 +51,7 @@ def inference(learn_inf, reorder, resample, fn:(Path,str), save_path:(str,Path)=
 
     return org_img
 
-# %% ../nbs/06_vision_inference.ipynb 5
+# %% ../nbs/06_vision_inference.ipynb 7
 def pred_postprocess(pred_mask, remove_size=10437, percentage=0.2): 
     '''Remove small objects from predicted mask.'''
     small_objects = remove_size*percentage    
