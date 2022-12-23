@@ -1,0 +1,7 @@
+# Research 
+
+
+## Table of contents
+| Notebook                                                                                                                                                                                                                               | 1-Click Notebook                                                                                                                                                                                   |
+|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [00-spine-segmentation-training-evaluation](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/master/research/spine/00-spine-segmentation-training-evaluation.ipynb) <br>shows how to reproduce our results from our spine segmentation study.                             | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/research/spine/00-spine-segmentation-training-evaluation.ipynb)          |
