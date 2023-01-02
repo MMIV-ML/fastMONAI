@@ -6,6 +6,7 @@ import argparse
 
 from fastMONAI.vision_all import *
 from IPython.display import clear_output
+from huggingface_hub import snapshot_download
 
 # Parse command line arguments
 parser = argparse.ArgumentParser()
@@ -16,8 +17,11 @@ args = parser.parse_args()
 vars_fn = glob.glob('models/*/snapshots/*/vars.pkl')[0]
 _, reorder, resample = load_variables(pkl_fn=vars_fn)
 
-# Load models
-models = [load_learner(f'models/{i}_learner.pkl', cpu=False) for i in range(3)]
+
+# Download the models from the study repository and load exported learners 
+models_path = Path(snapshot_download(repo_id="skaliy/spine-segmentation",  cache_dir='models')) #allow_patterns="*.pth"
+learner_list = list(models_path.glob('*learner.pkl'))
+loaded_learners = [load_learner(fn, cpu=True) for fn in learner_list]
 
 # Set file name from command line argument
 fn = args.fn
@@ -27,7 +31,7 @@ save_fn = fn.split('.nii')[0] + '_pred.nii.gz'
 mask_data = None
 
 # Infer mask for each model
-for learner in models:
+for learner in loaded_learners:
     mask = inference(learner, reorder, resample, fn)
     
     # Initialize mask data if necessary
@@ -38,7 +42,7 @@ for learner in models:
         mask_data += mask.data
 
 # Average the accumulated mask data
-mask_data /= len(models)
+mask_data /= len(loaded_learners)
 
 # Threshold the averaged mask data to create a binary mask
 mask_data = torch.where(mask_data > 0.5, 1., 0.)
