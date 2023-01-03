@@ -13,15 +13,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('fn', type=str, help='File name of the input image')
 args = parser.parse_args()
 
-# Load variables
-vars_fn = glob.glob('models/*/snapshots/*/vars.pkl')[0]
-_, reorder, resample = load_variables(pkl_fn=vars_fn)
-
-
 # Download the models from the study repository and load exported learners 
-models_path = Path(snapshot_download(repo_id="skaliy/spine-segmentation",  cache_dir='models')) #allow_patterns="*.pth"
+models_path = Path(snapshot_download(repo_id="skaliy/spine-segmentation",  cache_dir='models'))
 learner_list = list(models_path.glob('*learner.pkl'))
 loaded_learners = [load_learner(fn, cpu=True) for fn in learner_list]
+
+# Load variables
+vars_fn = models_path/'vars.pkl'
+_, reorder, resample = load_variables(pkl_fn=vars_fn)
+
 
 # Set file name from command line argument
 fn = args.fn
