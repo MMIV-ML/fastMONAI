@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.2.280">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>fastMONAI - Data augmentation</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1.6em;
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 20,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="fastMONAI - Data augmentation">
+<meta property="og:description" content="source">
+<meta property="og:site-name" content="fastMONAI">
+<meta name="twitter:title" content="fastMONAI - Data augmentation">
+<meta name="twitter:description" content="source">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">fastMONAI</span>
+    </a>
+  </div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+    <div class="container-fluid d-flex justify-content-between">
+      <h1 class="quarto-secondary-nav-title">Data augmentation</h1>
+      <button type="button" class="quarto-btn-toggle btn" aria-label="Show secondary navigation">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">Overview</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_plot.html" class="sidebar-item-text sidebar-link">Vision plot</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_core.html" class="sidebar-item-text sidebar-link">Vision core</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_data.html" class="sidebar-item-text sidebar-link">Vision data</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_augment.html" class="sidebar-item-text sidebar-link active">Data augmentation</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_loss_functions.html" class="sidebar-item-text sidebar-link">Custom loss functions</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_metrics.html" class="sidebar-item-text sidebar-link">Vision metrics</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_inference.html" class="sidebar-item-text sidebar-link">Vision inference</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">Utils</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dataset_info.html" class="sidebar-item-text sidebar-link">Dataset information</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./external_data.html" class="sidebar-item-text sidebar-link">External data</a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">Tutorials</a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_classification.html" class="sidebar-item-text sidebar-link">Single-label classification</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_regression.html" class="sidebar-item-text sidebar-link">Regression</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_binary_segmentation.html" class="sidebar-item-text sidebar-link">Binary semantic segmentation</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_multiclass_segmentation.html" class="sidebar-item-text sidebar-link">Multi-class semantic segmentation</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_inference.html" class="sidebar-item-text sidebar-link">Inference with exported learner</a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#transforms-wrapper" id="toc-transforms-wrapper" class="nav-link active" data-scroll-target="#transforms-wrapper">Transforms wrapper</a>
+  <ul class="collapse">
+  <li><a href="#customdicttransform" id="toc-customdicttransform" class="nav-link" data-scroll-target="#customdicttransform">CustomDictTransform</a></li>
+  </ul></li>
+  <li><a href="#vanilla-transforms" id="toc-vanilla-transforms" class="nav-link" data-scroll-target="#vanilla-transforms">Vanilla transforms</a>
+  <ul class="collapse">
+  <li><a href="#do_pad_or_crop" id="toc-do_pad_or_crop" class="nav-link" data-scroll-target="#do_pad_or_crop">do_pad_or_crop</a></li>
+  <li><a href="#padorcrop" id="toc-padorcrop" class="nav-link" data-scroll-target="#padorcrop">PadOrCrop</a></li>
+  <li><a href="#znormalization" id="toc-znormalization" class="nav-link" data-scroll-target="#znormalization">ZNormalization</a></li>
+  <li><a href="#bratsmaskconverter" id="toc-bratsmaskconverter" class="nav-link" data-scroll-target="#bratsmaskconverter">BraTSMaskConverter</a></li>
+  <li><a href="#binaryconverter" id="toc-binaryconverter" class="nav-link" data-scroll-target="#binaryconverter">BinaryConverter</a></li>
+  <li><a href="#bratsmaskconverter-1" id="toc-bratsmaskconverter-1" class="nav-link" data-scroll-target="#bratsmaskconverter-1">BraTSMaskConverter</a></li>
+  <li><a href="#randomghosting" id="toc-randomghosting" class="nav-link" data-scroll-target="#randomghosting">RandomGhosting</a></li>
+  <li><a href="#randomspike" id="toc-randomspike" class="nav-link" data-scroll-target="#randomspike">RandomSpike</a></li>
+  <li><a href="#randomnoise" id="toc-randomnoise" class="nav-link" data-scroll-target="#randomnoise">RandomNoise</a></li>
+  <li><a href="#randombiasfield" id="toc-randombiasfield" class="nav-link" data-scroll-target="#randombiasfield">RandomBiasField</a></li>
+  <li><a href="#randomblur" id="toc-randomblur" class="nav-link" data-scroll-target="#randomblur">RandomBlur</a></li>
+  <li><a href="#randomgamma" id="toc-randomgamma" class="nav-link" data-scroll-target="#randomgamma">RandomGamma</a></li>
+  <li><a href="#randommotion" id="toc-randommotion" class="nav-link" data-scroll-target="#randommotion">RandomMotion</a></li>
+  </ul></li>
+  <li><a href="#dictionary-transforms" id="toc-dictionary-transforms" class="nav-link" data-scroll-target="#dictionary-transforms">Dictionary transforms</a>
+  <ul class="collapse">
+  <li><a href="#randomelasticdeformation" id="toc-randomelasticdeformation" class="nav-link" data-scroll-target="#randomelasticdeformation">RandomElasticDeformation</a></li>
+  <li><a href="#randomaffine" id="toc-randomaffine" class="nav-link" data-scroll-target="#randomaffine">RandomAffine</a></li>
+  <li><a href="#randomflip" id="toc-randomflip" class="nav-link" data-scroll-target="#randomflip">RandomFlip</a></li>
+  <li><a href="#oneof" id="toc-oneof" class="nav-link" data-scroll-target="#oneof">OneOf</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Data augmentation</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+</header>
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="transforms-wrapper" class="level2">
+<h2 class="anchored" data-anchor-id="transforms-wrapper">Transforms wrapper</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L14" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="customdicttransform" class="level3">
+<h3 class="anchored" data-anchor-id="customdicttransform">CustomDictTransform</h3>
+<blockquote class="blockquote">
+<pre><code> CustomDictTransform (aug)</code></pre>
+</blockquote>
+<p>Wrapper to perform an identical transformation on both image and target (if it is a mask) during training.</p>
+</section>
+</section>
+<section id="vanilla-transforms" class="level2">
+<h2 class="anchored" data-anchor-id="vanilla-transforms">Vanilla transforms</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L41" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="do_pad_or_crop" class="level3">
+<h3 class="anchored" data-anchor-id="do_pad_or_crop">do_pad_or_crop</h3>
+<blockquote class="blockquote">
+<pre><code> do_pad_or_crop (o, target_shape, padding_mode, mask_name, dtype=&lt;class
+                 'torch.Tensor'&gt;)</code></pre>
+</blockquote>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L47" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="padorcrop" class="level3">
+<h3 class="anchored" data-anchor-id="padorcrop">PadOrCrop</h3>
+<blockquote class="blockquote">
+<pre><code> PadOrCrop (size, padding_mode=0, mask_name=None)</code></pre>
+</blockquote>
+<p>Resize image using TorchIO <code>CropOrPad</code>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L73" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="znormalization" class="level3">
+<h3 class="anchored" data-anchor-id="znormalization">ZNormalization</h3>
+<blockquote class="blockquote">
+<pre><code> ZNormalization (masking_method=None, channel_wise=True)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#znormalization"><code>ZNormalization</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L84" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="bratsmaskconverter" class="level3">
+<h3 class="anchored" data-anchor-id="bratsmaskconverter">BraTSMaskConverter</h3>
+<blockquote class="blockquote">
+<pre><code> BraTSMaskConverter (enc=None, dec=None, split_idx=None, order=None)</code></pre>
+</blockquote>
+<p>Convert BraTS masks.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L96" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binaryconverter" class="level3">
+<h3 class="anchored" data-anchor-id="binaryconverter">BinaryConverter</h3>
+<blockquote class="blockquote">
+<pre><code> BinaryConverter (enc=None, dec=None, split_idx=None, order=None)</code></pre>
+</blockquote>
+<p>Convert to binary mask.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L84" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="bratsmaskconverter-1" class="level3">
+<h3 class="anchored" data-anchor-id="bratsmaskconverter-1">BraTSMaskConverter</h3>
+<blockquote class="blockquote">
+<pre><code> BraTSMaskConverter (enc=None, dec=None, split_idx=None, order=None)</code></pre>
+</blockquote>
+<p>Convert BraTS masks.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L114" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomghosting" class="level3">
+<h3 class="anchored" data-anchor-id="randomghosting">RandomGhosting</h3>
+<blockquote class="blockquote">
+<pre><code> RandomGhosting (intensity=(0.5, 1), p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomghosting"><code>RandomGhosting</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L132" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomspike" class="level3">
+<h3 class="anchored" data-anchor-id="randomspike">RandomSpike</h3>
+<blockquote class="blockquote">
+<pre><code> RandomSpike (num_spikes=1, intensity=(1, 3), p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomspike"><code>RandomSpike</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L150" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomnoise" class="level3">
+<h3 class="anchored" data-anchor-id="randomnoise">RandomNoise</h3>
+<blockquote class="blockquote">
+<pre><code> RandomNoise (mean=0, std=(0, 0.25), p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomnoise"><code>RandomNoise</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L168" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randombiasfield" class="level3">
+<h3 class="anchored" data-anchor-id="randombiasfield">RandomBiasField</h3>
+<blockquote class="blockquote">
+<pre><code> RandomBiasField (coefficients=0.5, order=3, p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randombiasfield"><code>RandomBiasField</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L186" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomblur" class="level3">
+<h3 class="anchored" data-anchor-id="randomblur">RandomBlur</h3>
+<blockquote class="blockquote">
+<pre><code> RandomBlur (std=(0, 2), p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randombiasfield"><code>RandomBiasField</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L204" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomgamma" class="level3">
+<h3 class="anchored" data-anchor-id="randomgamma">RandomGamma</h3>
+<blockquote class="blockquote">
+<pre><code> RandomGamma (log_gamma=(-0.3, 0.3), p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomgamma"><code>RandomGamma</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L223" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randommotion" class="level3">
+<h3 class="anchored" data-anchor-id="randommotion">RandomMotion</h3>
+<blockquote class="blockquote">
+<pre><code> RandomMotion (degrees=10, translation=10, num_transforms=2,
+               image_interpolation='linear', p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randommotion"><code>RandomMotion</code></a>.</p>
+</section>
+</section>
+<section id="dictionary-transforms" class="level2">
+<h2 class="anchored" data-anchor-id="dictionary-transforms">Dictionary transforms</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L235" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="randomelasticdeformation" class="level3">
+<h3 class="anchored" data-anchor-id="randomelasticdeformation">RandomElasticDeformation</h3>
+<blockquote class="blockquote">
+<pre><code> RandomElasticDeformation (num_control_points=7, max_displacement=7.5,
+                           image_interpolation='linear', p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomelasticdeformation"><code>RandomElasticDeformation</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L242" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomaffine" class="level3">
+<h3 class="anchored" data-anchor-id="randomaffine">RandomAffine</h3>
+<blockquote class="blockquote">
+<pre><code> RandomAffine (scales=0, degrees=10, translation=0, isotropic=False,
+               image_interpolation='linear', default_pad_value=0.0, p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomaffine"><code>RandomAffine</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L249" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomflip" class="level3">
+<h3 class="anchored" data-anchor-id="randomflip">RandomFlip</h3>
+<blockquote class="blockquote">
+<pre><code> RandomFlip (axes='LR', p=0.5)</code></pre>
+</blockquote>
+<p>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomflip"><code>RandomFlip</code></a>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_augmentation.py#L256" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="oneof" class="level3">
+<h3 class="anchored" data-anchor-id="oneof">OneOf</h3>
+<blockquote class="blockquote">
+<pre><code> OneOf (transform_dict, p=1)</code></pre>
+</blockquote>
+<p>Apply only one of the given transforms using TorchIO <a href="https://fastmonai.no/vision_augment.html#oneof"><code>OneOf</code></a>.</p>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    target: function(trigger) {
+      return trigger.previousElementSibling;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>

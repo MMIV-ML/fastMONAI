@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.2.280">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>fastMONAI - Vision data</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1.6em;
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap.min.css" rel="stylesheet" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 20,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="fastMONAI - Vision data">
+<meta property="og:description" content="source">
+<meta property="og:site-name" content="fastMONAI">
+<meta name="twitter:title" content="fastMONAI - Vision data">
+<meta name="twitter:description" content="source">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg navbar-dark ">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">fastMONAI</span>
+    </a>
+  </div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+    <div class="container-fluid d-flex justify-content-between">
+      <h1 class="quarto-secondary-nav-title">Vision data</h1>
+      <button type="button" class="quarto-btn-toggle btn" aria-label="Show secondary navigation">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">Overview</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_plot.html" class="sidebar-item-text sidebar-link">Vision plot</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_core.html" class="sidebar-item-text sidebar-link">Vision core</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_data.html" class="sidebar-item-text sidebar-link active">Vision data</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_augment.html" class="sidebar-item-text sidebar-link">Data augmentation</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_loss_functions.html" class="sidebar-item-text sidebar-link">Custom loss functions</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_metrics.html" class="sidebar-item-text sidebar-link">Vision metrics</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_inference.html" class="sidebar-item-text sidebar-link">Vision inference</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">Utils</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dataset_info.html" class="sidebar-item-text sidebar-link">Dataset information</a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./external_data.html" class="sidebar-item-text sidebar-link">External data</a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">Tutorials</a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" aria-expanded="true">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_classification.html" class="sidebar-item-text sidebar-link">Single-label classification</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_regression.html" class="sidebar-item-text sidebar-link">Regression</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_binary_segmentation.html" class="sidebar-item-text sidebar-link">Binary semantic segmentation</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_multiclass_segmentation.html" class="sidebar-item-text sidebar-link">Multi-class semantic segmentation</a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_inference.html" class="sidebar-item-text sidebar-link">Inference with exported learner</a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#prediction-to-mask" id="toc-prediction-to-mask" class="nav-link active" data-scroll-target="#prediction-to-mask">Prediction to mask</a>
+  <ul class="collapse">
+  <li><a href="#pred_to_multiclass_mask" id="toc-pred_to_multiclass_mask" class="nav-link" data-scroll-target="#pred_to_multiclass_mask">pred_to_multiclass_mask</a></li>
+  <li><a href="#batch_pred_to_multiclass_mask" id="toc-batch_pred_to_multiclass_mask" class="nav-link" data-scroll-target="#batch_pred_to_multiclass_mask">batch_pred_to_multiclass_mask</a></li>
+  <li><a href="#pred_to_binary_mask" id="toc-pred_to_binary_mask" class="nav-link" data-scroll-target="#pred_to_binary_mask">pred_to_binary_mask</a></li>
+  </ul></li>
+  <li><a href="#meddatablock" id="toc-meddatablock" class="nav-link" data-scroll-target="#meddatablock">MedDataBlock</a></li>
+  <li><a href="#transformblock-for-segmentation" id="toc-transformblock-for-segmentation" class="nav-link" data-scroll-target="#transformblock-for-segmentation"><code>TransformBlock</code> for segmentation</a>
+  <ul class="collapse">
+  <li><a href="#medmaskblock" id="toc-medmaskblock" class="nav-link" data-scroll-target="#medmaskblock">MedMaskBlock</a></li>
+  </ul></li>
+  <li><a href="#medimagedataloaders" id="toc-medimagedataloaders" class="nav-link" data-scroll-target="#medimagedataloaders">MedImageDataLoaders</a>
+  <ul class="collapse">
+  <li><a href="#medimagedataloaders.from_df" id="toc-medimagedataloaders.from_df" class="nav-link" data-scroll-target="#medimagedataloaders.from_df">MedImageDataLoaders.from_df</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><div><i class="bi bi-github"></i></div><div class="action-links"><p><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action">Report an issue</a></p></div></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title d-none d-lg-block">Vision data</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+</header>
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="prediction-to-mask" class="level2">
+<h2 class="anchored" data-anchor-id="prediction-to-mask">Prediction to mask</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L13" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="pred_to_multiclass_mask" class="level3">
+<h3 class="anchored" data-anchor-id="pred_to_multiclass_mask">pred_to_multiclass_mask</h3>
+<blockquote class="blockquote">
+<pre><code> pred_to_multiclass_mask (pred:torch.Tensor)</code></pre>
+</blockquote>
+<p>Apply Softmax function on the predicted tensor to rescale the values in the range [0, 1] and sum to 1. Then apply argmax to get the indices of the maximum value of all elements in the predicted Tensor. Returns: Predicted mask.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th><strong>Type</strong></th>
+<th><strong>Details</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>pred</td>
+<td>Tensor</td>
+<td>[C,W,H,D] activation tensor</td>
+</tr>
+<tr class="even">
+<td><strong>Returns</strong></td>
+<td><strong>Tensor</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L23" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="batch_pred_to_multiclass_mask" class="level3">
+<h3 class="anchored" data-anchor-id="batch_pred_to_multiclass_mask">batch_pred_to_multiclass_mask</h3>
+<blockquote class="blockquote">
+<pre><code> batch_pred_to_multiclass_mask (pred:torch.Tensor)</code></pre>
+</blockquote>
+<p>Convert a batch of predicted activation tensors to masks. Returns batch of predicted masks and number of classes.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th><strong>Type</strong></th>
+<th><strong>Details</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>pred</td>
+<td>Tensor</td>
+<td>[B, C, W, H, D] batch of activations</td>
+</tr>
+<tr class="even">
+<td><strong>Returns</strong></td>
+<td><strong>(&lt;class ‘torch.Tensor’&gt;, &lt;class ‘int’&gt;)</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L35" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="pred_to_binary_mask" class="level3">
+<h3 class="anchored" data-anchor-id="pred_to_binary_mask">pred_to_binary_mask</h3>
+<blockquote class="blockquote">
+<pre><code> pred_to_binary_mask (pred)</code></pre>
+</blockquote>
+<p>Apply Sigmoid function that squishes activations into a range between 0 and 1. Then we classify all values greater than or equal to 0.5 to 1, and the values below 0.5 to 0.</p>
+<p>Returns predicted binary mask(s).</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th><strong>Type</strong></th>
+<th><strong>Details</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>pred</td>
+<td></td>
+<td>[B, C, W, H, D] or [C, W, H, D] activation tensor</td>
+</tr>
+<tr class="even">
+<td><strong>Returns</strong></td>
+<td><strong>Tensor</strong></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L47" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+</section>
+<section id="meddatablock" class="level2">
+<h2 class="anchored" data-anchor-id="meddatablock">MedDataBlock</h2>
+<blockquote class="blockquote">
+<pre><code> MedDataBlock (blocks:list=None, dl_type:fastai.data.core.TfmdDL=None,
+               getters:list=None, n_inp:int=None, item_tfms:list=None,
+               batch_tfms:list=None, reorder:bool=False,
+               resample:(&lt;class'int'&gt;,&lt;class'list'&gt;)=None, **kwargs)</code></pre>
+</blockquote>
+<p>Container to quickly build dataloaders.</p>
+</section>
+<section id="transformblock-for-segmentation" class="level2">
+<h2 class="anchored" data-anchor-id="transformblock-for-segmentation"><code>TransformBlock</code> for segmentation</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L57" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="medmaskblock" class="level3">
+<h3 class="anchored" data-anchor-id="medmaskblock">MedMaskBlock</h3>
+<blockquote class="blockquote">
+<pre><code> MedMaskBlock ()</code></pre>
+</blockquote>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L61" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+</section>
+<section id="medimagedataloaders" class="level2">
+<h2 class="anchored" data-anchor-id="medimagedataloaders">MedImageDataLoaders</h2>
+<blockquote class="blockquote">
+<pre><code> MedImageDataLoaders (*loaders, path:str|Path='.', device=None)</code></pre>
+</blockquote>
+<p>Higher-level <a href="https://fastmonai.no/vision_data.html#meddatablock"><code>MedDataBlock</code></a> API.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/master/fastMONAI/vision_data.py#L66" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="medimagedataloaders.from_df" class="level3">
+<h3 class="anchored" data-anchor-id="medimagedataloaders.from_df">MedImageDataLoaders.from_df</h3>
+<blockquote class="blockquote">
+<pre><code> MedImageDataLoaders.from_df (df, valid_pct=0.2, seed=None, fn_col=0,
+                              folder=None, suff='', label_col=1,
+                              label_delim=None, y_block=None,
+                              valid_col=None, item_tfms=None,
+                              batch_tfms=None, reorder=False,
+                              resample=None,
+                              path:Union[str,pathlib.Path]='.', bs:int=64,
+                              val_bs:int=None, shuffle:bool=True,
+                              device=None)</code></pre>
+</blockquote>
+<p>Create from DataFrame.</p>
+<table class="table">
+<thead>
+<tr class="header">
+<th></th>
+<th><strong>Type</strong></th>
+<th><strong>Default</strong></th>
+<th><strong>Details</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>df</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td>valid_pct</td>
+<td>float</td>
+<td>0.2</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>seed</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>fn_col</td>
+<td>int</td>
+<td>0</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>folder</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>suff</td>
+<td>str</td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>label_col</td>
+<td>int</td>
+<td>1</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>label_delim</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>y_block</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>valid_col</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>item_tfms</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>batch_tfms</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>reorder</td>
+<td>bool</td>
+<td>False</td>
+<td></td>
+</tr>
+<tr class="even">
+<td>resample</td>
+<td>NoneType</td>
+<td>None</td>
+<td></td>
+</tr>
+<tr class="odd">
+<td>path</td>
+<td>str | Path</td>
+<td>.</td>
+<td>Path to put in <code>DataLoaders</code></td>
+</tr>
+<tr class="even">
+<td>bs</td>
+<td>int</td>
+<td>64</td>
+<td>Size of batch</td>
+</tr>
+<tr class="odd">
+<td>val_bs</td>
+<td>int</td>
+<td>None</td>
+<td>Size of batch for validation <code>DataLoader</code></td>
+</tr>
+<tr class="even">
+<td>shuffle</td>
+<td>bool</td>
+<td>True</td>
+<td>Whether to shuffle data</td>
+</tr>
+<tr class="odd">
+<td>device</td>
+<td>NoneType</td>
+<td>None</td>
+<td>Device to put <code>DataLoaders</code></td>
+</tr>
+</tbody>
+</table>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    target: function(trigger) {
+      return trigger.previousElementSibling;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+</body></html>
