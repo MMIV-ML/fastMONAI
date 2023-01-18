@@ -7,14 +7,14 @@ __all__ = ['calculate_dsc', 'calculate_haus', 'binary_dice_score', 'multi_dice_s
 # %% ../nbs/05_vision_metrics.ipynb 1
 import torch
 import numpy as np
-from monai.metrics import compute_meandice, compute_hausdorff_distance, compute_dice
+from monai.metrics import compute_hausdorff_distance, compute_dice
 from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
 
 # %% ../nbs/05_vision_metrics.ipynb 3
 def calculate_dsc(pred, targ):
     ''' MONAI `compute_meandice`'''
 
-    return torch.Tensor([compute_meandice(p[None], t[None]) for p, t in list(zip(pred,targ))])
+    return torch.Tensor([compute_dice(p[None], t[None]) for p, t in list(zip(pred,targ))])
 
 # %% ../nbs/05_vision_metrics.ipynb 4
 def calculate_haus(pred, targ):
