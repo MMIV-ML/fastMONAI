@@ -12,9 +12,11 @@ from .vision_core import *
 from .vision_augmentation import do_pad_or_crop
 from skimage.morphology import remove_small_objects
 from SimpleITK import DICOMOrient, GetArrayFromImage
+from copy import copy
 
 # %% ../nbs/06_vision_inference.ipynb 3
 def _to_original_orientation(input_img, org_orientation):
+    """Reorients the image to its original orientation."""
     
     orientation_itk = DICOMOrient(input_img, org_orientation)
     reoriented_array =  GetArrayFromImage(orientation_itk).transpose()
@@ -24,15 +26,17 @@ def _to_original_orientation(input_img, org_orientation):
 # %% ../nbs/06_vision_inference.ipynb 4
 def _do_resize(o, target_shape, image_interpolation='linear', label_interpolation='nearest'):
     '''Resample images so the output shape matches the given target shape.'''
+
     resize = Resize(target_shape, image_interpolation=image_interpolation, label_interpolation=label_interpolation)
     return resize(o)
 
 # %% ../nbs/06_vision_inference.ipynb 5
-def inference(learn_inf, reorder, resample, fn:(Path,str), save_path:(str,Path)=None): 
+def inference(learn_inf, reorder, resample, fn:(Path,str)='', save_path:(str,Path)=None, org_img=None, input_img=None, org_size=None): 
     '''Predict on new data using exported model'''         
-
-    org_img, input_img, org_size = med_img_reader(fn, reorder, resample, only_tensor=False)
-        
+    if None in [org_img, input_img, org_size]: 
+        org_img, input_img, org_size = med_img_reader(fn, reorder, resample, only_tensor=False)
+    else: org_img, input_img = copy(org_img), copy(input_img)
+    
     pred, *_ = learn_inf.predict(input_img.data);
     
     pred_mask = do_pad_or_crop(pred.float(), input_img.shape[1:], padding_mode=0, mask_name=None)

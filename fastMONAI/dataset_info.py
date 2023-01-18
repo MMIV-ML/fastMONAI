@@ -7,7 +7,6 @@ __all__ = ['MedDataset']
 from .vision_core import *
 
 import multiprocessing as mp
-from functools import partial
 import pandas as pd
 import numpy as np
 import glob
@@ -18,7 +17,7 @@ class MedDataset():
 
     def __init__(self, path=None, # Path to the image folder
                  postfix:str='', # Specify the file type if there are different files in the folder
-                 img_list:list=None, # A list with image path
+                 img_list:list=None, # Alternatively pass in a list with image paths
                  reorder:bool=False, # Whether to reorder the data to be closest to canonical (RAS+) orientation
                  dtype:(MedImage, MedMask)=MedImage, # Load data as datatype
                  max_workers:int=1 #  The number of worker threads

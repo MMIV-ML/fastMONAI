@@ -7,7 +7,7 @@ __all__ = ['calculate_dsc', 'calculate_haus', 'binary_dice_score', 'multi_dice_s
 # %% ../nbs/05_vision_metrics.ipynb 1
 import torch
 import numpy as np
-from monai.metrics import compute_meandice, compute_hausdorff_distance
+from monai.metrics import compute_meandice, compute_hausdorff_distance, compute_dice
 from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
 
 # %% ../nbs/05_vision_metrics.ipynb 3
@@ -73,6 +73,5 @@ def multi_hausdorff_distance(act, # Activation tensor [B, C, W, H, D]
     for c in range(1, n_classes):
         c_pred, c_targ = torch.where(pred==c, 1, 0), torch.where(targ==c, 1, 0)
         haus = calculate_haus(pred, targ)
-        binary_haus.append(np.nanmean(haus)) #TODO update torch to get torch.nanmean() to work
-
+        binary_haus.append(np.nanmean(haus))
     return torch.Tensor(binary_haus)
