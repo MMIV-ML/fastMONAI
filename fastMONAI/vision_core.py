@@ -29,7 +29,7 @@ def _preprocess(o, reorder, resample):
     return o, org_size
 
 # %% ../nbs/01_vision_core.ipynb 6
-def _load(fn:str, dtype=None):
+def _load(fn:(str, Path), dtype=None):
     '''Private method to load image as either ScalarImage or LabelMap.
 
     Args:
@@ -70,8 +70,8 @@ def med_img_reader(fn:(str, Path), # Image path
                    only_tensor:bool=True # Whether to return only image tensor
                   ):
     '''Load and preprocess medical image'''
-
-    if ';' in fn:
+        
+    if isinstance(fn, str) and ';' in fn:
         img_fns = fn.split(';')
         return _multi_channel(img_fns, reorder, resample, dtype=dtype)
 

@@ -6,9 +6,10 @@ __all__ = ['store_variables', 'load_variables', 'print_colab_gpu_info']
 # %% ../nbs/07_utils.ipynb 1
 import pickle
 import torch
+from pathlib import Path
 
 # %% ../nbs/07_utils.ipynb 3
-def store_variables(pkl_fn:str, # Filename of the pickle file
+def store_variables(pkl_fn:(str, Path),  # Filename of the pickle file
                     var_vals:list # A list of variable values
                    ) -> None:
     '''Save variable values in a pickle file.'''

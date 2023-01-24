@@ -49,10 +49,10 @@ def inference(learn_inf, reorder, resample, fn:(Path,str)='', save_path:(str,Pat
     org_img.set_data(reoriented_array)
 
     if save_path:
-        save_fn = 'pred_' + Path(fn).parts[-1]
-        save_fn = Path(save_path)/save_fn
+        save_fn = Path(save_path)/('pred_' + Path(fn).parts[-1])
         org_img.save(save_fn)
-
+        return save_fn
+    
     return org_img
 
 # %% ../nbs/06_vision_inference.ipynb 7
