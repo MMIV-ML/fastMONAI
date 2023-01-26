@@ -45,6 +45,13 @@ class MedDataset():
 
         pool = mp.Pool(self.max_workers)
         data_info_dict = pool.map(self._get_data_info, self.img_list)
+        
+        
+        # close the pool
+        pool.close()
+
+        # wait for the worker processes to exit
+        pool.join()
 
         df = pd.DataFrame(data_info_dict)
         if df.orientation.nunique() > 1: print('The volumes in this dataset have different orientations. Recommended to pass in the argument reorder=True when creating a MedDataset object for this dataset')

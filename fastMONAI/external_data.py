@@ -108,7 +108,8 @@ def download_ixi_tiny(path:(str, Path)='../data'):
     download_url(url=MURLs.IXI_DEMOGRAPHIC_INFORMATION, filepath=path/'IXI.xls')
     
     processed_df = _process_ixi_xls(xls_path=path/'IXI.xls', img_path=path/'image')
-    processed_df['labels'] = processed_df['t1_path'].replace({"image": "label"},regex=True)
+    processed_df['labels'] = processed_df['t1_path'].astype(str).str.replace('image','label')
+    
     processed_df.to_csv(path/'dataset.csv', index=False)
     
     return path
@@ -190,7 +191,6 @@ def download_NoduleMNIST3D(path:(str, Path)='../data', max_workers=1):
     
     download_url(url=MURLs.NODULE_MNIST_DATA, filepath=path/f'{study}.npz');
     data = load(path/f'{study}.npz')
-    print(data.files)
     key_fn = ['train_images', 'val_images', 'test_images']    
     for fn in key_fn: (path/fn).mkdir(exist_ok=True)
     
