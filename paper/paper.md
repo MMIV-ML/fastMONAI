@@ -80,7 +80,6 @@ df.head(2)
 |                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
 |----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
 | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
-|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
 
 
 Before feeding the data into a model, we must create a `DataLoaders` object for our dataset. There are several ways to get the data in `DataLoaders`. 
@@ -103,7 +102,8 @@ We can now take a look at a batch of images in the training set using `show_batc
 dls.show_batch(max_n=2, anatomical_plane=2, figsize=(3,3))
 ```
     
-![](output_22_0.png) 
+![](paper_files/output_22_0.png) 
+
 
 Class imbalance is a common challenge in medical datasets:
 
@@ -172,7 +172,7 @@ With the model trained, let's look at some predictions on the validation data.
 learn.show_results(max_n=2, anatomical_plane=2, figsize=(3,3)) 
 ```
 
-![](output_35_2.png)
+![](paper_files/output_35_2.png)
     
 
 
@@ -182,23 +182,21 @@ Showing samples with target value and their corresponding predictions (target|pr
 
 Let's look at where our trained model becomes confused while making predictions on the validation data:
 
-
 ```
 interp = ClassificationInterpretation.from_learner(learn)
 ```
-
 
 ```
 interp.plot_confusion_matrix(figsize=(3,3))
 ```
     
-![](output_40_2.png)
+![](paper_files/output_40_2.png)
     
 ```
 interp.plot_top_losses(k=2, anatomical_plane=2, figsize=(4,4))
 ```
     
-![](output_41_2.png)
+![](paper_files/output_41_2.png)
     
 
 #### Test-time augmentation
@@ -234,7 +232,6 @@ df.head(2)
 |                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
 |----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
 | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
-|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
 
 
 `MedDataset` is a class to extract and present information about your dataset.
@@ -319,7 +316,7 @@ dls = dblock.dataloaders(df, bs=8)
 dls.show_batch(max_n=2, anatomical_plane=2, figsize=(3,3))
 ```
     
-![](output_64_0.png)
+![](paper_files/output_64_0.png)
     
 
 ```
@@ -363,7 +360,7 @@ Rule of thumb to pick a learning rate:
 lr = learn.lr_find()
 ```
 
-![](output_72_2.png)){ width=50% }
+![](paper_files/output_72_2.png)){ width=50% }
     
 
 ```
@@ -437,7 +434,7 @@ subject = Subject(image=ScalarImage(img_fn), mask=LabelMap(pred_fn))
 
 
     
-![](output_86_0.png)
+![](paper_files/output_86_0.png)
     
 
 ## Documentation, usability, and maintainability

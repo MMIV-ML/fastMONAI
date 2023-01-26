@@ -27,3 +27,5 @@
 
 
 ![](paper_files/output_73_2.png){ width=50% }
+
+todo add path: paper_files/
