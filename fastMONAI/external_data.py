@@ -57,7 +57,7 @@ def _process_ixi_xls(xls_path:(str, Path), img_path: Path):
     img_list = list(img_path.glob('*.nii.gz'))
     for path in img_list:
         subject_id = path.parts[-1].split('-')[0]
-        df.loc[df.subject_id == subject_id, 't1_path'] = path
+        df.loc[df.subject_id == subject_id, 't1_path'] = str(path)
 
     df = df.dropna()
     df = df[['t1_path', 'subject_id', 'gender', 'age_at_scan']]
@@ -108,7 +108,7 @@ def download_ixi_tiny(path:(str, Path)='../data'):
     download_url(url=MURLs.IXI_DEMOGRAPHIC_INFORMATION, filepath=path/'IXI.xls')
     
     processed_df = _process_ixi_xls(xls_path=path/'IXI.xls', img_path=path/'image')
-    processed_df['labels'] = processed_df['t1_path'].astype(str).str.replace('image','label')
+    processed_df['labels'] = processed_df['t1_path'].str.replace('image','label')
     
     processed_df.to_csv(path/'dataset.csv', index=False)
     
@@ -169,6 +169,7 @@ def _df_sort_and_add_columns(df, label_list, is_val):
     '''Sort the dataframe based on img_idx and add labels and if it is validation data column'''
     df = df.sort_values(by='img_idx').reset_index(drop=True)
     df['labels'], df['is_val'] = label_list, is_val     
+    df = df.replace({"labels": {0:'b', 1:'m'}})
     df = df.drop('img_idx', axis=1)
     
     return df 

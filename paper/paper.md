@@ -25,12 +25,12 @@ bibliography: paper.bib
 ---
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
 
+
 ## Summary
 
 In this work, we present <b>fastMONAI</b>, a low-code Python-based open source deep learning library built on top of fastai [@howard2020fastai; @howard2020deep], MONAI [@monai], and TorchIO [@perez2021torchio]. We created the library to simplify the use of state-of-the-art deep learning techniques in 3D medical image analysis for solving classification, regression, and segmentation tasks. fastMONAI provides the users with functionalities to step through data loading, preprocessing, training, and result interpretations.
 
 The paper is structured in the following way: it first states the need for the research, then it showcases various applications and the user-friendlyness, followed by dicussion about documentation, usability and maintainability.
-
 
 Note that the PDF version of our paper is automatically generated from Jupyter Notebook available in the fastMONAI GitHub repo: [https://github.com/MMIV-ML/fastMONAI](https://github.com/MMIV-ML/fastMONAI). Using the notebook, you can step through all the content, reproducing the below computations. 
 "Let us change our traditional attitude to the construction of programs: Instead of imagining that our main task is to instruct a computer what to do, let us concentrate rather on explaining to human beings what we want a computer to do."[@donaldknuth]
@@ -42,19 +42,11 @@ The pace of developments in deep learning is incredibly fast, with new models, t
 fastai is a general deep learning library built on top of PyTorch. Healthcare imaging has a variety of domain-specific demands, including medical imaging formats, data storage and transfer, data labeling procedures, domain-specific data augmentation, and evaluation methods. MONAI Core [@monai] and TorchIO [@perez2021torchio] target deep learning in healthcare imaging, incorporating multiple best practices. MONAI Core, the primary library of Project MONAI, is built on top of PyTorch and provides domain-specific functionalites for medical imaging, including network architectures, metrics, and loss functions. 
 TorchIO is a Python-based open-source library for efficent loading, preprocessing, and augmentation of 3D medical images. 
 
-As described in ConvNext V2, a visual representation learning system is determined by three key factors: network architecture chosen, training methods, and data. 
-
-Our combination of fastai, MONAI Core, and TorchIO into fastMONAI with custom modules like MedDataset makes it possible to easily construct, use and train powerful models for a range of medical imaging tasks, using all the best practices and domain-specific features incorporated into these three libraries. 
-
-fastMONAI can ease the entry of new practitioners into medical AI and make it possible to quickly construct good baseline models that can be further optimized by going deeper into the underlying libraries. 
-
-The library is developed at The Mohn Medical Imaging and Visualization Centre (MMIV), which is part of the Department of Radiology at Haukeland University Hospital . One of the center's key objectives is to develop new quantitative methods for high field MRI, CT and hybrid PET/CT/MR in both preclincal and clincal settings, with the aim of improving decision-making and patient care. 
+A visual representation learning system is determined by three key factors: network architecture chosen, training methods, and data [@woo2023convnext]. Our combination of fastai, MONAI Core, and TorchIO into fastMONAI with custom modules like MedDataset makes it possible to easily construct, use and train powerful models for a range of medical imaging tasks, using all the best practices and domain-specific features incorporated into these three libraries. The library is developed at The Mohn Medical Imaging and Visualization Centre (MMIV), which is part of the Department of Radiology at Haukeland University Hospital . One of the center's key objectives is to develop new quantitative methods for high field MRI, CT and hybrid PET/CT/MR in both preclincal and clincal settings, with the aim of improving decision-making and patient care. fastMONAI can ease the entry of new practitioners into medical AI and make it possible to quickly construct good baseline models (that can be further optimized by going deeper into the underlying libraries <-- kan dette faa det til aa virke som en tynn wrapper?). 
 
 ## The software: PyTorch, fastai, MONAI, and torchIO
 
-![](paper_files/diagram.png)
-<br>
-<b> Figure 1: </b> Overview of the components in fastMONAI and their connections to underlying libraries. 
+![ Overview of the components in fastMONAI and their connections to underlying libraries](paper_files/diagram.png)
 
 ## Applications
 
@@ -70,7 +62,7 @@ from fastMONAI.vision_all import *
 
 #### Download external data
 
-For this task, we will download the MedMNIST lung nodule data with corresponding labels (bening or malignant).
+For this task, we will download the MedMNIST lung nodule data with corresponding labels, indicating whetere the nodules are benign (b) or malignant (m).
 We will download the data with the following line of code:  
 
 ```
@@ -81,23 +73,20 @@ df, _ = download_NoduleMNIST3D(max_workers=8)
 
 Let's look at how the processed DataFrame is formatted:
 
-
 ```
 df.head(2)
-#print(df.head(2).to_markdown())
 ```
 
-    |    | img_path                                           |   labels | is_val   |
-    |---:|:---------------------------------------------------|---------:|:---------|
-    |  0 | ../data/NoduleMNIST3D/train_images/0_nodule.nii.gz |        0 | False    |
-    |  1 | ../data/NoduleMNIST3D/train_images/1_nodule.nii.gz |        1 | False    |
+|                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
+|----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
+| ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
+|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
 
 
 Before feeding the data into a model, we must create a `DataLoaders` object for our dataset. There are several ways to get the data in `DataLoaders`. 
 In the following line, we call the ` ImageDataLoaders.from_df` factory method, which is the most basic way of building a `DataLoaders`. 
 
 Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, voxel spacing `resample`, some transforms `item_tfms`, and the batch size `bs`. 
-
 
 ```
 #TODO:skal vi lage en funksjon som heter get_item_tfms?
@@ -108,35 +97,25 @@ dls = MedImageDataLoaders.from_df(df, fn_col='img_path',
                                   bs=64)
 ```
 
-We can now take a look at a batch of images in the training set using `show_batch`:
-
+We can now take a look at a batch of images in the training set using `show_batch` :
 
 ```
 dls.show_batch(max_n=2, anatomical_plane=2, figsize=(3,3))
 ```
-
-
     
-![png](paper_files/output_22_0.png)
-    
-
+![](output_22_0.png) 
 
 Class imbalance is a common challenge in medical datasets:
 
-
 ```
-df.loc[~df.is_val].labels.value_counts().plot(kind='bar', color=['C0', 'C1'], title='Train',figsize=(3,3));
+df.labels.value_counts().to_frame()
 ```
-
-
-    
-![png](paper_files/output_24_0.png)
-    
-
-
+|   | labels |
+|--:|-------:|
+| b |    986 |
+| m |    337 |
 
 Balanced weight is a simple technique for addressing imbalanced classification models. It adjusts the loss function of the model so that misclassifying the minority class is more heavily penalized than misclassifying the majority class. 
-
 
 ```
 from sklearn.utils.class_weight import compute_class_weight
@@ -146,17 +125,12 @@ weights = torch.Tensor(compute_class_weight(class_weight='balanced', classes=np.
 weights
 ```
 
-
-
-
     tensor([0.6709, 1.9627])
-
 
 
 #### Create and train a 3D model 
 
 Next, we import a classification network from MONAI and define the input image size, number of classes to predict, channels, etc.  
-
 
 ```
 from monai.networks.nets import Classifier
@@ -177,17 +151,17 @@ Then we can create a `Learner`, which is a fastai object that combines the data 
 learn = Learner(dls, model,loss_func=loss_func, metrics=accuracy)
 ```
 
-
 ```
 learn.fit_one_cycle(4) 
 ```
 
-| **epoch** | **train_loss** | **valid_loss** | **accuracy** | **time** |
-|-----------|----------------|----------------|--------------|----------|
-| 0         | 0.574150       | 0.560387       | 0.780303     | 00:02    |
-| 1         | 0.504112       | 0.607119       | 0.708333     | 00:02    |
-| 2         | 0.468238       | 0.489194       | 0.810606     | 00:02    |
-| 3         | 0.431902       | 0.486778       | 0.806818     | 00:02    |
+| epoch | train_loss | valid_loss | accuracy |  time |
+|------:|-----------:|-----------:|---------:|------:|
+|     0 |   0.558127 |   0.492626 | 0.784091 | 00:03 |
+|     1 |   0.502645 |   0.613959 | 0.814394 | 00:03 |
+|     2 |   0.454238 |   0.525642 | 0.799242 | 00:02 |
+|     3 |   0.411663 |   0.516351 | 0.814394 | 00:02 |
+
 
 With the model trained, let's look at some predictions on the validation data.
 
@@ -198,8 +172,7 @@ With the model trained, let's look at some predictions on the validation data.
 learn.show_results(max_n=2, anatomical_plane=2, figsize=(3,3)) 
 ```
 
-    
-![png](paper_files/output_35_2.png)
+![](output_35_2.png)
     
 
 
@@ -218,34 +191,26 @@ interp = ClassificationInterpretation.from_learner(learn)
 ```
 interp.plot_confusion_matrix(figsize=(3,3))
 ```
-
     
-![png](paper_files/output_40_2.png)
+![](output_40_2.png)
     
-
-
-
 ```
 interp.plot_top_losses(k=2, anatomical_plane=2, figsize=(4,4))
 ```
-
     
-![png](paper_files/output_41_2.png)
+![](output_41_2.png)
     
-
 
 #### Test-time augmentation
 
 Test-time augmentation (TTA) is a technique where you apply transforms used during traing when making predictions to produce average output.  
-
 
 ```
 preds, targs = learn.tta(n=4); 
 accuracy(preds, targs)
 ```
 
-    TensorBase(0.8106)
-
+    TensorBase(0.8258)
 
 
 ### Semantic segmentation
@@ -258,13 +223,6 @@ path = Path('../data')
 STUDY_DIR = download_ixi_tiny(path=path)
 ```
 
-    Root directory for IXITiny found: ../data/IXITiny
-    2023-01-25 16:29:29,874 - INFO - Expected md5 is None, skip md5 check for file ../data/IXITiny/IXI.xls.
-    2023-01-25 16:29:29,874 - INFO - File exists: ../data/IXITiny/IXI.xls, skipped downloading.
-    Preprocessing ../data/IXITiny/IXI.xls
-
-
-
 ```
 df = pd.read_csv(STUDY_DIR/'dataset.csv')
 ```
@@ -272,13 +230,11 @@ df = pd.read_csv(STUDY_DIR/'dataset.csv')
 
 ```
 df.head(2)
-#print(df.head(2).to_markdown())
 ```
-
-    |    | t1_path                                             | subject_id   | gender   |   age_at_scan | labels                                              |
-    |---:|:----------------------------------------------------|:-------------|:---------|--------------:|:----------------------------------------------------|
-    |  0 | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz | IXI002       | F        |         35.8  | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
-    |  1 | ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz   | IXI012       | M        |         38.78 | ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz   |
+|                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
+|----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
+| ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
+|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
 
 
 `MedDataset` is a class to extract and present information about your dataset.
@@ -296,13 +252,10 @@ data_info_df = med_dataset.summary()
 
 ```
 data_info_df.head()
-#print(data_info_df.head().to_markdown())
 ```
-
-    |    |   dim_0 |   dim_1 |   dim_2 |   voxel_0 |   voxel_1 |   voxel_2 | orientation   | example_path                                        |   total |
-    |---:|--------:|--------:|--------:|----------:|----------:|----------:|:--------------|:----------------------------------------------------|--------:|
-    |  0 |      44 |      55 |      83 |      4.13 |      3.95 |      2.18 | RAS+          | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     566 |
-
+| dim_0 | dim_1 | dim_2 | voxel_0 | voxel_1 | voxel_2 | orientation | example_path |                                               total |     |
+|------:|------:|------:|--------:|--------:|--------:|------------:|-------------:|----------------------------------------------------:|-----|
+|    44 |    55 |    83 |    4.13 |    3.95 |    2.18 |        RAS+ |         RAS+ | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz | 566 |
 
 
 ```
@@ -310,11 +263,7 @@ resample, reorder = med_dataset.suggestion()
 resample, reorder
 ```
 
-
-
-
     ([4.13, 3.95, 2.18], True)
-
 
 
 Get the largest image size in the dataset with resampling (note that some network architecure requires the tensor to be divisible by 16)
@@ -325,16 +274,10 @@ img_size = med_dataset.get_largest_img_size(resample=resample)
 img_size
 ```
 
-
-
-
     [44.0, 55.0, 83.0]
 
-
-
-
 ```
-size = [48, 48, 80] #TODO noodvendig aa skrive noe mer?
+size = [48, 48, 96] #TODO noodvendig aa skrive noe mer?
 ```
 
 In fastMONAI, various data augmentation techniques are available for traning vision models, and they can also be optionaly applied during infrence using TTA (as we have seen earlier). 
@@ -373,22 +316,17 @@ dls = dblock.dataloaders(df, bs=8)
 
 
 ```
-dls.show_batch(max_n=2, anatomical_plane=2, unique=True, figsize=(4,4))
+dls.show_batch(max_n=2, anatomical_plane=2, figsize=(3,3))
 ```
-
-
     
-![png](paper_files/output_65_0.png)
+![](output_64_0.png)
     
 
 ```
 len(dls.train_ds.items), len(dls.valid_ds.items)
 ```
 
-
     (438, 109)
-
-
 
 You can import various models and loss functions directly from MONAI Core as shown below: 
 
@@ -425,26 +363,20 @@ Rule of thumb to pick a learning rate:
 lr = learn.lr_find()
 ```
 
-![png](paper_files/output_73_2.png)
+![](output_72_2.png)){ width=50% }
     
 
 ```
 learn.fit_one_cycle(2, lr.valley)
 ```
-
-
-| **epoch** | **train_loss** | **valid_loss** | **binary_dice_score** | **binary_hausdorff_distance** | **time**  |
-|-------|------------|------------|-------------------|---------------------------|-------|
-| 0     | 0.501980   | 0.397331   | 0.940906          | 6.385881                  | 00:14 |
-| 1     | 0.408582   | 0.367837   | 0.958166          | 4.693974                  | 00:14 |
+| epoch | train_loss | valid_loss | binary_dice_score | binary_hausdorff_distance |  time |
+|------:|-----------:|-----------:|------------------:|--------------------------:|------:|
+|     0 |   0.565165 |   0.466575 |          0.938850 |                  6.541877 | 00:15 |
+|     1 |   0.476818 |   0.438293 |          0.950237 |                  5.072196 | 00:15 |
 
 ```
 learn.save('model-1')
 ```
-
-    Path('models/model-1.pth')
-
-
 
 Export model and share both the trained weights and the learner on Hugginface (https://huggingface.co/docs/hub/repositories-getting-started) and use git tag for marked version release (TODO:kun gjort repo.add_tag()). Version control for shared models is important for tracking changes and be able to to roll back to previous versions if there are any issues with the latest model in production. 
 
@@ -485,12 +417,7 @@ _, reorder, resample = load_variables(pkl_fn=models_path/'vars.pkl')
 reorder, resample
 ```
 
-
-
-
     (True, [4.4, 0.78, 0.78])
-
-
 
 
 ```
@@ -506,12 +433,12 @@ pred_fn = inference(learner, reorder, resample, img_fn, save_path=STUDY_DIR)
 from torchio import Subject, ScalarImage, LabelMap
 
 subject = Subject(image=ScalarImage(img_fn), mask=LabelMap(pred_fn))
-subject.plot(figsize=(8,5))
 ```
-    
-![png](paper_files/output_87_0.png)
-    
 
+
+    
+![](output_86_0.png)
+    
 
 ## Documentation, usability, and maintainability
 

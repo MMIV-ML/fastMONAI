@@ -46,11 +46,10 @@ class MedDataset():
         pool = mp.Pool(self.max_workers)
         data_info_dict = pool.map(self._get_data_info, self.img_list)
         
-        
-        # close the pool
+        # close the process pool
         pool.close()
 
-        # wait for the worker processes to exit
+        # wait for all tasks to complete and processes to close
         pool.join()
 
         df = pd.DataFrame(data_info_dict)
