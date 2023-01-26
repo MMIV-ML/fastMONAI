@@ -360,7 +360,7 @@ Rule of thumb to pick a learning rate:
 lr = learn.lr_find()
 ```
 
-![](paper_files/output_72_2.png)){ width=50% }
+![](paper_files/output_72_2.png){ width=50% }
     
 
 ```
@@ -432,8 +432,6 @@ from torchio import Subject, ScalarImage, LabelMap
 subject = Subject(image=ScalarImage(img_fn), mask=LabelMap(pred_fn))
 ```
 
-
-    
 ![](paper_files/output_86_0.png)
     
 
