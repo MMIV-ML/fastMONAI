@@ -61,13 +61,424 @@ After installing the library, the first step is to import the necessary function
 from fastMONAI.vision_all import *
 ```
 
-- - - -
+
+### Downloading external data
+
+To demonstrate the use of fastMONAI, we download the MedMNIST lung nodule data with corresponding labels, indicating whether the nodules are benign (b) or malignant (m):
+
+
 ```python
-x = [1, 2, 3]
+df, _ = download_NoduleMNIST3D(max_workers=8)
 ```
-- - - -
 
 
+### Inspecting the data
+
+Let's look at how the processed DataFrame is formatted:
+
+
+```python
+df.head(1)
+```
+
+
+|                                           img_path | labels | is_val |
+|---------------------------------------------------:|-------:|-------:|
+| ../data/NoduleMNIST3D/train_images/0_nodule.nii.gz |      b |  False |
+
+
+Before feeding the data into a model, we must create a `DataLoaders` object for our dataset. There are several ways to get the data in `DataLoaders`. 
+In the following line, we call the ` ImageDataLoaders.from_df` factory method, which is the most basic way of building a `DataLoaders`. 
+
+Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, voxel spacing `resample`, some transforms `item_tfms`, and the batch size `bs`. 
+
+
+```python
+#TODO flytte ut
+def get_item_tfms(size, degrees=5): 
+    return [ZNormalization(), PadOrCrop(size=size), 
+            RandomAffine(degrees=degrees, isotropic=True)]
+```
+
+
+
+```python
+dls = MedImageDataLoaders.from_df(df, fn_col='img_path', 
+                                  label_col='labels', 
+                                  item_tfms=get_item_tfms(size=28, degrees=35), 
+                                  resample=1,
+                                  bs=64)
+```
+
+
+
+We can now take a look at a batch of images in the training set using `show_batch` :
+
+
+```python
+dls.show_batch(max_n=2, anatomical_plane=2)
+```
+
+
+    
+![](paper_files/output_23_0.png){ width=40% }
+    
+
+
+_Class imbalance_ is a common challenge in medical datasets, and it is something we're facing in our example data set:
+
+
+```python
+df.labels.value_counts()
+```
+
+    b    986
+    m    337
+
+
+There are multiple ways to deal with class imbalance. A straightforward technique is to use balancing weights in the model's loss function, i.e., penalizing misclassifications for instances belonging to the minority class more heavily than those of the majority class. 
+
+
+```python
+from sklearn.utils.class_weight import compute_class_weight
+
+y_train = df.loc[~df.is_val].labels
+weights = torch.Tensor(compute_class_weight(class_weight='balanced', 
+                                            classes=np.unique(y_train),
+                                            y=y_train.values.reshape(-1)))
+weights
+```
+
+    tensor([0.6709, 1.9627])
+
+
+We're now ready to construct a deep learning classification model. 
+
+### Create and train a 3D deep learning model
+
+We import a classification network from MONAI and configure it based on our task, including defining the input image size, the number of classes to predict, channels, etc.  
+
+
+```python
+from monai.networks.nets import Classifier
+
+model = Classifier(in_shape=[1, 28, 28, 28], classes=2, 
+                   channels=(8, 16, 32),strides=(2, 2, 2, 2))
+```
+
+
+```python
+loss_func = CrossEntropyLossFlat(weight=weights)
+```
+
+
+Then we create a `Learner`, which is a fastai object that combines the data and our defined model for training.
+
+
+```python
+learn = Learner(dls, model,loss_func=loss_func, metrics=accuracy)
+```
+
+
+
+```python
+learn.fit_one_cycle(4) 
+```
+
+
+| epoch | train_loss | valid_loss | accuracy |  time |
+|------:|-----------:|-----------:|---------:|------:|
+|     0 |   0.591324 |   0.530592 | 0.776515 | 00:04 |
+|     1 |   0.540495 |   0.490810 | 0.776515 | 00:02 |
+|     2 |   0.483361 |   0.493118 | 0.803030 | 00:02 |
+|     3 |   0.445119 |   0.495560 | 0.787879 | 00:02 |
+
+
+
+> **Note:** Small random variations are involved in training CNN models. Hence, when running the notebook, you may see different results.
+
+With the model trained, let's look at some predictions on the validation data. The `show_results` method plots instances, their target values, and their corresponding predictions from the model.
+
+
+```python
+learn.show_results(max_n=2, anatomical_plane=2) 
+```
+
+
+    
+![](paper_files/output_38_2.png){ width=40% }
+    
+
+### Model evaluation and interpretation
+
+Let's look at how often and for what instances our trained model becomes confused while making predictions on the validation data:
+
+
+```python
+interp = ClassificationInterpretation.from_learner(learn)
+```
+
+
+```pyhton
+interp.plot_confusion_matrix()
+```
+
+    
+![](paper_files/output_42_2.png){ width=40% }
+    
+
+
+Here are the two instances our model was most confused about (in other words, most confident but wrong):
+
+
+```python
+interp.plot_top_losses(k=2, anatomical_plane=2)
+```
+
+
+    
+![](paper_files/output_44_2.png){ width=40% }
+    
+
+
+### Improving results using test-time augmentation
+
+Test-time augmentation (TTA) is a technique where you apply data augmentation transforms when making predictions to produce average output. In addition to often yielding better performance, the variation in the output of the TTA runs can provide some measure of its robustness and sensitivity to augmentations. 
+
+
+```pyhton
+preds, targs = learn.tta(n=4); 
+accuracy(preds, targs)
+```
+
+    TensorBase(0.8106)
+
+
+
+## Semantic segmentation
+
+In the following, we look at another computer vision task while also taking a closer look at the fastMONAI library. Our task will be _semantic segmentation_, and we'll use the IXI Tiny dataset (a small version of the IXI dataset). In semantic segmentation, a class label is assigned to each pixel or voxel in an image, in this case, distinguishing brain tissue from non-brain tissue, i.e., skull-stripping or brain extraction. 
+
+
+```pyhton
+path = Path('../data')
+STUDY_DIR = download_ixi_tiny(path=path)
+```
+
+
+
+```python
+df = pd.read_csv(STUDY_DIR/'dataset.csv')
+```
+
+
+### Inspecting the data
+
+The fastMONAI class `MedDataset` can automatically extract and present valuable information about your dataset:
+
+
+```python
+med_dataset = MedDataset(path=STUDY_DIR/'image', reorder=True, max_workers=6)
+```
+
+
+
+```python
+data_info_df = med_dataset.summary()
+```
+
+
+
+```python
+data_info_df.head()
+```
+
+| dim_0 | dim_1 | dim_2 | voxel_0 | voxel_1 | voxel_2 | orientation | example_path |                                               total |     |
+|------:|------:|------:|--------:|--------:|--------:|------------:|-------------:|----------------------------------------------------:|-----|
+|    44 |    55 |    83 |    4.13 |    3.95 |    2.18 |        RAS+ |         RAS+ | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz | 566 |
+
+
+
+
+```python
+resample, reorder = med_dataset.suggestion()
+resample, reorder
+```
+
+
+    ([4.13, 3.95, 2.18], True)
+
+
+
+We can get the largest image size in the dataset with resampling (note that some network architectures requires the tensor to be divisible by 16):
+
+
+```python
+img_size = med_dataset.get_largest_img_size(resample=resample)
+img_size
+```
+
+    [44.0, 55.0, 83.0]
+    
+
+
+```python
+size = [48, 48, 96]
+```
+
+
+### Data augmentation
+
+In fastMONAI, various data augmentation techniques are available for training vision models, and they can also optionally be applied during inference using TTA (as we have seen earlier). 
+
+Data augmentation is a vital regularization technique in training vision models, which aims to expand the diversity of a given dataset by performing random, realistic transformations such as rotation, zoom, and others). The following code cell shows the utilization of a few of these transformations. The complete list of available augmentations in the library can be found at https://fastmonai.no/vision_augment.
+
+
+```python
+item_tfms = [ZNormalization(), PadOrCrop(size), 
+             RandomAffine(scales=0.1, degrees=5, p=0.5), RandomFlip(p=0.5)] 
+```
+
+### Loading the data
+
+As we mentioned earlier, there are several ways to get the data in `DataLoaders`. In this section, let's build the data loaders using `DataBlock`. 
+Here we need to define what our input and target should be (`MedImage` and `MedMaskBlock` for segmentation), how to get the images and the labels, how to split the data, item transforms that should be applied during training, reorder voxel orientations, and voxel spacing. Take a look at fastai's documentation for DataBlock for further information: [https://docs.fast.ai/data.block.html#DataBlock](https://docs.fast.ai/data.block.html#DataBlock).
+
+> **NB:** It is crucial to select an appropriate splitting strategy. For example, one should, in general, avoid having data from the same patient in both the training and the validation or test set. However, in the IXI data set this is not an issue, as there is only one image per patient.
+
+
+```python
+dblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), MedMaskBlock), 
+                      splitter=RandomSplitter(valid_pct=0.2, seed=42),
+                      get_x=ColReader('t1_path'),
+                      get_y=ColReader('labels'),
+                      item_tfms=item_tfms,
+                      reorder=reorder,
+                      resample=resample) 
+```
+
+
+
+Now we pass our processed DataFrame and the batch size (bs) to create a `DataLoaders` object:
+
+
+```python
+dls = dblock.dataloaders(df, bs=8)
+```
+
+```python
+dls.show_batch(max_n=2, anatomical_plane=2)
+```
+
+    
+![](paper_files/output_69_0.png){ width=40% }
+    
+
+
+
+```python
+len(dls.train_ds.items), len(dls.valid_ds.items)
+```
+
+
+    (438, 109)   
+    
+### Network architectures and loss functions
+
+You can import various models and loss functions directly from MONAI Core, as shown below: 
+
+
+```python
+from monai.networks.nets import UNet, AttentionUnet
+from monai.losses import DiceLoss, DiceFocalLoss
+```
+
+
+
+```python
+#model = UNet(spatial_dims=3, in_channels=1, out_channels=1, 
+#               channels=(16, 32, 64, 128), strides=(2, 2, 2), 
+#               num_res_units=2)
+
+model = AttentionUnet(spatial_dims=3, in_channels=1, out_channels=1, 
+                channels=(16, 32, 64, 128), strides=(2, 2, 2))
+```
+
+
+
+```python
+loss_func = CustomLoss(loss_func=DiceFocalLoss(sigmoid=True))
+```
+
+
+
+```python
+learn = Learner(dls, model, loss_func=loss_func, opt_func=ranger, 
+                metrics=[binary_dice_score, binary_hausdorff_distance])
+```
+
+
+### Finding a good learning rate
+
+We used the default learning rate before, but we might want to find a better value. For this, we can use the learning rate finder of fastai:
+
+
+```python
+lr = learn.lr_find()
+```
+
+    
+![](paper_files/output_79_2.png){ width=50% }
+    
+
+
+### Training the model
+
+Now we can train the model. We again use the one-cycle learning rate policy:
+
+
+```python
+learn.fit_one_cycle(2, lr.valley)
+```
+
+
+| epoch | train_loss | valid_loss | binary_dice_score | binary_hausdorff_distance |  time |
+|------:|-----------:|-----------:|------------------:|--------------------------:|------:|
+|     0 |   0.565980 |   0.466951 |          0.940546 |                  6.440546 | 00:15 |
+|     1 |   0.477293 |   0.438608 |          0.950276 |                  5.074091 | 00:15 |
+
+
+
+
+```python
+learn.save('model-1')
+```
+
+
+
+### Exporting and sharing models
+
+We can export the model and share both the trained weights and the learner on HuggingFace (https://huggingface.co/docs/hub/repositories-getting-started) and use git tag for marked version release (TODO:kun gjort repo.add_tag()). Version control for shared models is essential for tracking changes and being able to roll back to previous versions if there are any issues with the latest model in production.  
+
+
+```python
+learn.export('models/export.pkl')
+store_variables(pkl_fn='models/vars.pkl', size=size, 
+                reorder=reorder, resample=resample)
+```
+
+
+# Documentation, usability, and maintainability
+
+We have written the entire fastMONAI library using nbdev, a tool for exploratory programming that allows you to write, test, and document a Python library in Jupyter Notebooks. fastMONAI contains several practical tools to ensure the software's user-friendliness. 
+
+fastMONAI comes with a documentation page ([https://fastmonai.no](https://fastmonai.no)) and step-by-step tutorials on how to use the software for various medical imaging tasks (e.g., classification, regression, and segmentation). Tests are written directly in notebooks, and continuous integration with GitHub Actions runs the tests on each push, making software development easier with multiple collaborators. 
+
+To ease further extensions of our library through contributions, we have added a short guide on how to contribute to the project. As mentioned, this paper is written as a notebook and automatically converted to a markdown file. The latest version is always available on GitHub. 
+
+# Research projects using fastMONAI
+
+The fastMONAI library has been used for various medical imaging tasks, including predicting brain age using T1-weighted scans in [@kaliyugarasan2020brain], skull-stripping in [@kaliyugarasan20202d], pulmonary nodule classification from CT images in [@kaliyugarasan2021pulmonary], and tumor segmentation in cervical cancer from multi-parametric pelvic MRI in [@hodneland2022fully]. Recently, it was also used for vertebra segmentation in a multi-center study [@kaliyugarasan2023spine]. 
 
 # Acknowledgments
 
