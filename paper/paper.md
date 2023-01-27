@@ -52,5 +52,19 @@ A visual representation learning system is determined by three key factors: netw
 
 In this section, we will explore how to use our library. In fastMONAI's online documentation (https://fastmonai.no/), multiple tutorials cover classification, regression, and segmentation tasks. 
 
+## Classification
+
+After installing the library, the first step is to import the necessary functions and classes. For example, the following line imports all of the functions and classes from the fastMONAI library: 
+
+---
+```python
+from fastMONAI.vision_all import *
+```
+---
+
+
+# Acknowledgments
+
+The Trond Mohn Research Foundation supported our work through the project _“Computational medical imaging and machine learning - methods, infrastructure and applications”_ at the Mohn Medical Imaging and Visualization Centre, grant number BFS2018TMT07, and a grant from the Western Norway Regional Health Authority (Helse Vest RHF), project F-12532.
 
 # References
