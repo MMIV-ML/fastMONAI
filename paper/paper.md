@@ -56,11 +56,10 @@ In this section, we will explore how to use our library. In fastMONAI's online d
 
 After installing the library, the first step is to import the necessary functions and classes. For example, the following line imports all of the functions and classes from the fastMONAI library: 
 
----
+
 ```python
 from fastMONAI.vision_all import *
 ```
----
 
 
 # Acknowledgments
