@@ -47,7 +47,7 @@ A visual representation learning system is determined by three key factors: netw
 
 ![Overview of the components in fastMONAI and their connections to underlying libraries](paper_files/diagram.png)
 <br>
-<b> Figure 1: </b> Overview of the components in fastMONAI and their connections to underlying libraries. 
+**Figure 1:** Overview of the components in fastMONAI and their connections to underlying libraries. 
 
 ## Applications
 
@@ -62,7 +62,7 @@ The following line imports all of the functions and classes from the fastMONAI l
 from fastMONAI.vision_all import *
 ```
 
-<b> Download external data </b>
+***Download external data***
 
 For this task, we will download the MedMNIST lung nodule data with corresponding labels, indicating whetere the nodules are benign (b) or malignant (m).
 We will download the data with the following line of code:  
@@ -72,21 +72,18 @@ We will download the data with the following line of code:
 df, _ = download_NoduleMNIST3D(max_workers=8)
 ```
 
-<b> Inspect the data </b>
+***Inspect the data***
 
 Let's look at how the processed DataFrame is formatted:
 
 
 ```python
-df.head(2)
+df.head(1)
 ```
 
-|                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
-|----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
-| ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
-|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
-
-
+|                                           img_path | labels | is_val |
+|---------------------------------------------------:|-------:|-------:|
+| ../data/NoduleMNIST3D/train_images/0_nodule.nii.gz |      b |  False |
 
 Before feeding the data into a model, we must create a `DataLoaders` object for our dataset. There are several ways to get the data in `DataLoaders`. 
 In the following line, we call the ` ImageDataLoaders.from_df` factory method, which is the most basic way of building a `DataLoaders`. 
@@ -97,7 +94,8 @@ Here, we pass the processed DataFrame, define the columns for the images `fn_col
 ```python
 #TODO flytte ut
 def get_item_tfms(size, degrees=5): 
-    return [ZNormalization(), PadOrCrop(size=size), RandomAffine(degrees=degrees, isotropic=True)]
+    return [ZNormalization(), PadOrCrop(size=size), 
+            RandomAffine(degrees=degrees, isotropic=True)]
 ```
 
 
@@ -118,7 +116,7 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 
 
     
-![](paper_files/output_23_0.png){ width=50% }
+![](paper_files/output_23_0.png){ width=40% }
     
 
 
@@ -133,9 +131,6 @@ df.labels.value_counts()
     m    337
 
 
-
-
-
 Balanced weight is a simple technique for addressing imbalanced classification models. It adjusts the loss function of the model so that misclassifying the minority class is more heavily penalized than misclassifying the majority class. 
 
 
@@ -143,18 +138,16 @@ Balanced weight is a simple technique for addressing imbalanced classification m
 from sklearn.utils.class_weight import compute_class_weight
 
 y_train = df.loc[~df.is_val].labels
-weights = torch.Tensor(compute_class_weight(class_weight='balanced', classes=np.unique(y_train),y=y_train.values.reshape(-1)))
+weights = torch.Tensor(compute_class_weight(class_weight='balanced',
+                                            classes=np.unique(y_train),
+                                            y=y_train.values.reshape(-1)))
 weights
 ```
-
-
-
 
     tensor([0.6709, 1.9627])
 
 
-
-<b> Create and train a 3D model </b>
+***Create and train a 3D model***
 
 Next, we import a classification network from MONAI and define the input image size, number of classes to predict, channels, etc.  
 
@@ -200,13 +193,13 @@ learn.show_results(max_n=2, anatomical_plane=2)
 ```
 
     
-![](paper_files/output_36_2.png){ width=50% }
+![](paper_files/output_36_2.png){ width=40% }
     
 
 
 Showing samples with target value and their corresponding predictions (target|predicition). 
 
-<b> Interpretation </b>
+***Interpretation***
 
 Let's look at where our trained model becomes confused while making predictions on the validation data:
 
@@ -221,7 +214,7 @@ interp.plot_confusion_matrix()
 ```
 
     
-![](paper_files/output_41_2.png){ width=50% }
+![](paper_files/output_41_2.png){ width=40% }
     
 
 
@@ -231,11 +224,11 @@ interp.plot_top_losses(k=2, anatomical_plane=2)
 ```
 
     
-![](paper_files/output_42_2.png){ width=50% }
+![](paper_files/output_42_2.png){ width=40% }
     
 
 
-<b> Test-time augmentation </b>
+***Test-time augmentation***
 
 Test-time augmentation (TTA) is a technique where you apply transforms used during traing when making predictions to produce average output.  
 
@@ -264,7 +257,7 @@ STUDY_DIR = download_ixi_tiny(path=path)
 df = pd.read_csv(STUDY_DIR/'dataset.csv')
 ```
 
-<b> Inspect the data ... </b>
+***Inspect the data ...***
 
 `MedDataset` is a class to extract and present information about your dataset.
 
@@ -318,7 +311,7 @@ img_size
 size = [48, 48, 96]
 ```
 
-<b> Data augmentation </b>
+***Data augmentation***
 
 In fastMONAI, various data augmentation techniques are available for traning vision models, and they can also be optionaly applied during infrence using TTA (as we have seen earlier). 
 
@@ -330,12 +323,12 @@ item_tfms = [ZNormalization(), PadOrCrop(size),
              RandomAffine(scales=0.1, degrees=5, p=0.5), RandomFlip(p=0.5)] 
 ```
 
-<b> Load the data (TODO) </b>
+***Load the data (TODO)***
 
 As we mentioned earlier, there are several ways to get the data in `DataLoaders`. In this section, let's rebuild using `DataBlock`. 
 Here we need to define what our input and target should be (`MedImage` and `MedMaskBlock` for segmentation), how to get the images and the labels, how to split the data, item transforms that should be applied during training, reorder voxel orientations, and voxel spacing. Take a look at fastai's documentation for DataBlock for further information: [https://docs.fast.ai/data.block.html#DataBlock](https://docs.fast.ai/data.block.html#DataBlock).
 
-<b>NB:</b> It is important to select the method of splitting carefully. One potential issue to consider is patient overlap, which can occur when the same patient's data is present in both the training and validation/testing sets (TODO:cite?). In the IXI dataset (used in this section), we do not need to consider the possibility of patient overlap as there is only one image per patient.
+**NB:** It is important to select the method of splitting carefully. One potential issue to consider is patient overlap, which can occur when the same patient's data is present in both the training and validation/testing sets (TODO:cite?). In the IXI dataset (used in this section), we do not need to consider the possibility of patient overlap as there is only one image per patient.
 
 
 ```python
@@ -363,7 +356,7 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 
 
     
-![](paper_files/output_67_0.png){ width=50% }
+![](paper_files/output_67_0.png){ width=40% }
     
 
 
@@ -371,12 +364,11 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 ```python
 len(dls.train_ds.items), len(dls.valid_ds.items)
 ```
-
     (438, 109)
 
 
 
-<b> Network architectures and loss functions </b>
+***Network architectures and loss functions***
 
 You can import various models and loss functions directly from MONAI Core as shown below: 
 
@@ -388,10 +380,12 @@ from monai.losses import DiceLoss, DiceFocalLoss
 
 
 ```python
-#model = UNet(spatial_dims=3, in_channels=1, out_channels=1, channels=(16, 32, 64, 128),strides=(2, 2, 2), num_res_units=2)
-model = AttentionUnet(spatial_dims=3, in_channels=1, out_channels=1, channels=(16, 32, 64, 128),strides=(2, 2, 2))
-```
+# model = UNet(spatial_dims=3, in_channels=1, out_channels=1,
+#              channels=(16, 32, 64, 128),strides=(2, 2, 2), num_res_units=2)
 
+model = AttentionUnet(spatial_dims=3, in_channels=1, out_channels=1,
+                      channels=(16, 32, 64, 128),strides=(2, 2, 2))
+```
 
 ```python
 loss_func = CustomLoss(loss_func=DiceFocalLoss(sigmoid=True))
@@ -400,10 +394,10 @@ loss_func = CustomLoss(loss_func=DiceFocalLoss(sigmoid=True))
 
 ```python
 learn = Learner(dls, model, loss_func=loss_func, opt_func=ranger, metrics=[binary_dice_score, binary_hausdorff_distance])
-# learn.summary() #Summary of the learner, including total number of trainable parameters. 
+# learn.summary()
 ```
 
-<b> Learning rate finder </b>
+***Learning rate finder***
 
 We used the default learning rate before, but we might want to find an optimal value. For this, we can use the learning rate finder. 
 Rule of thumb to pick a learning rate: 
@@ -436,43 +430,15 @@ learn.save('model-1')
 ```
 
 
-<b> Export and share models </b>
+***Export and share models***
 
 Export model and share both the trained weights and the learner on Hugginface (https://huggingface.co/docs/hub/repositories-getting-started) and use git tag for marked version release (TODO:kun gjort repo.add_tag()). Version control for shared models is important for tracking changes and be able to to roll back to previous versions if there are any issues with the latest model in production. 
 
 
 ```python
 learn.export('models/export.pkl')
-store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)
-```
-
-
-```
-#DEV: start(alternatives)
-```
-
-<code>learn.export('models/export.pkl')
-store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)</code>
-
-<div style="background-color: rgb(232,232,232);">
-
-```python
-learn.export('models/export.pkl')
-store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)
-```
-
-</div>
-
-<div class="alert alert-secondary"> 
-    
-    learn.export('models/export.pkl')
-    store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)
-
-</div>
-
-
-```
-#DEV: end(alternatives) #alert alert-dark
+store_variables(pkl_fn='models/vars.pkl', size=size,
+                reorder=reorder, resample=resample)
 ```
 
 ## Documentation, usability, and maintainability

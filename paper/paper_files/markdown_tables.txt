@@ -1,9 +1,8 @@
-|                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
-|----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
-| ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
-|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
 
 
+|                                           img_path | labels | is_val |
+|---------------------------------------------------:|-------:|-------:|
+| ../data/NoduleMNIST3D/train_images/0_nodule.nii.gz |      b |  False |
 
 
 
