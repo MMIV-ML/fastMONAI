@@ -25,7 +25,6 @@ bibliography: paper.bib
 ---
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
 
-
 ## Summary
 
 In this work, we present <b>fastMONAI</b>, a low-code Python-based open source deep learning library built on top of fastai [@howard2020fastai; @howard2020deep], MONAI [@monai], and TorchIO [@perez2021torchio]. We created the library to simplify the use of state-of-the-art deep learning techniques in 3D medical image analysis for solving classification, regression, and segmentation tasks. fastMONAI provides the users with functionalities to step through data loading, preprocessing, training, and result interpretations.
@@ -46,7 +45,9 @@ A visual representation learning system is determined by three key factors: netw
 
 ## The software: PyTorch, fastai, MONAI, and torchIO
 
-![ Overview of the components in fastMONAI and their connections to underlying libraries](paper_files/diagram.png)
+![Overview of the components in fastMONAI and their connections to underlying libraries](paper_files/diagram.png)
+<br>
+<b> Figure 1: </b> Overview of the components in fastMONAI and their connections to underlying libraries. 
 
 ## Applications
 
@@ -56,22 +57,25 @@ In this section, we will explore how to use our library. In fastMONAI's online d
 
 The following line imports all of the functions and classes from the fastMONAI library: 
 
+
 ```python
 from fastMONAI.vision_all import *
 ```
 
-#### Download external data
+<b> Download external data </b>
 
 For this task, we will download the MedMNIST lung nodule data with corresponding labels, indicating whetere the nodules are benign (b) or malignant (m).
 We will download the data with the following line of code:  
+
 
 ```python
 df, _ = download_NoduleMNIST3D(max_workers=8)
 ```
 
-#### Inspect the data
+<b> Inspect the data </b>
 
 Let's look at how the processed DataFrame is formatted:
+
 
 ```python
 df.head(2)
@@ -80,6 +84,8 @@ df.head(2)
 |                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
 |----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
 | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
+|   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
+
 
 
 Before feeding the data into a model, we must create a `DataLoaders` object for our dataset. There are several ways to get the data in `DataLoaders`. 
@@ -87,35 +93,51 @@ In the following line, we call the ` ImageDataLoaders.from_df` factory method, w
 
 Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, voxel spacing `resample`, some transforms `item_tfms`, and the batch size `bs`. 
 
+
 ```python
-#TODO:skal vi lage en funksjon som heter get_item_tfms?
+#TODO flytte ut
+def get_item_tfms(size, degrees=5): 
+    return [ZNormalization(), PadOrCrop(size=size), RandomAffine(degrees=degrees, isotropic=True)]
+```
+
+
+```python
 dls = MedImageDataLoaders.from_df(df, fn_col='img_path', 
                                   label_col='labels', 
-                                  item_tfms=[ZNormalization(), PadOrCrop(size=28), RandomAffine(degrees=35, isotropic=True)], 
+                                  item_tfms=get_item_tfms(size=28, degrees=35), 
                                   resample=1,
                                   bs=64)
 ```
 
 We can now take a look at a batch of images in the training set using `show_batch` :
 
+
 ```python
-dls.show_batch(max_n=2, anatomical_plane=2, figsize=(3,3))
+dls.show_batch(max_n=2, anatomical_plane=2)
 ```
+
+
     
-![](paper_files/output_22_0.png) 
+![](paper_files/output_23_0.png){ width=50% }
+    
 
 
 Class imbalance is a common challenge in medical datasets:
 
+
 ```python
-df.labels.value_counts().to_frame()
+df.labels.value_counts()
 ```
-|   | labels |
-|--:|-------:|
-| b |    986 |
-| m |    337 |
+
+    b    986
+    m    337
+
+
+
+
 
 Balanced weight is a simple technique for addressing imbalanced classification models. It adjusts the loss function of the model so that misclassifying the minority class is more heavily penalized than misclassifying the majority class. 
+
 
 ```python
 from sklearn.utils.class_weight import compute_class_weight
@@ -125,12 +147,17 @@ weights = torch.Tensor(compute_class_weight(class_weight='balanced', classes=np.
 weights
 ```
 
+
+
+
     tensor([0.6709, 1.9627])
 
 
-#### Create and train a 3D model 
+
+<b> Create and train a 3D model </b>
 
 Next, we import a classification network from MONAI and define the input image size, number of classes to predict, channels, etc.  
+
 
 ```python
 from monai.networks.nets import Classifier
@@ -151,16 +178,16 @@ Then we can create a `Learner`, which is a fastai object that combines the data 
 learn = Learner(dls, model,loss_func=loss_func, metrics=accuracy)
 ```
 
+
 ```python
 learn.fit_one_cycle(4) 
 ```
-
 | epoch | train_loss | valid_loss | accuracy |  time |
 |------:|-----------:|-----------:|---------:|------:|
-|     0 |   0.558127 |   0.492626 | 0.784091 | 00:03 |
-|     1 |   0.502645 |   0.613959 | 0.814394 | 00:03 |
-|     2 |   0.454238 |   0.525642 | 0.799242 | 00:02 |
-|     3 |   0.411663 |   0.516351 | 0.814394 | 00:02 |
+|     0 |   0.591324 |   0.530592 | 0.776515 | 00:04 |
+|     1 |   0.540495 |   0.490810 | 0.776515 | 00:02 |
+|     2 |   0.483361 |   0.493118 | 0.803030 | 00:02 |
+|     3 |   0.445119 |   0.495560 | 0.787879 | 00:02 |
 
 
 With the model trained, let's look at some predictions on the validation data.
@@ -169,46 +196,57 @@ With the model trained, let's look at some predictions on the validation data.
 
 
 ```python
-learn.show_results(max_n=2, anatomical_plane=2, figsize=(3,3)) 
+learn.show_results(max_n=2, anatomical_plane=2) 
 ```
 
-![](paper_files/output_35_2.png)
+    
+![](paper_files/output_36_2.png){ width=50% }
     
 
 
 Showing samples with target value and their corresponding predictions (target|predicition). 
 
-#### Interpretation
+<b> Interpretation </b>
 
 Let's look at where our trained model becomes confused while making predictions on the validation data:
+
 
 ```python
 interp = ClassificationInterpretation.from_learner(learn)
 ```
 
+
 ```python
-interp.plot_confusion_matrix(figsize=(3,3))
+interp.plot_confusion_matrix()
 ```
+
     
-![](paper_files/output_40_2.png)
-    
-```python
-interp.plot_top_losses(k=2, anatomical_plane=2, figsize=(4,4))
-```
-    
-![](paper_files/output_41_2.png)
+![](paper_files/output_41_2.png){ width=50% }
     
 
-#### Test-time augmentation
+
+
+```python
+interp.plot_top_losses(k=2, anatomical_plane=2)
+```
+
+    
+![](paper_files/output_42_2.png){ width=50% }
+    
+
+
+<b> Test-time augmentation </b>
 
 Test-time augmentation (TTA) is a technique where you apply transforms used during traing when making predictions to produce average output.  
+
 
 ```python
 preds, targs = learn.tta(n=4); 
 accuracy(preds, targs)
 ```
 
-    TensorBase(0.8258)
+    TensorBase(0.8106)
+
 
 
 ### Semantic segmentation
@@ -221,24 +259,18 @@ path = Path('../data')
 STUDY_DIR = download_ixi_tiny(path=path)
 ```
 
+
 ```python
 df = pd.read_csv(STUDY_DIR/'dataset.csv')
 ```
 
-
-```python
-df.head(2)
-```
-|                                             t1_path | subject_id | gender | age_at_scan |                                              labels |
-|----------------------------------------------------:|-----------:|-------:|------------:|----------------------------------------------------:|
-| ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz |     IXI002 |      F |       35.80 | ../data/IXITiny/label/IXI002-Guys-0828_label.nii.gz |
-
+<b> Inspect the data ... </b>
 
 `MedDataset` is a class to extract and present information about your dataset.
 
 
 ```python
-med_dataset = MedDataset(path=STUDY_DIR/'image', reorder=True, max_workers=12)
+med_dataset = MedDataset(path=STUDY_DIR/'image', reorder=True, max_workers=6)
 ```
 
 
@@ -250,9 +282,14 @@ data_info_df = med_dataset.summary()
 ```python
 data_info_df.head()
 ```
+
+
 | dim_0 | dim_1 | dim_2 | voxel_0 | voxel_1 | voxel_2 | orientation | example_path |                                               total |     |
 |------:|------:|------:|--------:|--------:|--------:|------------:|-------------:|----------------------------------------------------:|-----|
 |    44 |    55 |    83 |    4.13 |    3.95 |    2.18 |        RAS+ |         RAS+ | ../data/IXITiny/image/IXI002-Guys-0828_image.nii.gz | 566 |
+
+
+
 
 
 ```python
@@ -261,6 +298,7 @@ resample, reorder
 ```
 
     ([4.13, 3.95, 2.18], True)
+
 
 
 Get the largest image size in the dataset with resampling (note that some network architecure requires the tensor to be divisible by 16)
@@ -273,9 +311,14 @@ img_size
 
     [44.0, 55.0, 83.0]
 
+
+
+
 ```python
-size = [48, 48, 96] #TODO noodvendig aa skrive noe mer?
+size = [48, 48, 96]
 ```
+
+<b> Data augmentation </b>
 
 In fastMONAI, various data augmentation techniques are available for traning vision models, and they can also be optionaly applied during infrence using TTA (as we have seen earlier). 
 
@@ -286,6 +329,8 @@ Data augmentation is an important regualization technique in training vision mod
 item_tfms = [ZNormalization(), PadOrCrop(size), 
              RandomAffine(scales=0.1, degrees=5, p=0.5), RandomFlip(p=0.5)] 
 ```
+
+<b> Load the data (TODO) </b>
 
 As we mentioned earlier, there are several ways to get the data in `DataLoaders`. In this section, let's rebuild using `DataBlock`. 
 Here we need to define what our input and target should be (`MedImage` and `MedMaskBlock` for segmentation), how to get the images and the labels, how to split the data, item transforms that should be applied during training, reorder voxel orientations, and voxel spacing. Take a look at fastai's documentation for DataBlock for further information: [https://docs.fast.ai/data.block.html#DataBlock](https://docs.fast.ai/data.block.html#DataBlock).
@@ -313,17 +358,25 @@ dls = dblock.dataloaders(df, bs=8)
 
 
 ```python
-dls.show_batch(max_n=2, anatomical_plane=2, figsize=(3,3))
+dls.show_batch(max_n=2, anatomical_plane=2)
 ```
+
+
     
-![](paper_files/output_64_0.png)
+![](paper_files/output_67_0.png){ width=50% }
     
+
+
 
 ```python
 len(dls.train_ds.items), len(dls.valid_ds.items)
 ```
 
     (438, 109)
+
+
+
+<b> Network architectures and loss functions </b>
 
 You can import various models and loss functions directly from MONAI Core as shown below: 
 
@@ -350,6 +403,8 @@ learn = Learner(dls, model, loss_func=loss_func, opt_func=ranger, metrics=[binar
 # learn.summary() #Summary of the learner, including total number of trainable parameters. 
 ```
 
+<b> Learning rate finder </b>
+
 We used the default learning rate before, but we might want to find an optimal value. For this, we can use the learning rate finder. 
 Rule of thumb to pick a learning rate: 
 - Minimum/10 
@@ -360,20 +415,28 @@ Rule of thumb to pick a learning rate:
 lr = learn.lr_find()
 ```
 
-![](paper_files/output_72_2.png){ width=50% }
     
+![](paper_files/output_77_2.png){ width=50% }
+    
+
+
 
 ```python
 learn.fit_one_cycle(2, lr.valley)
 ```
+
 | epoch | train_loss | valid_loss | binary_dice_score | binary_hausdorff_distance |  time |
 |------:|-----------:|-----------:|------------------:|--------------------------:|------:|
 |     0 |   0.565165 |   0.466575 |          0.938850 |                  6.541877 | 00:15 |
 |     1 |   0.476818 |   0.438293 |          0.950237 |                  5.072196 | 00:15 |
 
+
 ```python
 learn.save('model-1')
 ```
+
+
+<b> Export and share models </b>
 
 Export model and share both the trained weights and the learner on Hugginface (https://huggingface.co/docs/hub/repositories-getting-started) and use git tag for marked version release (TODO:kun gjort repo.add_tag()). Version control for shared models is important for tracking changes and be able to to roll back to previous versions if there are any issues with the latest model in production. 
 
@@ -383,57 +446,34 @@ learn.export('models/export.pkl')
 store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)
 ```
 
-### Import exported models and inference
-In this section we will showcase how to use exported models for inference on new data. We will do this by using our research project on spine segmentation.
 
-
-```python
-from huggingface_hub import snapshot_download
+```
+#DEV: start(alternatives)
 ```
 
-Download an example data from the research project.
+<code>learn.export('models/export.pkl')
+store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)</code>
 
-
-```python
-DATA_DIR = Path('../data')
-STUDY_DIR = download_example_spine_data(path=DATA_DIR)
-```
-
-Download the models from the study repository and load one of the exported learners (see how to use the ensemble in the research folder: )
-
+<div style="background-color: rgb(232,232,232);">
 
 ```python
-models_path = Path(snapshot_download(repo_id="skaliy/spine-segmentation",  cache_dir='models', revision="v1"))
-learner_list = list(models_path.glob('*learner.pkl'))
-learner = load_learner(learner_list[0], cpu=True)
+learn.export('models/export.pkl')
+store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)
 ```
 
+</div>
 
-```python
-_, reorder, resample = load_variables(pkl_fn=models_path/'vars.pkl')
-reorder, resample
-```
-
-    (True, [4.4, 0.78, 0.78])
-
-
-```python
-img_fn = STUDY_DIR/'img.nii.gz'
-```
-
-
-```python
-pred_fn = inference(learner, reorder, resample, img_fn, save_path=STUDY_DIR)
-```
-
-```python
-from torchio import Subject, ScalarImage, LabelMap
-
-subject = Subject(image=ScalarImage(img_fn), mask=LabelMap(pred_fn))
-```
-
-![](paper_files/output_86_0.png)
+<div class="alert alert-secondary"> 
     
+    learn.export('models/export.pkl')
+    store_variables(pkl_fn='models/vars.pkl', size=size, reorder=reorder, resample=resample)
+
+</div>
+
+
+```
+#DEV: end(alternatives) #alert alert-dark
+```
 
 ## Documentation, usability, and maintainability
 

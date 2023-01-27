@@ -4,10 +4,6 @@
 |   ../data/IXITiny/image/IXI012-HH-1211_image.nii.gz |     IXI012 |      M |       38.78 |   ../data/IXITiny/label/IXI012-HH-1211_label.nii.gz |
 
 
-|   | labels |
-|--:|-------:|
-| b |    986 |
-| m |    337 |
 
 
 
@@ -29,3 +25,7 @@
 ![](paper_files/output_73_2.png){ width=50% }
 
 todo add path: paper_files/
+
+```python
+from fastMONAI.vision_all import *
+```
