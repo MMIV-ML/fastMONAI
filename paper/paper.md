@@ -25,24 +25,7 @@ bibliography: paper.bib
 ---
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
 
-
-```
-#| hide
-#Install `fastMONAI` if notebook is running on Google Colab
-try:
-    import google.colab
-    %pip install fastMONAI
-    from fastMONAI.utils import print_colab_gpu_info
-    print_colab_gpu_info()
-except:
-    print('Running locally')
-```
-
-    Running locally
-
-
 # Summary
-
 
 > _"Let us change our traditional attitude to the construction of programs: Instead of imagining that our main task is to instruct a computer what to do, let us concentrate rather on explaining to human beings what we want a computer to do."_[@donaldknuth]
 
