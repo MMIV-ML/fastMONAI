@@ -58,7 +58,7 @@ In this section, we will explore how to use our library. In fastMONAI's online d
 The following line imports all of the functions and classes from the fastMONAI library: 
 
 
-```python
+> ```python
 from fastMONAI.vision_all import *
 ```
 
@@ -68,7 +68,7 @@ For this task, we will download the MedMNIST lung nodule data with corresponding
 We will download the data with the following line of code:  
 
 
-```python
+> ```python
 df, _ = download_NoduleMNIST3D(max_workers=8)
 ```
 
@@ -77,7 +77,7 @@ df, _ = download_NoduleMNIST3D(max_workers=8)
 Let's look at how the processed DataFrame is formatted:
 
 
-```python
+> ```python
 df.head(1)
 ```
 
@@ -91,7 +91,7 @@ In the following line, we call the ` ImageDataLoaders.from_df` factory method, w
 Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, voxel spacing `resample`, some transforms `item_tfms`, and the batch size `bs`. 
 
 
-```python
+> ```python
 #TODO flytte ut
 def get_item_tfms(size, degrees=5): 
     return [ZNormalization(), PadOrCrop(size=size), 
@@ -99,7 +99,7 @@ def get_item_tfms(size, degrees=5):
 ```
 
 
-```python
+> ```python
 dls = MedImageDataLoaders.from_df(df, fn_col='img_path', 
                                   label_col='labels', 
                                   item_tfms=get_item_tfms(size=28, degrees=35), 
@@ -110,7 +110,7 @@ dls = MedImageDataLoaders.from_df(df, fn_col='img_path',
 We can now take a look at a batch of images in the training set using `show_batch` :
 
 
-```python
+> ```python
 dls.show_batch(max_n=2, anatomical_plane=2)
 ```
 
@@ -123,7 +123,7 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 Class imbalance is a common challenge in medical datasets:
 
 
-```python
+> ```python
 df.labels.value_counts()
 ```
 
@@ -134,7 +134,7 @@ df.labels.value_counts()
 Balanced weight is a simple technique for addressing imbalanced classification models. It adjusts the loss function of the model so that misclassifying the minority class is more heavily penalized than misclassifying the majority class. 
 
 
-```python
+> ```python
 from sklearn.utils.class_weight import compute_class_weight
 
 y_train = df.loc[~df.is_val].labels
@@ -152,7 +152,7 @@ weights
 Next, we import a classification network from MONAI and define the input image size, number of classes to predict, channels, etc.  
 
 
-```python
+> ```python
 from monai.networks.nets import Classifier
 
 model = Classifier(in_shape=[1, 28, 28, 28], classes=2, 
@@ -160,21 +160,22 @@ model = Classifier(in_shape=[1, 28, 28, 28], classes=2,
 ```
 
 
-```python
+> ```python
 loss_func = CrossEntropyLossFlat(weight=weights)
 ```
 
 Then we can create a `Learner`, which is a fastai object that combines the data and our defined model for training.
 
 
-```python
+> ```python
 learn = Learner(dls, model,loss_func=loss_func, metrics=accuracy)
 ```
 
 
-```python
+> ```python
 learn.fit_one_cycle(4) 
 ```
+
 | epoch | train_loss | valid_loss | accuracy |  time |
 |------:|-----------:|-----------:|---------:|------:|
 |     0 |   0.591324 |   0.530592 | 0.776515 | 00:04 |
@@ -188,7 +189,7 @@ With the model trained, let's look at some predictions on the validation data.
 > **Note:** Small random variations are involved in training CNN models. Hence, when running the notebook, you will probably not see exactly the same results shown here.
 
 
-```python
+> ```python
 learn.show_results(max_n=2, anatomical_plane=2) 
 ```
 
@@ -204,12 +205,12 @@ Showing samples with target value and their corresponding predictions (target|pr
 Let's look at where our trained model becomes confused while making predictions on the validation data:
 
 
-```python
+> ```python
 interp = ClassificationInterpretation.from_learner(learn)
 ```
 
 
-```python
+> ```python
 interp.plot_confusion_matrix()
 ```
 
@@ -219,7 +220,7 @@ interp.plot_confusion_matrix()
 
 
 
-```python
+> ```python
 interp.plot_top_losses(k=2, anatomical_plane=2)
 ```
 
@@ -233,7 +234,7 @@ interp.plot_top_losses(k=2, anatomical_plane=2)
 Test-time augmentation (TTA) is a technique where you apply transforms used during traing when making predictions to produce average output.  
 
 
-```python
+> ```python
 preds, targs = learn.tta(n=4); 
 accuracy(preds, targs)
 ```
@@ -247,13 +248,13 @@ accuracy(preds, targs)
 Let's take a closer look at the library using another vision application task, semantic segmentation on IXI Tiny dataset (a small version of the IXI dataset). In semantic segmentation, a class label is assigned to each pixel or voxel in an image, in this case, distinguishing brain tissue from non-brain tissue. 
 
 
-```python
+> ```python
 path = Path('../data')
 STUDY_DIR = download_ixi_tiny(path=path)
 ```
 
 
-```python
+> ```python
 df = pd.read_csv(STUDY_DIR/'dataset.csv')
 ```
 
@@ -262,17 +263,17 @@ df = pd.read_csv(STUDY_DIR/'dataset.csv')
 `MedDataset` is a class to extract and present information about your dataset.
 
 
-```python
+> ```python
 med_dataset = MedDataset(path=STUDY_DIR/'image', reorder=True, max_workers=6)
 ```
 
 
-```python
+> ```python
 data_info_df = med_dataset.summary()
 ```
 
 
-```python
+> ```python
 data_info_df.head()
 ```
 
@@ -297,7 +298,7 @@ resample, reorder
 Get the largest image size in the dataset with resampling (note that some network architecure requires the tensor to be divisible by 16)
 
 
-```python
+> ```python
 img_size = med_dataset.get_largest_img_size(resample=resample)
 img_size
 ```
@@ -307,7 +308,7 @@ img_size
 
 
 
-```python
+> ```python
 size = [48, 48, 96]
 ```
 
@@ -318,7 +319,7 @@ In fastMONAI, various data augmentation techniques are available for traning vis
 Data augmentation is an important regualization technique in training vision models, which aims to expand the diversity of a given dataset by performing random, realistic transformations such as rotation, zoom, ant others). The following code cell shows the utilization of a few of these transformations. Full list of available augmentations  in the library can be found at https://fastmonai.no/vision_augment.
 
 
-```python
+> ```python
 item_tfms = [ZNormalization(), PadOrCrop(size), 
              RandomAffine(scales=0.1, degrees=5, p=0.5), RandomFlip(p=0.5)] 
 ```
@@ -331,7 +332,7 @@ Here we need to define what our input and target should be (`MedImage` and `MedM
 **NB:** It is important to select the method of splitting carefully. One potential issue to consider is patient overlap, which can occur when the same patient's data is present in both the training and validation/testing sets (TODO:cite?). In the IXI dataset (used in this section), we do not need to consider the possibility of patient overlap as there is only one image per patient.
 
 
-```python
+> ```python
 dblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), MedMaskBlock), 
                       splitter=RandomSplitter(valid_pct=0.2, seed=42),
                       get_x=ColReader('t1_path'),
@@ -345,12 +346,12 @@ Now we pass our processed DataFrame and the batch size (bs) to create a `DataLoa
 Batch size (bs) refers to the number of training examples processed through the network before updating the weights. The higher the batch size, the more memory space is needed. You can read more about batch size selection in the Deep Learning Tuning Playbook: https://github.com/google-research/tuning_playbook 
 
 
-```python
+> ```python
 dls = dblock.dataloaders(df, bs=8)
 ```
 
 
-```python
+> ```python
 dls.show_batch(max_n=2, anatomical_plane=2)
 ```
 
@@ -361,7 +362,7 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 
 
 
-```python
+> ```python
 len(dls.train_ds.items), len(dls.valid_ds.items)
 ```
     (438, 109)
@@ -373,28 +374,28 @@ len(dls.train_ds.items), len(dls.valid_ds.items)
 You can import various models and loss functions directly from MONAI Core as shown below: 
 
 
-```python
+> ```python
 from monai.networks.nets import UNet, AttentionUnet
 from monai.losses import DiceLoss, DiceFocalLoss
 ```
 
 
-```python
-# model = UNet(spatial_dims=3, in_channels=1, out_channels=1,
-#              channels=(16, 32, 64, 128),strides=(2, 2, 2), num_res_units=2)
+> ```python
+model = UNet(spatial_dims=3, in_channels=1, out_channels=1,
+              channels=(16, 32, 64, 128),strides=(2, 2, 2), num_res_units=2)
 
 model = AttentionUnet(spatial_dims=3, in_channels=1, out_channels=1,
                       channels=(16, 32, 64, 128),strides=(2, 2, 2))
 ```
 
-```python
+> ```python
 loss_func = CustomLoss(loss_func=DiceFocalLoss(sigmoid=True))
 ```
 
 
-```python
+> ```python
 learn = Learner(dls, model, loss_func=loss_func, opt_func=ranger, metrics=[binary_dice_score, binary_hausdorff_distance])
-# learn.summary()
+#learn.summary()
 ```
 
 ***Learning rate finder***
@@ -405,7 +406,7 @@ Rule of thumb to pick a learning rate:
 - The steepest point(where the loss is clearly decreasing)
 
 
-```python
+> ```python
 lr = learn.lr_find()
 ```
 
@@ -415,7 +416,7 @@ lr = learn.lr_find()
 
 
 
-```python
+> ```python
 learn.fit_one_cycle(2, lr.valley)
 ```
 
@@ -425,7 +426,7 @@ learn.fit_one_cycle(2, lr.valley)
 |     1 |   0.476818 |   0.438293 |          0.950237 |                  5.072196 | 00:15 |
 
 
-```python
+> ```python
 learn.save('model-1')
 ```
 
@@ -435,7 +436,7 @@ learn.save('model-1')
 Export model and share both the trained weights and the learner on Hugginface (https://huggingface.co/docs/hub/repositories-getting-started) and use git tag for marked version release (TODO:kun gjort repo.add_tag()). Version control for shared models is important for tracking changes and be able to to roll back to previous versions if there are any issues with the latest model in production. 
 
 
-```python
+> ```python
 learn.export('models/export.pkl')
 store_variables(pkl_fn='models/vars.pkl', size=size,
                 reorder=reorder, resample=resample)
