@@ -61,6 +61,15 @@ After installing the library, the first step is to import the necessary function
 from fastMONAI.vision_all import *
 ```
 
+---
+**NOTE**
+
+It works with almost all markdown flavours (the below blank line matters).
+
+---
+
+
+
 
 # Acknowledgments
 
