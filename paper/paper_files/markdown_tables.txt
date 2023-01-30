@@ -19,3 +19,5 @@ todo add path: paper_files/
 ```python
 from fastMONAI.vision_all import *
 ```
+
+{ width=40% }
