@@ -111,7 +111,7 @@ We can now take a look at a batch of images in the training set using `show_batc
 dls.show_batch(max_n=2, anatomical_plane=2)
 ```
 
-![](paper_files/output_22_0.png){ width=30% }
+![](paper_files/output_22_0.png){ width=40% }
 
 _Class imbalance_ is a common challenge in medical datasets, and it is something we're facing in our example data set:
 
@@ -137,12 +137,13 @@ weights = torch.Tensor(compute_class_weight(class_weight='balanced',
                                             y=y_train.values.reshape(-1)))
 
 print(weights)
-
-loss_func = CrossEntropyLossFlat(weight=weights)
 ```
 
     tensor([0.6709, 1.9627])
 
+```python
+loss_func = CrossEntropyLossFlat(weight=weights)
+```
 
 We're now ready to construct a deep learning classification model. 
 
@@ -188,7 +189,7 @@ learn.show_results(max_n=2, anatomical_plane=2)
 ```
 
 
-![](paper_files/output_38_2.png){ width=30% }
+![](paper_files/output_38_2.png){ width=40% }
 
 ### Model evaluation and interpretation
 
@@ -204,7 +205,6 @@ interp = ClassificationInterpretation.from_learner(learn)
 interp.plot_confusion_matrix()
 ```
 
-
 ![](paper_files/output_44_2.png){ width=30% }
 
 Here are the two instances our model was most confused about (in other words, most confident but wrong):
@@ -214,8 +214,7 @@ Here are the two instances our model was most confused about (in other words, mo
 interp.plot_top_losses(k=2, anatomical_plane=2)
 ```
 
-
-![](paper_files/output_43_2.png){ width=30% }
+![](paper_files/output_43_2.png){ width=40% }
 
 ### Improving results using test-time augmentation
 
@@ -226,7 +225,6 @@ Test-time augmentation (TTA) is a technique where you apply data augmentation tr
 preds, targs = learn.tta(n=4); 
 print(accuracy(preds, targs))
 ```
-
 
     TensorBase(0.8371)
 
