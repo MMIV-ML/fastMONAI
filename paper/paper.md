@@ -136,7 +136,7 @@ We import a classification network from MONAI and configure it based on our task
 from monai.networks.nets import Classifier
 
 model = Classifier(in_shape=[1, 28, 28, 28], classes=2, 
-                   channels=(8, 16, 32, 64), strides=(2, 2, 2, 2))
+                   channels=(8, 16, 32, 64), strides=(2, 2, 2))
 ```
 
 Then we create a `Learner`, which is a fastai object that combines the data and our defined model for training.
@@ -318,7 +318,7 @@ We used the default learning rate before, but we might want to find a better val
 lr = learn.lr_find()
 ```
 
-![](paper_files/output_77_2.png){ width=35% }
+![](paper_files/output_77_2.png){ width=40% }
 
 ### Training the model
 
