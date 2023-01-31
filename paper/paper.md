@@ -20,7 +20,7 @@ affiliations:
    index: 1
  - name: Mohn Medical Imaging and Visualization Centre, Department of Radiology, Haukeland University Hospital, Bergen, Norway
    index: 2
-date: February 2023
+date: January 2023
 bibliography: paper.bib
 ---
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
@@ -32,22 +32,24 @@ bibliography: paper.bib
 
 In this work, we present <b>fastMONAI</b>, a low-code Python-based open source deep learning library built on top of fastai [@howard2020fastai; @howard2020deep], MONAI [@monai], and TorchIO [@perez2021torchio]. We created the library to simplify the use of state-of-the-art deep learning techniques in 3D medical image analysis for solving classification, regression, and segmentation tasks. fastMONAI provides users with functionalities to step through data loading, preprocessing, training, and result interpretations.
 
-The paper is structured in the following way: it first states the need for the research, then showcases various applications and the library's user-friendliness, followed by a discussion about documentation, usability, and maintainability.
+We've structured the paper as follows: it first discusses the need for the research, then showcases various applications and the library's user-friendliness, followed by a discussion about documentation, usability, and maintainability.
 
-Note that this paper is automatically generated from a Jupyter Notebook available in the fastMONAI GitHub repo: [https://github.com/MMIV-ML/fastMONAI](https://github.com/MMIV-ML/fastMONAI). Using the notebook makes it possible to step through the paper's content and reproduce all the computations and results.
+Note that this paper is automatically generated from a Jupyter Notebook available in the fastMONAI GitHub repo: [https://github.com/MMIV-ML/fastMONAI](https://github.com/MMIV-ML/fastMONAI). Using the notebook makes it possible to step through the paper's content and reproduce all the text, computations, and results.
 
 # Statement of need 
 
-Deep learning develops at breakneck speed, with new models, techniques, and tricks constantly appearing. As a result, it is easy to get stuck on something less-than-optimal when using deep learning to solve a particular set of problems while also being in danger of getting lost in minor technical details when constructing models for concrete tasks. The fastai deep learning library [@howard2020fastai; @howard2020deep] provides both a high-level API that automatically incorporates many established best practices and a low-level API in which one can modify details related to model architectures, training strategies, data augmentation, and more. 
+Deep learning develops at breakneck speed, with new models, techniques, and tricks constantly appearing. As a result, it is easy to get stuck on something less-than-optimal when using deep learning to solve a particular set of problems while also being in danger of getting lost in minor technical details when constructing models for concrete tasks. Therefore, the fastai deep learning library [@howard2020fastai; @howard2020deep] provides both a high-level API that automatically incorporates many established best practices and a low-level API in which one can modify details related to model architectures, training strategies, data augmentation, and more. 
 
-fastai is a general deep learning library built on top of PyTorch. Healthcare imaging has a variety of domain-specific demands, including medical imaging formats, data storage and transfer, data labeling procedures, domain-specific data augmentation, and evaluation methods. MONAI Core [@monai] and TorchIO [@perez2021torchio] target deep learning in healthcare imaging, incorporating multiple best practices. MONAI Core, the primary library of Project MONAI, is built on top of PyTorch and provides domain-specific functionalities for medical imaging, including network architectures, metrics, and loss functions. 
+fastai is a general deep learning library built on top of PyTorch. However, medical imaging has a variety of domain-specific demands, including medical imaging formats, data storage and transfer, data labeling procedures, domain-specific data augmentation, and evaluation methods. MONAI Core [@monai] and TorchIO [@perez2021torchio] target deep learning in healthcare imaging, incorporating multiple best practices. MONAI Core, the primary library of Project MONAI, is built on top of PyTorch and provides domain-specific functionalities for medical imaging, including network architectures, metrics, and loss functions. 
 TorchIO is a Python-based open-source library for efficiently loading, preprocessing, and augmenting 3D medical images. 
 
-A visual representation learning system is determined by three key factors: network architecture chosen, training methods, and data [@woo2023convnext]. Our combination of fastai, MONAI Core, and TorchIO into fastMONAI with custom modules like MedDataset makes it possible to easily construct, use and train powerful models for a range of medical imaging tasks, using all the best practices and domain-specific features incorporated into these three libraries. The library is developed at The Mohn Medical Imaging and Visualization Centre (MMIV), which is part of the Department of Radiology at Haukeland University Hospital. One of the center's key objectives is to develop new quantitative methods for high-field MRI, CT, and hybrid PET/CT/MR in preclinical and clinical settings, aiming to improve decision-making and patient care. fastMONAI supports such efforts by easing the entry for new practitioners into medical AI and making it possible to quickly construct good baseline models while still being flexible enough to enable further optimizations.
+The three key features impacting the performance of a deep learning system are the network architecture, training methods, and data [@woo2023convnext]. Our combination of fastai, MONAI Core, and TorchIO into fastMONAI, together with custom-made modules like our `MedDataset`, makes it possible to easily construct, train, and use powerful models with a range of different architectures for a variety of medical imaging tasks, while using established best practices for training, for reading data, for performing data augmentation, and for other domain-specific capabilities incorporated into these three libraries. 
+
+The library is developed at The Mohn Medical Imaging and Visualization Centre (MMIV), which is part of the Department of Radiology at Haukeland University Hospital. One of the center's key objectives is to develop new quantitative methods for high-field MRI, CT, and hybrid PET/CT/MR in preclinical and clinical settings, aiming to improve decision-making and patient care. fastMONAI supports such efforts by easing the entry for new practitioners into medical AI and making it possible to quickly construct good baseline models while still being flexible enough to enable further optimizations.
 
 # Using fastMONAI
 
-In this section, we will explore how to use our library. In fastMONAI's online documentation [https://fastmonai.no](https://fastmonai.no), multiple tutorials cover classification, regression, and segmentation tasks. 
+In this section, we will explore how to use our library. In fastMONAI's online documentation [https://fastmonai.no](https://fastmonai.no), multiple tutorials cover classification, regression, and segmentation tasks.
 
 ## Classification
 
@@ -59,7 +61,7 @@ from fastMONAI.vision_all import *
 
 ### Downloading external data
 
-To demonstrate the use of fastMONAI. we download the NoduleMNIST3D dataset from MedMNIST v2 [@yang2023medmnist], a dataset containing lung nodules with labels indicating whether the nodules are benign (b) or malignant (m): 
+To demonstrate the use of fastMONAI. we download the NoduleMNIST3D dataset from MedMNIST v2 [@yang2023medmnist], a dataset containing lung nodules with labels indicating whether the nodules are benign (b) or malignant (m):
 
 ```python
 df, _ = download_NoduleMNIST3D(max_workers=8)
@@ -87,14 +89,11 @@ item_tfms=[PadOrCrop(size=28), RandomAffine(degrees=35, isotropic=True),
 Before feeding the data into a model, we must create a `DataLoaders` object for our dataset. There are several ways to get the data in `DataLoaders`. 
 In the following line, we call the ` ImageDataLoaders.from_df` factory method, which is the most basic way of building a `DataLoaders`. 
 
-Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, some transforms `item_tfms`, voxel spacing `resample`, and the batch size `bs`. 
+Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, some transforms `item_tfms`, voxel spacing `resample`, and the batch size `bs`.
 
 ```python
-dls = MedImageDataLoaders.from_df(df, fn_col='img_path', 
-                                  label_col='labels', 
-                                  item_tfms=item_tfms, 
-                                  resample=1,
-                                  bs=64)
+dls = MedImageDataLoaders.from_df(df, fn_col='img_path', label_col='labels', 
+                                  item_tfms=item_tfms, resample=1, bs=64)
 ```
 
 We can now take a look at a batch of images in the training set using `show_batch` :
@@ -117,19 +116,14 @@ print(df.labels.value_counts())
 There are multiple ways to deal with class imbalance. A straightforward technique is to use balancing weights in the model's loss function, i.e., penalizing misclassifications for instances belonging to the minority class more heavily than those of the majority class. 
 
 ```python
-from sklearn.utils.class_weight import compute_class_weight
-
-y_train = df.loc[~df.is_val].labels
-weights = torch.Tensor(compute_class_weight(class_weight='balanced', 
-                                            classes=np.unique(y_train),
-                                            y=y_train.values.reshape(-1)))
-
-print(weights)
+train_labels = df.loc[~df.is_val]['labels'].tolist()
+class_weights = get_class_weights(train_labels)
+print(class_weights)
 ```
     tensor([0.6709, 1.9627])
 
 ```python
-loss_func = CrossEntropyLossFlat(weight=weights)
+loss_func = CrossEntropyLossFlat(weight=class_weights)
 ```
 
 We're now ready to construct a deep learning classification model. 
@@ -142,7 +136,7 @@ We import a classification network from MONAI and configure it based on our task
 from monai.networks.nets import Classifier
 
 model = Classifier(in_shape=[1, 28, 28, 28], classes=2, 
-                   channels=(8, 16, 32, 64),strides=(2, 2, 2, 2))
+                   channels=(8, 16, 32, 64), strides=(2, 2, 2, 2))
 ```
 
 Then we create a `Learner`, which is a fastai object that combines the data and our defined model for training.
@@ -246,7 +240,7 @@ print(resample, reorder)
 We can get the largest image size in the dataset with the recommended resampling:
 
 ```python
-img_size = med_dataset.get_largest_img_size(resample=resample)
+img_size = med_dataset.get_largest_img_size(resample)
 print(img_size)
 ```
 
@@ -274,11 +268,8 @@ Here we need to define what our input and target should be (`MedImage` and `MedM
 ```python
 dblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), MedMaskBlock), 
                       splitter=RandomSplitter(valid_pct=0.2, seed=42),
-                      get_x=ColReader('t1_path'),
-                      get_y=ColReader('labels'),
-                      item_tfms=item_tfms,
-                      reorder=reorder,
-                      resample=resample) 
+                      get_x=ColReader('t1_path'), get_y=ColReader('labels'),
+                      item_tfms=item_tfms, reorder=reorder, resample=resample) 
 ```
 
 Now we pass our processed DataFrame and the batch size (bs) to create a `DataLoaders` object:
@@ -327,7 +318,7 @@ We used the default learning rate before, but we might want to find a better val
 lr = learn.lr_find()
 ```
 
-![](paper_files/output_77_2.png){ width=30% }
+![](paper_files/output_77_2.png){ width=35% }
 
 ### Training the model
 
@@ -338,7 +329,7 @@ learn.fit_flat_cos(2, lr.valley)
 learn.save('model-1')
 ```
 
-| epoch | train_loss | valid_loss | binary_dice_score | binary_hausdorff_distance |  time |
+| epoch | train_loss | valid_loss | dice_score | hausdorff_distance |  time |
 |------:|-----------:|-----------:|------------------:|--------------------------:|------:|
 |     0 |   0.448831 |   0.355411 |          0.932139 |                  7.755924 | 00:16 |
 |     1 |   0.337796 |   0.278777 |          0.959338 |                  5.635414 | 00:15 |
@@ -349,8 +340,7 @@ We can export the model and share both the trained weights and the learner on [H
 
 ```python
 learn.export('models/export.pkl')
-store_variables(pkl_fn='models/vars.pkl', size=size, 
-                reorder=reorder, resample=resample)
+store_variables(pkl_fn='models/vars.pkl', size, reorder, resample)
 ```
 
 # Documentation, usability, and maintainability
@@ -359,11 +349,11 @@ We have written the entire fastMONAI library using nbdev, a tool for exploratory
 
 fastMONAI comes with a documentation page [https://fastmonai.no](https://fastmonai.no) and step-by-step tutorials on how to use the software for various medical imaging tasks (e.g., classification, regression, and segmentation). Tests are written directly in notebooks, and continuous integration with GitHub Actions runs the tests on each push, making software development easier with multiple collaborators. 
 
-To ease further extensions of our library through contributions, we have added a short guide on how to contribute to the project. As mentioned, this paper is written as a notebook and automatically converted to a markdown file. The latest version is always available on GitHub. 
+To ease further extensions of our library through contributions, we have added a short guide on how to contribute to the project. As mentioned, this paper is written as a notebook and automatically converted to a markdown file. The latest version is always available on GitHub.
 
 # Research projects using fastMONAI
 
-The fastMONAI library has been used for various medical imaging tasks, including predicting brain age using T1-weighted scans in [@kaliyugarasan2020brain], skull-stripping in [@kaliyugarasan20202d], pulmonary nodule classification from CT images in [@kaliyugarasan2021pulmonary], and tumor segmentation in cervical cancer from multi-parametric pelvic MRI in [@hodneland2022fully]. Recently, it was also used for vertebra segmentation in a multi-center study [@kaliyugarasan2023spine]. 
+The fastMONAI library has been used for various medical imaging tasks, including predicting brain age using T1-weighted scans in [@kaliyugarasan2020brain], skull-stripping in [@kaliyugarasan20202d], pulmonary nodule classification from CT images in [@kaliyugarasan2021pulmonary], and tumor segmentation in cervical cancer from multi-parametric pelvic MRI in [@hodneland2022fully]. Recently, it was also used for vertebra segmentation in a multi-center study [@kaliyugarasan2023spine].
 
 # Acknowledgments
 
