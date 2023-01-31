@@ -20,7 +20,7 @@ affiliations:
    index: 1
  - name: Mohn Medical Imaging and Visualization Centre, Department of Radiology, Haukeland University Hospital, Bergen, Norway
    index: 2
-date: January 2023
+date: February 2023
 bibliography: paper.bib
 ---
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
@@ -157,10 +157,10 @@ learn.fit_one_cycle(4)
 
 | epoch | train_loss | valid_loss | accuracy |  time |
 |------:|-----------:|-----------:|---------:|------:|
-|     0 |   0.572278 |   0.569417 | 0.731061 | 00:02 |
-|     1 |   0.520406 |   0.538216 | 0.821970 | 00:02 |
-|     2 |   0.484035 |   0.524431 | 0.825758 | 00:02 |
-|     3 |   0.447109 |   0.494531 | 0.818182 | 00:02 |
+|     0 |   0.568710 |   0.464355 | 0.780303 | 00:02 |
+|     1 |   0.532495 |   0.512985 | 0.818182 | 00:02 |
+|     2 |   0.480088 |   0.471735 | 0.829545 | 00:02 |
+|     3 |   0.438136 |   0.436847 | 0.825758 | 00:02 |
 
 **Note:** Small random variations are involved in training CNN models. Hence, when running the notebook, you may see different results.
 
@@ -184,7 +184,7 @@ interp = ClassificationInterpretation.from_learner(learn)
 interp.plot_confusion_matrix()
 ```
 
-![](paper_files/output_44_2.png){ width=30% }
+![](paper_files/output_42_2.png){ width=30% }
 
 Here are the two instances our model was most confused about (in other words, most confident but wrong):
 
@@ -202,7 +202,8 @@ Test-time augmentation (TTA) is a technique where you apply data augmentation tr
 preds, targs = learn.tta(n=4); 
 print(accuracy(preds, targs))
 ```
-    TensorBase(0.8258)
+
+    TensorBase(0.8371)
 
 ## Semantic segmentation
 
@@ -231,9 +232,9 @@ print(data_info_df.head().to_markdown())
 
 ```
 
-| dim_0 | dim_1 | dim_2 | voxel_0 | voxel_1 | voxel_2 | orientation | example_path |                                               total |     |
-|------:|------:|------:|--------:|--------:|--------:|------------:|-------------:|----------------------------------------------------:|-----|
-|    44 |    55 |    83 |    4.13 |    3.95 |    2.18 |        RAS+ |         RAS+ | ../data/IXI002_image.nii.gz | 566 |
+|   | dim0 | dim1 | dim2 |  vx0 |  vx1 |  vx2 | orient |       example_path | total |
+|--:|-----:|-----:|-----:|-----:|-----:|-----:|-------:|-------------------:|------:|
+| 0 |   44 |   55 |   83 | 4.13 | 3.95 | 2.18 |   RAS+ | ../data/..IXI002.. |   566 |
 
 ```python
 resample, reorder = med_dataset.suggestion()
