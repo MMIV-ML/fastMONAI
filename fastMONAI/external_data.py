@@ -7,13 +7,13 @@ __all__ = ['MURLs', 'download_ixi_data', 'download_ixi_tiny', 'download_spine_te
 # %% ../nbs/09_external_data.ipynb 2
 from pathlib import Path
 from glob import glob
+from numpy import load 
 import pandas as pd
 from monai.apps import download_url, download_and_extract
 from torchio.datasets.ixi import IXITiny
 from torchio import ScalarImage
 import multiprocessing as mp
 from functools import partial
-from numpy import load
 
 # %% ../nbs/09_external_data.ipynb 4
 class MURLs():
@@ -199,12 +199,12 @@ def download_NoduleMNIST3D(path:(str, Path)='../data', max_workers=1):
     train_imgs, val_imgs, test_imgs = data[key_fn[0]], data[key_fn[1]], data[key_fn[2]]
 
 
-    with mp.Pool(processes=max_workers) as p:
+    with mp.Pool(processes=max_workers) as pool:
         
-        train_df = _create_nodule_df(p, path/key_fn[0], train_imgs, data['train_labels'])
-        val_df = _create_nodule_df(p, path/key_fn[1], val_imgs, data['val_labels'], is_val=True)
-        test_df = _create_nodule_df(p, path/key_fn[2], test_imgs, data['test_labels'])
-    
+        train_df = _create_nodule_df(pool, path/key_fn[0], train_imgs, data['train_labels'])
+        val_df = _create_nodule_df(pool, path/key_fn[1], val_imgs, data['val_labels'], is_val=True)
+        test_df = _create_nodule_df(pool, path/key_fn[2], test_imgs, data['test_labels'])
+        
     train_val_df = pd.concat([train_df, val_df], ignore_index=True)
     
     return train_val_df, test_df
