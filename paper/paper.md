@@ -20,7 +20,7 @@ affiliations:
    index: 1
  - name: Mohn Medical Imaging and Visualization Centre, Department of Radiology, Haukeland University Hospital, Bergen, Norway
    index: 2
-date: January 2023
+date: February 2023
 bibliography: paper.bib
 ---
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
@@ -103,6 +103,8 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 ```
 
 ![](paper_files/output_22_0.png){ width=35% }
+
+### Choosing a loss function
 
 _Class imbalance_ is a common challenge in medical datasets, and it is something we're facing in our example dataset:
 
@@ -201,7 +203,7 @@ print(accuracy(preds, targs))
 
 ## Semantic segmentation
 
-In the following, we look at another computer vision task while also taking a closer look at the fastMONAI library. Our task will be _semantic segmentation_, and we'll use the IXI Tiny dataset (a small version of the IXI dataset [@ixi]). In semantic segmentation, a class label is assigned to each pixel or voxel in an image, in this case, distinguishing brain tissue from non-brain tissue, i.e., skull-stripping or brain extraction. 
+In the following, we look at another computer vision task while also taking a closer look at the fastMONAI library. Our task will be _semantic segmentation_, and we'll use the IXI Tiny dataset (a small version of the IXI dataset [@ixi]) with 566 3D brain MRI scans. In semantic segmentation, a class label is assigned to each pixel or voxel in an image, in this case, distinguishing brain tissue from non-brain tissue, i.e., skull-stripping or brain extraction.
 
 ```python
 STUDY_DIR = download_ixi_tiny(path='../data')
@@ -282,11 +284,6 @@ dls.show_batch(max_n=2, anatomical_plane=2)
 ```
 
 ![](paper_files/output_70_0.png){ width=30% }
-
-```python
-print(len(dls.train_ds.items), len(dls.valid_ds.items))
-```
-    (438, 109)
 
 ### Network architectures and loss functions
 
