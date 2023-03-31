@@ -336,7 +336,7 @@ We can export the model and share both the trained weights and the learner on [H
 
 ```python
 learn.export('models/export.pkl')
-store_variables(pkl_fn='models/vars.pkl', size, reorder, resample)
+store_variables('models/vars.pkl', size, reorder, resample)
 ```
 
 # Documentation, usability, and maintainability
