@@ -7,23 +7,20 @@ tags:
   - fastai
   - MONAI
   - torchIO
-authors:
-  - name: Satheshkumar Kaliyugarasan
-    orcid: 0000-0002-0038-5540
-    affiliation: "1,2" 
-    
-  - name: Alexander Selvikvåg Lundervold
-    orcid: 0000-0001-8663-4247
-    affiliation: "1,2" 
-affiliations:
- - name: Department of Computer Science, Electrical Engineering and Mathematical Sciences, Western Norway University of Applied Sciences, Bergen, Norway
-   index: 1
- - name: Mohn Medical Imaging and Visualization Centre, Department of Radiology, Haukeland University Hospital, Bergen, Norway
-   index: 2
-date: February 2023
+
+author:
+- Satheshkumar Kaliyugarasan
+- Alexander Selvikvåg Lundervold
+  
+  \vspace{0.5cm}
+- Dept. of Computer Science, Electrical Engineering and Mathematical Sciences, HVL
+- MMIV, Dept. of Radiology, Haukeland University Hospital
+date: April 2023
+geometry: margin=2cm
+colorlinks: true
 bibliography: paper.bib
 ---
-[![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
+[![Google Colab](paper_files/colab-badge.svg){ width=20% }](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
 
 # Summary
 
@@ -64,7 +61,7 @@ from fastMONAI.vision_all import *
 To demonstrate the use of fastMONAI. we download the NoduleMNIST3D dataset from MedMNIST v2 [@yang2023medmnist], a dataset containing lung nodules with labels indicating whether the nodules are benign (b) or malignant (m):
 
 ```python
-df, _ = download_NoduleMNIST3D(max_workers=8)
+df, _ = download_NoduleMNIST3D(max_workers = 8)
 ```
 
 ### Inspecting the data
@@ -82,7 +79,7 @@ print(df.head(1).to_markdown())
 In fastMONAI, various data augmentation techniques are available for training vision models, and they can also optionally be applied during inference. The following code cell specifies a list of transformations to be applied to the items in the training set. The complete list of available transformations in the library can be found at [https://fastmonai.no/vision_augment](https://fastmonai.no/vision_augment).
 
 ```python
-item_tfms=[PadOrCrop(size=28), RandomAffine(degrees=35, isotropic=True), 
+item_tfms = [PadOrCrop(size = 28), RandomAffine(degrees = 35, isotropic = True), 
            ZNormalization()]
 ```
 
@@ -92,14 +89,14 @@ In the following line, we call the ` ImageDataLoaders.from_df` factory method, w
 Here, we pass the processed DataFrame, define the columns for the images `fn_col` and the labels `label_col`, some transforms `item_tfms`, voxel spacing `resample`, and the batch size `bs`.
 
 ```python
-dls = MedImageDataLoaders.from_df(df, fn_col='img_path', label_col='labels', 
-                                  item_tfms=item_tfms, resample=1, bs=64)
+dls = MedImageDataLoaders.from_df(df, fn_col = 'img_path', label_col = 'labels', 
+                                  item_tfms = item_tfms, resample = 1, bs = 64)
 ```
 
 We can now take a look at a batch of images in the training set using `show_batch` :
 
 ```python
-dls.show_batch(max_n=2, anatomical_plane=2)
+dls.show_batch(max_n = 2, anatomical_plane = 2)
 ```
 
 ![](paper_files/output_22_0.png){ width=35% }
@@ -125,7 +122,7 @@ print(class_weights)
     tensor([0.6709, 1.9627])
 
 ```python
-loss_func = CrossEntropyLossFlat(weight=class_weights)
+loss_func = CrossEntropyLossFlat(weight = class_weights)
 ```
 
 We're now ready to construct a deep learning classification model. 
@@ -137,14 +134,14 @@ We import a classification network from MONAI and configure it based on our task
 ```python
 from monai.networks.nets import Classifier
 
-model = Classifier(in_shape=[1, 28, 28, 28], classes=2, 
-                   channels=(8, 16, 32, 64), strides=(2, 2, 2))
+model = Classifier(in_shape = [1, 28, 28, 28], classes = 2, 
+                   channels = (8, 16, 32, 64), strides=(2, 2, 2))
 ```
 
 Then we create a `Learner`, which is a fastai object that combines the data and our defined model for training.
 
 ```python
-learn = Learner(dls, model,loss_func=loss_func, metrics=accuracy)
+learn = Learner(dls, model, loss_func = loss_func, metrics = accuracy)
 ```
 
 ```python
@@ -163,7 +160,7 @@ learn.fit_one_cycle(4)
 With the model trained, let's look at some predictions on the validation data. The `show_results` method plots instances, their target values, and their corresponding predictions from the model.
 
 ```python
-learn.show_results(max_n=2, anatomical_plane=2) 
+learn.show_results(max_n = 2, anatomical_plane = 2) 
 ```
 
 ![](paper_files/output_38_2.png){ width=35% }
@@ -185,7 +182,7 @@ interp.plot_confusion_matrix()
 Here are the two instances our model was most confused about (in other words, most confident but wrong):
 
 ```python
-interp.plot_top_losses(k=2, anatomical_plane=2)
+interp.plot_top_losses(k = 2, anatomical_plane = 2)
 ```
 
 ![](paper_files/output_43_2.png){ width=35% }
@@ -195,7 +192,7 @@ interp.plot_top_losses(k=2, anatomical_plane=2)
 Test-time augmentation (TTA) is a technique where you apply data augmentation transforms when making predictions to produce average output. In addition to often yielding better performance, the variation in the output of the TTA runs can provide some measure of its robustness and sensitivity to augmentations. 
 
 ```python
-preds, targs = learn.tta(n=4); 
+preds, targs = learn.tta(n = 4); 
 print(accuracy(preds, targs))
 ```
 
@@ -203,10 +200,10 @@ print(accuracy(preds, targs))
 
 ## Semantic segmentation
 
-In the following, we look at another computer vision task while also taking a closer look at the fastMONAI library. Our task will be _semantic segmentation_, and we'll use the IXI Tiny dataset (a small version of the IXI dataset [@ixi]) with 566 3D brain MRI scans. In semantic segmentation, a class label is assigned to each pixel or voxel in an image, in this case, distinguishing brain tissue from non-brain tissue, i.e., skull-stripping or brain extraction.
+In the following, we look at another computer vision task while also taking a closer look at the fastMONAI library. Our task will be _semantic segmentation_, and we'll use the IXI Tiny dataset provided by TorchIO (a small version of the IXI dataset [@ixi]) with 566 3D brain MRI scans. In semantic segmentation, a class label is assigned to each pixel or voxel in an image, in this case, distinguishing brain tissue from non-brain tissue, i.e., skull-stripping or brain extraction.
 
 ```python
-STUDY_DIR = download_ixi_tiny(path='../data')
+STUDY_DIR = download_ixi_tiny(path = '../data')
 ```
 
 ```python
@@ -218,7 +215,7 @@ df = pd.read_csv(STUDY_DIR/'dataset.csv')
 The fastMONAI class `MedDataset` can automatically extract and present valuable information about your dataset:
 
 ```python
-med_dataset = MedDataset(path=STUDY_DIR/'image', reorder=True, max_workers=6)
+med_dataset = MedDataset(path = STUDY_DIR/'image', reorder = True, max_workers = 6)
 ```
 
 ```python
@@ -255,7 +252,7 @@ size = [48, 48, 96]
 
 ```python
 item_tfms = [PadOrCrop(size), 
-             RandomAffine(scales=0.1, degrees=5, p=0.5), RandomFlip(p=0.5), 
+             RandomAffine(scales = 0.1, degrees = 5, p = 0.5), RandomFlip(p = 0.5), 
              ZNormalization()] 
 ```
 
@@ -267,20 +264,20 @@ Here we need to define what our input and target should be (`MedImage` and `MedM
 **NB:** It is crucial to select an appropriate splitting strategy. For example, one should typically avoid having data from the same patient in both the training and the validation or test set. However, in the IXI data set this is not an issue, as there is only one image per patient.
 
 ```python
-dblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), MedMaskBlock), 
-                      splitter=RandomSplitter(valid_pct=0.2, seed=42),
-                      get_x=ColReader('t1_path'), get_y=ColReader('labels'),
-                      item_tfms=item_tfms, reorder=reorder, resample=resample) 
+dblock = MedDataBlock(blocks=(ImageBlock(cls = MedImage), MedMaskBlock), 
+                      splitter=RandomSplitter(valid_pct = 0.2, seed = 42),
+                      get_x = ColReader('t1_path'), get_y = ColReader('labels'),
+                      item_tfms = item_tfms, reorder = reorder, resample = resample) 
 ```
 
 Now we pass our processed DataFrame and the batch size (bs) to create a `DataLoaders` object:
 
 ```python
-dls = dblock.dataloaders(df, bs=8)
+dls = dblock.dataloaders(df, bs = 8)
 ```
 
 ```python
-dls.show_batch(max_n=2, anatomical_plane=2)
+dls.show_batch(max_n = 2, anatomical_plane = 2)
 ```
 
 ![](paper_files/output_70_0.png){ width=30% }
@@ -293,24 +290,24 @@ You can import various models and loss functions directly from MONAI Core, as sh
 from monai.networks.nets import UNet, AttentionUnet
 from monai.losses import DiceLoss, DiceFocalLoss
 
-loss_func = CustomLoss(loss_func=DiceFocalLoss(sigmoid=True))
+loss_func = CustomLoss(loss_func=DiceFocalLoss(sigmoid = True))
 
-model = AttentionUnet(spatial_dims=3, in_channels=1, out_channels=1, 
-                channels=(16, 32, 64, 128), strides=(2, 2, 2))
+model = AttentionUnet(spatial_dims = 3, in_channels = 1, out_channels = 1, 
+                channels = (16, 32, 64, 128), strides = (2, 2, 2))
 ```
 
 In this task, we use the Ranger optimizer [@Ranger], a optimization algorithm that combines RAdam and Lookahead.
 
-```pyhton
-learn = Learner(dls, model, loss_func=loss_func, opt_func=ranger, 
-                metrics=[binary_dice_score, binary_hausdorff_distance])
+```python
+learn = Learner(dls, model, loss_func = loss_func, opt_func = ranger, 
+                metrics = [binary_dice_score, binary_hausdorff_distance])
 ```
 
 ### Finding a good learning rate
 
 We used the default learning rate before, but we might want to find a better value. For this, we can use the learning rate finder of fastai:
 
-```pyhton
+```python
 lr = learn.lr_find()
 ```
 
