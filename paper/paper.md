@@ -20,7 +20,7 @@ geometry: margin=2cm
 colorlinks: true
 bibliography: paper.bib
 ---
-[![Google Colab](paper_files/colab-badge.svg){ width=20% }](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
+[![Google Colab](paper_files/colab-badge.svg){ width=15% }](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/master/paper/paper.ipynb)
 
 # Summary
 
@@ -280,7 +280,7 @@ dls = dblock.dataloaders(df, bs = 8)
 dls.show_batch(max_n = 2, anatomical_plane = 2)
 ```
 
-![](paper_files/output_70_0.png){ width=30% }
+![](paper_files/output_70_0.png){ width=35% }
 
 ### Network architectures and loss functions
 
