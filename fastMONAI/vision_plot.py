@@ -8,9 +8,21 @@ from fastai.data.all import *
 from torchio.visualization import rotate
 
 # %% ../nbs/00_vision_plot.ipynb 3
-def _get_slice(image, channel:int, indices:(int, list), anatomical_plane:int, voxel_size:(int, list)):
-    '''A private method to get a 2D tensor and aspect ratio for plotting. Modified code from torchio function `plot_volume`.'''
+def _get_slice(image, channel: int, indices: (int, list), anatomical_plane: int, voxel_size: (int, list)):
+    """
+    A private method to get a 2D tensor and aspect ratio for plotting.
+    This is modified code from the torchio function `plot_volume`.
 
+    Args:
+        image: The input image.
+        channel: Channel of the image.
+        indices: Index of the 2D slice.
+        anatomical_plane: Anatomical plane of the image.
+        voxel_size: Voxel size for the image.
+
+    Returns:
+        A 2D tensor containing the sliced image and its aspect.
+    """
     if voxel_size is None:
         warnings.warn('Voxel size not defined. Aspect ratio of the plot might not be correct.')
         voxel_size = 1
@@ -19,11 +31,11 @@ def _get_slice(image, channel:int, indices:(int, list), anatomical_plane:int, vo
         voxel_size = (voxel_size, voxel_size, voxel_size)
 
     data = image.data[channel]
-
     sr, sa, ss = voxel_size[0], voxel_size[1], voxel_size[2]
     sliced_img, aspect = None, None
 
-    if indices is None: indices = np.array(data.shape) // 2
+    if indices is None:
+        indices = np.array(data.shape) // 2
 
     i, j, k = indices
 
@@ -41,17 +53,42 @@ def _get_slice(image, channel:int, indices:(int, list), anatomical_plane:int, vo
 
 # %% ../nbs/00_vision_plot.ipynb 4
 @delegates(plt.Axes.imshow, keep=True, but=['shape', 'imlim'])
-def show_med_img(im, ctx, channel:int, indices:(int, list), anatomical_plane:int, voxel_size:(int, list), ax=None, figsize=None, title=None, **kwargs):
-    '''Show a PyTorch image on `ax`. Modified code from fastai function `show_image`.'''
+def show_med_img(
+    im, ctx, channel: int, indices: (int, list), anatomical_plane: int,
+    voxel_size: (int, list), ax=None, figsize=None, title=None, **kwargs):
+    """
+    Show an image on `ax`. This is a modified code from the fastai function `show_image`.
 
-    if hasattrs(im, ('data','cpu','permute')):
+    Args:
+        im: The input image.
+        ctx: The context.
+        channel: Channel of the image.
+        indices: Index of the 2D slice.
+        anatomical_plane: Anatomical plane of the image.
+        voxel_size: Voxel size for the image.
+        ax: Axis for the plot.
+        figsize: Figure size for the plot.
+        title: Title for the plot.
+        kwargs: Additional parameters for plt.Axes.imshow method.
+
+    Returns:
+        Axis with the plot.
+    """
+    if hasattrs(im, ('data', 'cpu', 'permute')):
         im = im.data.cpu()
-        im, aspect = _get_slice(im, channel=channel, anatomical_plane=anatomical_plane, voxel_size=voxel_size, indices=indices)
+        im, aspect = _get_slice(
+            im, channel=channel, anatomical_plane=anatomical_plane,
+            voxel_size=voxel_size, indices=indices
+        )
 
-    ax = ifnone(ax,ctx)
-    if ax is None: _,ax = plt.subplots(figsize=figsize) #ax er kun none naar en bruker .show().
+    ax = ifnone(ax, ctx)
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize)  # ax is only None when .show() is used.
 
     ax.imshow(im, aspect=aspect, **kwargs)
-    if title is not None: ax.set_title(title)
+    if title is not None:
+        ax.set_title(title)
+
     ax.axis('off')
+
     return ax

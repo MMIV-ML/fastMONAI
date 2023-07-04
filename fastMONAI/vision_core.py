@@ -87,7 +87,6 @@ class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
     '''A class to bypass metaclass conflict:
     https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html
     '''
-
     pass
 
 # %% ../nbs/01_vision_core.ipynb 11
@@ -99,38 +98,51 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     resample, reorder = None, False
     affine_matrix = None
 
+
     @classmethod
-    def create(cls, fn:(Path,str, torch.Tensor), **kwargs):
-        '''Open an medical image and cast to MedBase object. If it is a torch.Tensor cast to MedBase object.
+    def create(cls, fn: (Path, str, torch.Tensor), **kwargs):
+        """
+        Open a medical image and cast to MedBase object. If it is a torch.Tensor, cast to MedBase object.
 
         Args:
             fn: Image path or a 4D torch.Tensor.
-            kwargs: additional parameters.
+            kwargs: Additional parameters.
 
         Returns:
             A 4D tensor as MedBase object.
-        '''
+        """
+        if isinstance(fn, torch.Tensor):
+            return cls(fn)
 
-        if isinstance(fn, torch.Tensor): return cls(fn)
         return med_img_reader(fn, dtype=cls, resample=cls.resample, reorder=cls.reorder)
 
     @classmethod
-    def item_preprocessing(cls, resample:(list, int, tuple), reorder:bool):
-        '''Change the values for the class variables `resample` and `reorder`.
+    def item_preprocessing(cls, resample: (list, int, tuple), reorder: bool):
+        """
+        Change the values for the class variables `resample` and `reorder`.
 
         Args:
             resample: A list with voxel spacing.
-            reorder: Wheter to reorder the data to be closest to canonical (RAS+) orientation.
-        '''
-
+            reorder: Whether to reorder the data to be closest to canonical (RAS+) orientation.
+        """
         cls.resample = resample
         cls.reorder = reorder
 
     def show(self, ctx=None, channel=0, indices=None, anatomical_plane=0, **kwargs):
-        "Show Medimage using `merge(self._show_args, kwargs)`"
-        return show_med_img(self, ctx=ctx, channel=channel, indices=indices, anatomical_plane=anatomical_plane, voxel_size=self.resample,  **merge(self._show_args, kwargs))
+        """
+        Show Medimage using `merge(self._show_args, kwargs)`.
 
-    def __repr__(self): return f'{self.__class__.__name__} mode={self.mode} size={"x".join([str(d) for d in self.size])}'
+        Returns:
+            Shown image.
+        """
+        return show_med_img(
+            self, ctx=ctx, channel=channel, indices=indices, 
+            anatomical_plane=anatomical_plane, voxel_size=self.resample,  
+            **merge(self._show_args, kwargs)
+        )
+
+    def __repr__(self):
+        return f'{self.__class__.__name__} mode={self.mode} size={"x".join([str(d) for d in self.size])}'
 
 # %% ../nbs/01_vision_core.ipynb 12
 class MedImage(MedBase):

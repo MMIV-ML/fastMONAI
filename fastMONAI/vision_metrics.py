@@ -50,7 +50,7 @@ def multi_dice_score(act, # Activation values [B, C, W, H, D]
 
     return torch.Tensor(binary_dice_scores)
 
-# %% ../nbs/05_vision_metrics.ipynb 7
+# %% ../nbs/05_vision_metrics.ipynb 8
 def binary_hausdorff_distance(act, # Activation tensor [B, C, W, H, D]
                               targ # Target masks [B, C, W, H, D]
                              ) -> torch.Tensor:
@@ -61,7 +61,7 @@ def binary_hausdorff_distance(act, # Activation tensor [B, C, W, H, D]
     haus = calculate_haus(pred.cpu(), targ.cpu())
     return torch.mean(haus)
 
-# %% ../nbs/05_vision_metrics.ipynb 8
+# %% ../nbs/05_vision_metrics.ipynb 9
 def multi_hausdorff_distance(act, # Activation tensor [B, C, W, H, D]
                              targ # Target masks [B, C, W, H, D]
                             ) -> torch.Tensor :

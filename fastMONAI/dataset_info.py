@@ -7,7 +7,7 @@ __all__ = ['MedDataset', 'get_class_weights']
 from .vision_core import *
 
 from sklearn.utils.class_weight import compute_class_weight
-import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor
 import pandas as pd
 import numpy as np
 import torch
@@ -44,10 +44,9 @@ class MedDataset():
         if self.path:
             self.img_list = glob.glob(f'{self.path}/*{self.postfix}*')
             if not self.img_list: print('Could not find images. Check the image path')
-
-        #pool = mp.Pool(self.max_workers)
-        with mp.Pool(processes=self.max_workers) as pool:
-            data_info_dict = pool.map(self._get_data_info, self.img_list)
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            data_info_dict = list(executor.map(self._get_data_info, self.img_list))
         
         df = pd.DataFrame(data_info_dict)
         if df.orientation.nunique() > 1: print('The volumes in this dataset have different orientations. Recommended to pass in the argument reorder=True when creating a MedDataset object for this dataset')
