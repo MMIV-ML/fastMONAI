@@ -1,5 +1,4 @@
 # Endometrical cancer segmentation
-
 Objective of reproducing the reported results in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf)-
 
 The trained weights and exported learner available on [HugginFace](https://huggingface.co/skaliy/endometrical_cancer_segmentation). 
@@ -15,6 +14,11 @@ If you choose to use `inference_script.py`, please follow these steps:
 - Run the script by executing the following command in the terminal: `python inference_script.py IMG_PATH`
 
 ## Results
+The box plot of the predictions on the validation set: 
+![](figs/boxplot.png)
+
+The results from the validation set are also presented in the table below:
+
 Results from the validation data are presented in the table below:
 
 | subject_id | tumor_vol | inter_rater | r1_ml    | r2_ml    |
