@@ -32,7 +32,7 @@ parser.add_argument('fn', type=str, help='File name of the input image')
 args = parser.parse_args()
 
 # Download the model from the study repository and load the exported learner. 
-# By default, the latest version from the main branch is downloaded. For accessing different versions, refer to the tags within the model repository.
+# By default, the latest version from the main branch is downloaded.
 models_path = Path(snapshot_download(repo_id="skaliy/endometrical_cancer_segmentation",  cache_dir='models', revision='main'))
 learner = load_learner(models_path/'learner.pkl', cpu=True)
 
