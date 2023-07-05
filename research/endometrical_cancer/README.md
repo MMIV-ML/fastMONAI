@@ -18,6 +18,7 @@ The box plot of the predictions on the validation set:
 ![](figs/boxplot.png)
 
 The results from the validation set are also presented in the table below:
+
 | subject_id | tumor_vol | inter_rater | r1_ml    | r2_ml    |
 |------------|-----------|-------------|----------|----------|
 | 29         | 4.16      | 0.201835    | 0.806382 | 0.006231 |
