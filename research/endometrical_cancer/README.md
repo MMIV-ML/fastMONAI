@@ -1,7 +1,7 @@
 # Endometrical cancer segmentation
-Objective of reproducing the reported results in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf)-
+The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf)-
 
-The trained weights and exported learner available on [HugginFace](https://huggingface.co/skaliy/endometrical_cancer_segmentation). 
+The trained weights and exported learner are available on [HugginFace](https://huggingface.co/skaliy/endometrical_cancer_segmentation). 
 
 ## How to use
 1. Clone this repository.
