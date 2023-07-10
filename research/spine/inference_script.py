@@ -5,7 +5,6 @@
 import argparse
 
 from fastMONAI.vision_all import *
-from IPython.display import clear_output
 from huggingface_hub import snapshot_download
 
 # Parse command line arguments
@@ -48,7 +47,7 @@ mask_data /= len(loaded_learners)
 mask_data = torch.where(mask_data > 0.5, 1., 0.)
 
 # Apply postprocessing to remove small objects from the binary mask
-mask_data = torch.Tensor(pred_postprocess(mask_data))
+mask_data = refine_binary_pred_mask(mask_data, remove_size=10437, percentage=0.2)
 
 # Set the data of the mask object to the processed mask data
 mask.set_data(mask_data)

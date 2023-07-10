@@ -7,7 +7,6 @@ import argparse
 
 from fastMONAI.vision_all import *
 from huggingface_hub import snapshot_download
-from scipy.ndimage import label
 
 def find_similar_size_labels(labeled_mask, size_threshold=0.8):
     """
@@ -51,15 +50,8 @@ save_path = str(img_path).replace(img_path.stem, 'pred_' +img_path.stem)
 #pred_items
 org_img, input_img, org_size = med_img_reader(img_path, reorder=reorder, resample=resample, only_tensor=False)
 
-    #Predict with ensemble
 mask_data = inference(learner, reorder=reorder, resample=resample, org_img=org_img, input_img=input_img, org_size=org_size).data 
-labeled_mask, ncomponents = label(mask_data.numpy())
-if ncomponents > 1: 
-    max_label, similar_size_labels = find_similar_size_labels(labeled_mask)
-    if len(similar_size_labels) == 1:
-        mask_data = torch.Tensor(np.where(labeled_mask == max_label, 1, 0))
-    else: 
-        print(save_path)
+mask_data = refine_binary_pred_mask(mask_data, percentage=0.8)
 
 if "".join(org_img.orientation) == 'LSA':        
     mask_data = mask_data.permute(0,1,3,2)
