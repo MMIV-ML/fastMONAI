@@ -82,30 +82,50 @@ def _multi_channel(image_paths: list, reorder: bool, resample: list, dtype, only
     return org_img, input_img, org_size
 
 
-# %% ../nbs/01_vision_core.ipynb 8
-def med_img_reader(file_path:(str, Path), # Image path
-                   dtype=torch.Tensor, # Datatype (MedImage, MedMask, torch.Tensor)
-                   reorder:bool=False, # Whether to reorder the data to be closest to canonical (RAS+) orientation.
-                   resample:list=None, # Whether to resample image to different voxel sizes and image dimensions.
-                   only_tensor:bool=True # Whether to return only image tensor
-                  ):
-    '''Load and preprocess medical image'''
-        
+# %% ../nbs/01_vision_core.ipynb 9
+def med_img_reader(
+        file_path: (str, Path),
+        dtype=torch.Tensor,
+        reorder: bool = False,
+        resample: list = None,
+        only_tensor: bool = True
+):
+    """Loads and preprocesses a medical image.
+
+    Args:
+        file_path: Path to the image. Can be a string or a Path object.
+        dtype: Datatype for the return value. Defaults to torch.Tensor.
+        reorder: Whether to reorder the data to be closest to canonical 
+            (RAS+) orientation. Defaults to False.
+        resample: Whether to resample image to different voxel sizes and 
+            image dimensions. Defaults to None.
+        only_tensor: Whether to return only image tensor. Defaults to True.
+
+    Returns:
+        The preprocessed image. Returns only the image tensor if 
+        only_tensor is True, otherwise returns original image, 
+        preprocessed image, and original size.
+    """
     if isinstance(file_path, str) and ';' in file_path:
-        return _multi_channel(file_path.split(';'), reorder, resample, dtype, only_tensor)
+        return _multi_channel(
+            file_path.split(';'), reorder, resample, dtype, only_tensor)
 
-    org_img, input_img, org_size = _load_and_preprocess(file_path, reorder, resample, dtype)
+    org_img, input_img, org_size = _load_and_preprocess(
+        file_path, reorder, resample, dtype)
 
-    return dtype(input_img.data.type(torch.float)) if only_tensor else org_img, input_img, org_size
+    if only_tensor:
+        return dtype(input_img.data.type(torch.float))
 
-# %% ../nbs/01_vision_core.ipynb 10
+    return org_img, input_img, org_size
+
+# %% ../nbs/01_vision_core.ipynb 12
 class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
     '''A class to bypass metaclass conflict:
     https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html
     '''
     pass
 
-# %% ../nbs/01_vision_core.ipynb 11
+# %% ../nbs/01_vision_core.ipynb 13
 class MedBase(torch.Tensor, metaclass=MetaResolver):
     '''A class that represents an image object. Metaclass casts x to this class if it is of type cls._bypass_type.'''
 
@@ -160,12 +180,12 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     def __repr__(self):
         return f'{self.__class__.__name__} mode={self.mode} size={"x".join([str(d) for d in self.size])}'
 
-# %% ../nbs/01_vision_core.ipynb 12
+# %% ../nbs/01_vision_core.ipynb 14
 class MedImage(MedBase):
     '''Subclass of MedBase that represents an image object.'''
     pass
 
-# %% ../nbs/01_vision_core.ipynb 13
+# %% ../nbs/01_vision_core.ipynb 15
 class MedMask(MedBase):
     '''Subclass of MedBase that represents an mask object.'''
     _show_args = {'alpha':0.5, 'cmap':'tab20'}
