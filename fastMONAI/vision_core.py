@@ -76,13 +76,13 @@ def _multi_channel(image_paths: list, reorder: bool, resample: list, dtype, only
     tensor = torch.stack([img.data[0] for _, img, _ in image_data], dim=0)
     
     if only_tensor: 
-        dtype(tensor) 
+       return dtype(tensor) 
 
     input_img.set_data(tensor)
     return org_img, input_img, org_size
 
 
-# %% ../nbs/01_vision_core.ipynb 9
+# %% ../nbs/01_vision_core.ipynb 8
 def med_img_reader(
         file_path: (str, Path),
         dtype=torch.Tensor,
@@ -118,15 +118,15 @@ def med_img_reader(
 
     return org_img, input_img, org_size
 
-# %% ../nbs/01_vision_core.ipynb 12
+# %% ../nbs/01_vision_core.ipynb 10
 class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
     '''A class to bypass metaclass conflict:
     https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html
     '''
     pass
 
-# %% ../nbs/01_vision_core.ipynb 13
-class MedBase(torch.Tensor, metaclass=MetaResolver):
+# %% ../nbs/01_vision_core.ipynb 11
+class MedBase(torch.Tensor, metaclass=MetaResolver): 
     '''A class that represents an image object. Metaclass casts x to this class if it is of type cls._bypass_type.'''
 
     _bypass_type=torch.Tensor
@@ -180,12 +180,12 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     def __repr__(self):
         return f'{self.__class__.__name__} mode={self.mode} size={"x".join([str(d) for d in self.size])}'
 
-# %% ../nbs/01_vision_core.ipynb 14
+# %% ../nbs/01_vision_core.ipynb 12
 class MedImage(MedBase):
     '''Subclass of MedBase that represents an image object.'''
     pass
 
-# %% ../nbs/01_vision_core.ipynb 15
+# %% ../nbs/01_vision_core.ipynb 13
 class MedMask(MedBase):
     '''Subclass of MedBase that represents an mask object.'''
     _show_args = {'alpha':0.5, 'cmap':'tab20'}
