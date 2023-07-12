@@ -22,7 +22,7 @@ def store_variables(pkl_fn:(str, Path),
         pickle.dump(var_vals, f)
 
 # %% ../nbs/07_utils.ipynb 4
-def load_variables(pkl_fn: (str, Path)) -> Any:
+def load_variables(pkl_fn: (str, Path)):
     """
     Loads stored variable values from a pickle file.
 
