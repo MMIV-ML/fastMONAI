@@ -23,7 +23,6 @@ class MURLs():
     IXI_DEMOGRAPHIC_INFORMATION = 'http://biomedic.doc.ic.ac.uk/brain-development/downloads/IXI/IXI.xls'
     CHENGWEN_CHU_SPINE_DATA = 'https://drive.google.com/uc?id=1rbm9-KKAexpNm2mC9FsSbfnS8VJaF3Kn&confirm=t'
     EXAMPLE_SPINE_DATA = 'https://drive.google.com/uc?id=1Ms3Q6MYQrQUA_PKZbJ2t2NeYFQ5jloMh'
-    #NODULE_MNIST_DATA = 'https://zenodo.org/record/6496656/files/nodulemnist3d.npz?download=1'
     MEDMNIST_DICT = {'OrganMNIST3D': 'https://zenodo.org/record/6496656/files/organmnist3d.npz?download=1',	
                      'NoduleMNIST3D': 'https://zenodo.org/record/6496656/files/nodulemnist3d.npz?download=1',
                      'AdrenalMNIST3D': 'https://zenodo.org/record/6496656/files/adrenalmnist3d.npz?download=1',	
@@ -206,7 +205,7 @@ def download_example_spine_data(path: (str, Path) = '../data') -> Path:
     
     return Path(path) / study
 
-# %% ../nbs/09_external_data.ipynb 18
+# %% ../nbs/09_external_data.ipynb 14
 def _process_medmnist_img(path, idx_arr):
     """Save tensor as NIfTI."""
     
@@ -216,7 +215,7 @@ def _process_medmnist_img(path, idx_arr):
     img.save(fn)
     return str(fn)
 
-# %% ../nbs/09_external_data.ipynb 19
+# %% ../nbs/09_external_data.ipynb 15
 def _df_sort_and_add_columns(df, label_list, is_val):
     """Sort the dataframe based on img_idx and add labels and if it is validation data column."""
     
@@ -227,7 +226,7 @@ def _df_sort_and_add_columns(df, label_list, is_val):
     
     return df 
 
-# %% ../nbs/09_external_data.ipynb 20
+# %% ../nbs/09_external_data.ipynb 16
 def _create_nodule_df(pool, output_dir, imgs, labels, is_val=False): 
     """Create dataframe for MedMNIST data."""
     
@@ -237,10 +236,10 @@ def _create_nodule_df(pool, output_dir, imgs, labels, is_val=False):
     df = pd.DataFrame(list(zip(img_path_list, img_idx)), columns=['img_path','img_idx'])        
     return  _df_sort_and_add_columns(df, labels, is_val)
 
-# %% ../nbs/09_external_data.ipynb 21
+# %% ../nbs/09_external_data.ipynb 17
 def download_and_process_MedMNIST3D(study: str, 
                                     path: (str, Path) = '../data', 
-                                    max_workers: int = 1) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                                    max_workers: int = 1):
     """Downloads and processes a particular MedMNIST dataset.
 
     Args:
@@ -282,4 +281,3 @@ def download_and_process_MedMNIST3D(study: str,
     dataset_file_path.unlink()
 
     return train_val_df, test_df
-

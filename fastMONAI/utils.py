@@ -9,11 +9,7 @@ import torch
 from pathlib import Path
 
 # %% ../nbs/07_utils.ipynb 3
-def store_variables(pkl_fn:(str, Path),
-                    size:list,
-                    reorder:bool,
-                    resample:(int,list),
-                   ) -> None:
+def store_variables(pkl_fn: (str, Path), size: list, reorder: bool, resample: (int, list)):
     """Save variable values in a pickle file."""
     
     var_vals = [size, reorder, resample]
@@ -23,8 +19,7 @@ def store_variables(pkl_fn:(str, Path),
 
 # %% ../nbs/07_utils.ipynb 4
 def load_variables(pkl_fn: (str, Path)):
-    """
-    Loads stored variable values from a pickle file.
+    """Loads stored variable values from a pickle file.
 
     Args:
         pkl_fn: File path of the pickle file to be loaded.
