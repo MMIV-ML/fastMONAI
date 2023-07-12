@@ -14,18 +14,23 @@ import torch
 import glob
 
 # %% ../nbs/08_dataset_info.ipynb 4
-class MedDataset():
-    '''A class to extract and present information about the dataset.'''
+class MedDataset:
+    """A class to extract and present information about the dataset."""
 
-    def __init__(self, path=None, # Path to the image folder
-                 postfix:str='', # Specify the file type if there are different files in the folder
-                 img_list:list=None, # Alternatively pass in a list with image paths
-                 reorder:bool=False, # Whether to reorder the data to be closest to canonical (RAS+) orientation
-                 dtype:(MedImage, MedMask)=MedImage, # Load data as datatype
-                 max_workers:int=1 #  The number of worker threads
-                ):
-        '''Constructs all the necessary attributes for the MedDataset object.'''
+    def __init__(self, path=None, postfix: str = '', img_list: list = None,
+                 reorder: bool = False, dtype: (MedImage, MedMask) = MedImage,
+                 max_workers: int = 1):
+        """Constructs MedDataset object.
 
+        Args:
+            path (str, optional): Path to the image folder.
+            postfix (str, optional): Specify the file type if there are different files in the folder.
+            img_list (List[str], optional): Alternatively, pass in a list with image paths.
+            reorder (bool, optional): Whether to reorder the data to be closest to canonical (RAS+) orientation.
+            dtype (Union[MedImage, MedMask], optional): Load data as datatype. Default is MedImage.
+            max_workers (int, optional): The number of worker threads. Default is 1.
+        """
+                     
         self.path = path
         self.postfix = postfix
         self.img_list = img_list
@@ -35,48 +40,43 @@ class MedDataset():
         self.df = self._create_data_frame()
 
     def _create_data_frame(self):
-        '''Private method that returns a dataframe with information about the dataset
-
-        Returns:
-            DataFrame: A DataFrame with information about the dataset.
-        '''
+        """Private method that returns a dataframe with information about the dataset."""
 
         if self.path:
             self.img_list = glob.glob(f'{self.path}/*{self.postfix}*')
             if not self.img_list: print('Could not find images. Check the image path')
-        
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             data_info_dict = list(executor.map(self._get_data_info, self.img_list))
-        
+
         df = pd.DataFrame(data_info_dict)
-        if df.orientation.nunique() > 1: print('The volumes in this dataset have different orientations. Recommended to pass in the argument reorder=True when creating a MedDataset object for this dataset')
+        
+        if df.orientation.nunique() > 1:
+            print('The volumes in this dataset have different orientations. '
+                  'Recommended to pass in the argument reorder=True when creating a MedDataset object for this dataset')
+
         return df
 
     def summary(self):
-        '''Summary DataFrame of the dataset with example path for similar data.'''
-
+        """Summary DataFrame of the dataset with example path for similar data."""
+        
         columns = ['dim_0', 'dim_1', 'dim_2', 'voxel_0', 'voxel_1', 'voxel_2', 'orientation']
-        return self.df.groupby(columns,as_index=False).agg(example_path=('path', 'min'), total=('path', 'size')).sort_values('total', ascending=False)
+        
+        return self.df.groupby(columns, as_index=False).agg(
+            example_path=('path', 'min'), total=('path', 'size')
+        ).sort_values('total', ascending=False)
 
     def suggestion(self):
-        '''Voxel value that appears most often in dim_0, dim_1 and dim_2, and wheter the data should be reoriented.'''
+        """Voxel value that appears most often in dim_0, dim_1 and dim_2, and whether the data should be reoriented."""
+        
         resample = [self.df.voxel_0.mode()[0], self.df.voxel_1.mode()[0], self.df.voxel_2.mode()[0]]
-
         return resample, self.reorder
 
-    def _get_data_info(self, fn:str):
-        '''Private method to collect information about an image file.
+    def _get_data_info(self, fn: str):
+        """Private method to collect information about an image file."""
+        _, o, _ = med_img_reader(fn, dtype=self.dtype, reorder=self.reorder, only_tensor=False)
 
-        Args:
-            fn: Image file path.
-
-        Returns:
-            dict: A dictionary with information about the image file
-        '''
-
-        _,o,_ = med_img_reader(fn, dtype=self.dtype, reorder=self.reorder, only_tensor=False)
-
-        info_dict = {'path': fn,  'dim_0': o.shape[1],  'dim_1': o.shape[2],  'dim_2' :o.shape[3],
+        info_dict = {'path': fn, 'dim_0': o.shape[1], 'dim_1': o.shape[2], 'dim_2': o.shape[3],
                      'voxel_0': round(o.spacing[0], 4), 'voxel_1': round(o.spacing[1], 4), 'voxel_2': round(o.spacing[2], 4),
                      'orientation': f'{"".join(o.orientation)}+'}
 
@@ -87,28 +87,36 @@ class MedDataset():
 
         return info_dict
 
-    def get_largest_img_size(self,
-                             resample:list=None # A list with voxel spacing [dim_0, dim_1, dim_2]
-                            ) -> list:
-        '''Get the largest image size in the dataset.'''
-        dims = None 
+    def get_largest_img_size(self, resample: list = None) -> list:
+        """Get the largest image size in the dataset."""
         
-        if resample is not None: 
-            
+        dims = None
+
+        if resample is not None:
             org_voxels = self.df[["voxel_0", "voxel_1", 'voxel_2']].values
             org_dims = self.df[["dim_0", "dim_1", 'dim_2']].values
-            
+
             ratio = org_voxels/resample
             new_dims = (org_dims * ratio).T
             dims = [new_dims[0].max().round(), new_dims[1].max().round(), new_dims[2].max().round()]
-        
-        else: dims = [df.dim_0.max(), df.dim_1.max(), df.dim_2.max()]
-        
+
+        else:
+            dims = [df.dim_0.max(), df.dim_1.max(), df.dim_2.max()]
+
         return dims
 
 # %% ../nbs/08_dataset_info.ipynb 5
-def get_class_weights(train_labels:(np.array, list), class_weight='balanced'): 
-    '''calculate class weights.'''
+def get_class_weights(labels: (np.array, list), class_weight: str = 'balanced') -> torch.Tensor: 
+    """Calculates and returns the class weights.
+
+    Args:
+        labels: An array or list of class labels for each instance in the dataset.
+        class_weight: Defaults to 'balanced'.
+
+    Returns:
+        A tensor of class weights.
+    """
     
-    class_weights =  compute_class_weight(class_weight=class_weight, classes=np.unique(train_labels), y=train_labels)
+    class_weights =  compute_class_weight(class_weight=class_weight, classes=np.unique(labels), y=labels)
+    
     return torch.Tensor(class_weights)

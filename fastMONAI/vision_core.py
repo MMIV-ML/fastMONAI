@@ -10,7 +10,8 @@ from torchio import ScalarImage, LabelMap, ToCanonical, Resample
 
 # %% ../nbs/01_vision_core.ipynb 5
 def _preprocess(obj, reorder, resample):
-    """Preprocesses the given object.
+    """
+    Preprocesses the given object.
 
     Args:
         obj: The object to preprocess.
@@ -83,12 +84,8 @@ def _multi_channel(image_paths: list, reorder: bool, resample: list, dtype, only
 
 
 # %% ../nbs/01_vision_core.ipynb 8
-def med_img_reader(
-        file_path: (str, Path),
-        dtype=torch.Tensor,
-        reorder: bool = False,
-        resample: list = None,
-        only_tensor: bool = True
+def med_img_reader(file_path: (str, Path), dtype=torch.Tensor, reorder: bool = False,
+                   resample: list = None, only_tensor: bool = True
 ):
     """Loads and preprocesses a medical image.
 
@@ -120,32 +117,36 @@ def med_img_reader(
 
 # %% ../nbs/01_vision_core.ipynb 10
 class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
-    '''A class to bypass metaclass conflict:
+    """
+    A class to bypass metaclass conflict:
     https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html
-    '''
+    """
     pass
 
 # %% ../nbs/01_vision_core.ipynb 11
-class MedBase(torch.Tensor, metaclass=MetaResolver): 
-    '''A class that represents an image object. Metaclass casts x to this class if it is of type cls._bypass_type.'''
-
-    _bypass_type=torch.Tensor
+class MedBase(torch.Tensor, metaclass=MetaResolver):
+    """A class that represents an image object.
+    Metaclass casts `x` to this class if it is of type `cls._bypass_type`."""
+    
+    _bypass_type = torch.Tensor
     _show_args = {'cmap':'gray'}
     resample, reorder = None, False
     affine_matrix = None
 
-
     @classmethod
-    def create(cls, fn: (Path, str, torch.Tensor), **kwargs):
+    def create(cls, fn: (Path, str, torch.Tensor), **kwargs) -> torch.Tensor:
         """
-        Open a medical image and cast to MedBase object. If it is a torch.Tensor, cast to MedBase object.
+        Opens a medical image and casts it to MedBase object.
+        If `fn` is a torch.Tensor, it's cast to MedBase object.
 
         Args:
-            fn: Image path or a 4D torch.Tensor.
-            kwargs: Additional parameters.
+            fn : (Path, str, torch.Tensor)
+                Image path or a 4D torch.Tensor.
+            kwargs : dict
+                Additional parameters for the medical image reader.
 
         Returns:
-            A 4D tensor as MedBase object.
+            torch.Tensor : A 4D tensor as a MedBase object.
         """
         if isinstance(fn, torch.Tensor):
             return cls(fn)
@@ -155,18 +156,32 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     @classmethod
     def item_preprocessing(cls, resample: (list, int, tuple), reorder: bool):
         """
-        Change the values for the class variables `resample` and `reorder`.
+        Changes the values for the class variables `resample` and `reorder`.
 
         Args:
-            resample: A list with voxel spacing.
-            reorder: Whether to reorder the data to be closest to canonical (RAS+) orientation.
+            resample : (list, int, tuple)
+                A list with voxel spacing.
+            reorder : bool
+                Whether to reorder the data to be closest to canonical (RAS+) orientation.
         """
         cls.resample = resample
         cls.reorder = reorder
 
-    def show(self, ctx=None, channel=0, indices=None, anatomical_plane=0, **kwargs):
+    def show(self, ctx=None, channel: int = 0, indices: int = None, anatomical_plane: int = 0, **kwargs):
         """
-        Show Medimage using `merge(self._show_args, kwargs)`.
+        Displays the Medimage using `merge(self._show_args, kwargs)`.
+
+        Args:
+            ctx : Any, optional
+                Context to use for the display. Defaults to None.
+            channel : int, optional
+                The channel of the image to be displayed. Defaults to 0.
+            indices : list or None, optional
+                Indices of the images to be displayed. Defaults to None.
+            anatomical_plane : int, optional
+                Anatomical plane of the image to be displayed. Defaults to 0.
+            kwargs : dict, optional
+                Additional parameters for the show function.
 
         Returns:
             Shown image.
@@ -177,15 +192,16 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
             **merge(self._show_args, kwargs)
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Returns the string representation of the MedBase instance."""
         return f'{self.__class__.__name__} mode={self.mode} size={"x".join([str(d) for d in self.size])}'
 
 # %% ../nbs/01_vision_core.ipynb 12
 class MedImage(MedBase):
-    '''Subclass of MedBase that represents an image object.'''
+    """Subclass of MedBase that represents an image object."""
     pass
 
 # %% ../nbs/01_vision_core.ipynb 13
 class MedMask(MedBase):
-    '''Subclass of MedBase that represents an mask object.'''
+    """Subclass of MedBase that represents an mask object."""
     _show_args = {'alpha':0.5, 'cmap':'tab20'}

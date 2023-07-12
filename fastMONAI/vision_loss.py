@@ -12,40 +12,61 @@ from torch.nn.modules.loss import _Loss
 
 # %% ../nbs/04_vision_loss_functions.ipynb 3
 class CustomLoss:
-    '''Wrapper to get show_results to work.'''
+    """A custom loss wrapper class for loss functions to allow them to work with
+    the 'show_results' method in fastai. 
+    """
 
     def __init__(self, loss_func):
+        """Constructs CustomLoss object.
+        
+        Args:
+            loss_func: The loss function to be wrapped.
+        """
+        
         self.loss_func = loss_func
 
     def __call__(self, pred, targ):
-        if isinstance(pred, MedBase): pred, targ = torch.Tensor(pred.cpu()), torch.Tensor(targ.cpu().float())
+        """Computes the loss for given predictions and targets.
+
+        Args:
+            pred: The predicted outputs.
+            targ: The ground truth targets.
+
+        Returns:
+            The computed loss.
+        """
+        
+        if isinstance(pred, MedBase):
+            pred, targ = torch.Tensor(pred.cpu()), torch.Tensor(targ.cpu().float())
+            
         return self.loss_func(pred, targ)
 
     def activation(self, x):
         return x
     
-    def decodes(self, x):
-        '''Converts model output to target format.
-
+    def decodes(self, x) -> torch.Tensor:
+        """Converts model output to target format.
+        
         Args:
-            x: Activations for each class [B, C, W, H, D]
+            x: Activations for each class with dimensions [B, C, W, H, D].
 
         Returns:
-            torch.Tensor: Predicted mask.
-        '''
-
+            The predicted mask.
+        """
+        
         n_classes = x.shape[1]
-        if n_classes == 1: x = pred_to_binary_mask(x)
-        else: x,_ = batch_pred_to_multiclass_mask(x)
+        if n_classes == 1: 
+            x = pred_to_binary_mask(x)
+        else: 
+            x,_ = batch_pred_to_multiclass_mask(x)
 
         return x
 
 # %% ../nbs/04_vision_loss_functions.ipynb 4
 class TverskyFocalLoss(_Loss):
     """
-    Compute both Dice loss and Focal Loss, and return the weighted sum of these two losses.
-    The details of Dice loss is shown in ``monai.losses.DiceLoss``.
-    The details of Focal Loss is shown in ``monai.losses.FocalLoss``.
+    Compute Tversky loss with a focus parameter, gamma, applied.
+    The details of Tversky loss is shown in ``monai.losses.TverskyLoss``.
     """
 
     def __init__(
@@ -54,45 +75,45 @@ class TverskyFocalLoss(_Loss):
         to_onehot_y: bool = False,
         sigmoid: bool = False,
         softmax: bool = False,
-        reduction: str = "mean",
         gamma: float = 2,
-        #focal_weight: (float, int, torch.Tensor) = None,
-        #lambda_dice: float = 1.0,
-        #lambda_focal: float = 1.0,
-        alpha = 0.5, 
-        beta = 0.99
-    ) -> None:
-
+        alpha: float = 0.5, 
+        beta: float = 0.99):
+        """
+        Args:
+            include_background: if to calculate loss for the background class.
+            to_onehot_y: whether to convert `y` into one-hot format.
+            sigmoid: if True, apply a sigmoid function to the prediction.
+            softmax: if True, apply a softmax function to the prediction.
+            gamma: the focal parameter, it modulates the loss with regards to 
+                how far the prediction is from target.
+            alpha: the weight of false positive in Tversky loss calculation.
+            beta: the weight of false negative in Tversky loss calculation.
+        """
+            
         super().__init__()
-        self.tversky = TverskyLoss(to_onehot_y=to_onehot_y, include_background=include_background, sigmoid=sigmoid, softmax=softmax, alpha=alpha, beta=beta)
-        #self.focal = FocalLoss(to_onehot_y=to_onehot_y, include_background=include_background, gamma=gamma, weight=focal_weight, reduction=reduction)
-        
-        #if lambda_dice < 0.0: raise ValueError("lambda_dice should be no less than 0.0.")
-        #if lambda_focal < 0.0: raise ValueError("lambda_focal should be no less than 0.0.")
-        #self.lambda_dice = lambda_dice
-        #self.lambda_focal = lambda_focal
-        self.to_onehot_y = to_onehot_y
+        self.tversky = TverskyLoss(
+            to_onehot_y=to_onehot_y, 
+            include_background=include_background, 
+            sigmoid=sigmoid, 
+            softmax=softmax, 
+            alpha=alpha, 
+            beta=beta
+        )
         self.gamma = gamma
-        self.include_background = include_background
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            input: the shape should be BNH[WD]. The input should be the original logits
-                due to the restriction of ``monai.losses.FocalLoss``.
-            target: the shape should be BNH[WD] or B1H[WD].
+            input: the shape should be [B, C, W, H, D]. The input should be the original logits.
+            target: the shape should be[B, C, W, H, D].
+
         Raises:
             ValueError: When number of dimensions for input and target are different.
-            ValueError: When number of channels for target is neither 1 nor the same as input.
         """
         if len(input.shape) != len(target.shape):
-            raise ValueError("the number of dimensions for input and target should be the same.")
-
-        n_pred_ch = input.shape[1]
+            raise ValueError("The number of dimensions for input and target should be the same.")
 
         tversky_loss = self.tversky(input, target)
-        #focal_loss = self.focal(input, target)
-        total_loss: torch.Tensor = 1 - ((1 - tversky_loss)**self.gamma) #tversky_loss
-        #print(total_loss,total_loss.shape)
-        #tversky_loss +  focal_loss
+        total_loss: torch.Tensor = 1 - ((1 - tversky_loss)**self.gamma)
+
         return total_loss

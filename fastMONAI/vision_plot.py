@@ -9,8 +9,7 @@ from torchio.visualization import rotate
 
 # %% ../nbs/00_vision_plot.ipynb 3
 def _get_slice(image, channel: int, indices: (int, list), anatomical_plane: int, voxel_size: (int, list)):
-    """
-    A private method to get a 2D tensor and aspect ratio for plotting.
+    """A private method to get a 2D tensor and aspect ratio for plotting.
     This is modified code from the torchio function `plot_volume`.
 
     Args:
@@ -53,11 +52,9 @@ def _get_slice(image, channel: int, indices: (int, list), anatomical_plane: int,
 
 # %% ../nbs/00_vision_plot.ipynb 4
 @delegates(plt.Axes.imshow, keep=True, but=['shape', 'imlim'])
-def show_med_img(
-    im, ctx, channel: int, indices: (int, list), anatomical_plane: int,
-    voxel_size: (int, list), ax=None, figsize=None, title=None, **kwargs):
-    """
-    Show an image on `ax`. This is a modified code from the fastai function `show_image`.
+def show_med_img(im, ctx, channel: int, indices: (int, list), anatomical_plane: int,
+                 voxel_size: (int, list), ax=None, figsize=None, title=None, **kwargs):
+    """Show an image on `ax`. This is a modified code from the fastai function `show_image`.
 
     Args:
         im: The input image.
@@ -74,18 +71,23 @@ def show_med_img(
     Returns:
         Axis with the plot.
     """
-    if hasattrs(im, ('data', 'cpu', 'permute')):
+    if hasattrs(im, ('data', 'cpu', 'permute')): # Check if `im` has the necessary attributes
         im = im.data.cpu()
         im, aspect = _get_slice(
-            im, channel=channel, anatomical_plane=anatomical_plane,
-            voxel_size=voxel_size, indices=indices
+            im, 
+            channel=channel, 
+            anatomical_plane=anatomical_plane,
+            voxel_size=voxel_size, 
+            indices=indices
         )
 
-    ax = ifnone(ax, ctx)
-    if ax is None:
-        _, ax = plt.subplots(figsize=figsize)  # ax is only None when .show() is used.
+    ax = ax if ax is not None else ctx 
+
+    if ax is None: # ax is only None when .show() is used.
+        _, ax = plt.subplots(figsize=figsize)
 
     ax.imshow(im, aspect=aspect, **kwargs)
+
     if title is not None:
         ax.set_title(title)
 

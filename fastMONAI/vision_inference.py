@@ -24,27 +24,42 @@ def _to_original_orientation(input_img, org_orientation):
     return reoriented_array[None]
 
 # %% ../nbs/06_vision_inference.ipynb 4
-def _do_resize(o, target_shape, image_interpolation='linear', label_interpolation='nearest'):
-    '''Resample images so the output shape matches the given target shape.'''
+def _do_resize(o, target_shape, image_interpolation='linear', 
+               label_interpolation='nearest'):
+    """
+    Resample images so the output shape matches the given target shape.
+    """
 
-    resize = Resize(target_shape, image_interpolation=image_interpolation, label_interpolation=label_interpolation)
+    resize = Resize(
+        target_shape, 
+        image_interpolation=image_interpolation, 
+        label_interpolation=label_interpolation
+    )
+    
     return resize(o)
 
 # %% ../nbs/06_vision_inference.ipynb 5
-def inference(learn_inf, reorder, resample, fn:(Path,str)='', save_path:(str,Path)=None, org_img=None, input_img=None, org_size=None): 
-    '''Predict on new data using exported model'''         
+def inference(learn_inf, reorder, resample, fn: (str, Path) = '',
+              save_path: (str, Path) = None, org_img=None, input_img=None,
+              org_size=None): 
+    """Predict on new data using exported model."""         
+    
     if None in [org_img, input_img, org_size]: 
-        org_img, input_img, org_size = med_img_reader(fn, reorder, resample, only_tensor=False)
-    else: org_img, input_img = copy(org_img), copy(input_img)
+        org_img, input_img, org_size = med_img_reader(fn, reorder, resample, 
+                                                      only_tensor=False)
+    else: 
+        org_img, input_img = copy(org_img), copy(input_img)
     
-    pred, *_ = learn_inf.predict(input_img.data);
+    pred, *_ = learn_inf.predict(input_img.data)
     
-    pred_mask = do_pad_or_crop(pred.float(), input_img.shape[1:], padding_mode=0, mask_name=None)
+    pred_mask = do_pad_or_crop(pred.float(), input_img.shape[1:], padding_mode=0, 
+                               mask_name=None)
     input_img.set_data(pred_mask)
     
     input_img = _do_resize(input_img, org_size, image_interpolation='nearest')
     
-    reoriented_array = _to_original_orientation(input_img.as_sitk(), ('').join(org_img.orientation))
+    reoriented_array = _to_original_orientation(input_img.as_sitk(), 
+                                                ('').join(org_img.orientation))
     
     org_img.set_data(reoriented_array)
 
@@ -56,12 +71,10 @@ def inference(learn_inf, reorder, resample, fn:(Path,str)='', save_path:(str,Pat
     return org_img
 
 # %% ../nbs/06_vision_inference.ipynb 7
-def refine_binary_pred_mask(
-        pred_mask,
-        remove_size: (int, float) = None,
-        percentage: float = 0.2,
-        verbose: bool = False
-):
+def refine_binary_pred_mask(pred_mask, 
+                            remove_size: (int, float) = None,
+                            percentage: float = 0.2,
+                            verbose: bool = False) -> np.ndarray:
     """Removes small objects from the predicted binary mask.
 
     Args:
@@ -74,6 +87,7 @@ def refine_binary_pred_mask(
     Returns:
         The processed mask with small objects removed.
     """
+                                
     labeled_mask, n_components = label(pred_mask)
 
     if verbose:

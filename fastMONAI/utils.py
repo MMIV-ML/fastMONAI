@@ -14,7 +14,7 @@ def store_variables(pkl_fn:(str, Path),
                     reorder:bool,
                     resample:(int,list),
                    ) -> None:
-    '''Save variable values in a pickle file.'''
+    """Save variable values in a pickle file."""
     
     var_vals = [size, reorder, resample]
     
@@ -22,19 +22,22 @@ def store_variables(pkl_fn:(str, Path),
         pickle.dump(var_vals, f)
 
 # %% ../nbs/07_utils.ipynb 4
-def load_variables(pkl_fn # Filename of the pickle file
-                  ):
-    '''Load stored variable values from a pickle file.
+def load_variables(pkl_fn: (str, Path)) -> Any:
+    """
+    Loads stored variable values from a pickle file.
 
-    Returns: A list of variable values.
-    '''
+    Args:
+        pkl_fn: File path of the pickle file to be loaded.
 
+    Returns:
+        The deserialized value of the pickled data.
+    """
     with open(pkl_fn, 'rb') as f:
         return pickle.load(f)
 
 # %% ../nbs/07_utils.ipynb 5
 def print_colab_gpu_info(): 
-    '''Check if we have a GPU attached to the runtime.'''
+    """Check if we have a GPU attached to the runtime."""
     
     colab_gpu_msg =(f"{'#'*80}\n"
                     "Remember to attach a GPU to your Colab Runtime:"
