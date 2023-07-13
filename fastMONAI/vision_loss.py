@@ -17,24 +17,12 @@ class CustomLoss:
     """
 
     def __init__(self, loss_func):
-        """Constructs CustomLoss object.
-        
-        Args:
-            loss_func: The loss function to be wrapped.
-        """
+        """Constructs CustomLoss object."""
         
         self.loss_func = loss_func
 
     def __call__(self, pred, targ):
-        """Computes the loss for given predictions and targets.
-
-        Args:
-            pred: The predicted outputs.
-            targ: The ground truth targets.
-
-        Returns:
-            The computed loss.
-        """
+        """Computes the loss for given predictions and targets."""
         
         if isinstance(pred, MedBase):
             pred, targ = torch.Tensor(pred.cpu()), torch.Tensor(targ.cpu().float())

@@ -2,7 +2,7 @@
 
 # %% auto 0
 __all__ = ['MURLs', 'download_ixi_data', 'download_ixi_tiny', 'download_spine_test_data', 'download_example_spine_data',
-           'download_and_process_MedMNIST3D']
+           'download_medmnist3d_dataset', 'download_example_endometrial_cancer_data']
 
 # %% ../nbs/09_external_data.ipynb 1
 from pathlib import Path
@@ -29,6 +29,7 @@ class MURLs():
                      'FractureMNIST3D': 'https://zenodo.org/record/6496656/files/fracturemnist3d.npz?download=1',
                      'VesselMNIST3D': 'https://zenodo.org/record/6496656/files/vesselmnist3d.npz?download=1', 
                      'SynapseMNIST3D': 'https://zenodo.org/record/6496656/files/synapsemnist3d.npz?download=1'}
+    EXAMPLE_EC_DATA = 'https://drive.google.com/uc?id=1cjOBhkdRsoX3unxHiL377R5j8ottN4An'
 
 # %% ../nbs/09_external_data.ipynb 4
 def _process_ixi_xls(xls_path: (str, Path), img_path: Path) -> pd.DataFrame:
@@ -237,47 +238,62 @@ def _create_nodule_df(pool, output_dir, imgs, labels, is_val=False):
     return  _df_sort_and_add_columns(df, labels, is_val)
 
 # %% ../nbs/09_external_data.ipynb 17
-def download_and_process_MedMNIST3D(study: str, 
-                                    path: (str, Path) = '../data', 
-                                    max_workers: int = 1):
-    """Downloads and processes a particular MedMNIST dataset.
+def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
+                                max_workers: int = 1):
+    """Downloads and processes a particular MedMNIST3D dataset.
 
     Args:
-        study: select MedMNIST dataset ('OrganMNIST3D', 'NoduleMNIST3D', 
-                'AdrenalMNIST3D', 'FractureMNIST3D', 'VesselMNIST3D', 'SynapseMNIST3D')
-        path: Directory where the downloaded data
-            will be stored and extracted. Defaults to '../data'.
-        max_workers: Maximum number of worker processes to use
-            for data processing. Defaults to 1.
+        study: MedMNIST dataset ('OrganMNIST3D', 'NoduleMNIST3D', 
+               'AdrenalMNIST3D', 'FractureMNIST3D', 'VesselMNIST3D', 'SynapseMNIST3D')
+        path: Directory to store and extract downloaded data. Defaults to '../data'.
+        max_workers: Maximum number of worker processes for data processing. 
+                     Defaults to 1.
 
     Returns:
-        Two pandas DataFrames. The first DataFrame combines training and validation data, 
-        and the second DataFrame contains the testing data.
+        Two pandas DataFrames. The first DataFrame combines training and validation 
+        data, and the second DataFrame contains the testing data.
     """
     path = Path(path) / study
     dataset_file_path = path / f'{study}.npz'
 
-    try: 
+    try:
         download_url(url=MURLs.MEDMNIST_DICT[study], filepath=dataset_file_path)
-    except: 
+    except:
         raise ValueError(f"Dataset '{study}' does not exist.")
 
     data = load(dataset_file_path)
     keys = ['train_images', 'val_images', 'test_images']
 
-    for key in keys: 
+    for key in keys:
         (path / key).mkdir(exist_ok=True)
-    
-    train_imgs, val_imgs, test_imgs = data[keys[0]], data[keys[1]], data[keys[2]]
 
-    # Process the data and create DataFrames
+    train_imgs = data[keys[0]]
+    val_imgs = data[keys[1]]
+    test_imgs = data[keys[2]]
+
     with mp.Pool(processes=max_workers) as pool:
-        train_df = _create_nodule_df(pool, path / keys[0], train_imgs, data['train_labels'])
-        val_df = _create_nodule_df(pool, path / keys[1], val_imgs, data['val_labels'], is_val=True)
-        test_df = _create_nodule_df(pool, path / keys[2], test_imgs, data['test_labels'])
+        train_df = _create_nodule_df(pool, path / keys[0], train_imgs, 
+                                     data['train_labels'])
+        val_df = _create_nodule_df(pool, path / keys[1], val_imgs, 
+                                   data['val_labels'], is_val=True)
+        test_df = _create_nodule_df(pool, path / keys[2], test_imgs, 
+                                    data['test_labels'])
 
     train_val_df = pd.concat([train_df, val_df], ignore_index=True)
 
     dataset_file_path.unlink()
 
     return train_val_df, test_df
+
+# %% ../nbs/09_external_data.ipynb 19
+def download_example_endometrial_cancer_data(path: (str, Path) = '../data') -> Path:
+    study = 'ec'
+    
+    download_and_extract(
+        url=MURLs.EXAMPLE_EC_DATA, 
+        filepath='ec.zip', 
+        output_dir=path
+    )
+    Path('ec.zip').unlink()
+    
+    return Path(path) / study

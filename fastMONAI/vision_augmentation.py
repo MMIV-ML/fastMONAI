@@ -84,16 +84,14 @@ class ZNormalization(DisplayedTransform):
         self.channel_wise = channel_wise
 
     def encodes(self, o: MedImage):
-        return MedImage.create(self._do_z_normalization(o))
+        if self.channel_wise:
+            o = torch.stack([self.z_normalization(c[None])[0] for c in o])
+        else: o = self.z_normalization(o) 
+
+        return MedImage.create(o)
 
     def encodes(self, o: MedMask):
         return o
-
-    def _do_z_normalization(self, o):
-        if self.channel_wise:
-            return torch.stack([self.z_normalization(c[None])[0] for c in o])
-        else: 
-            return self.z_normalization(o)
 
 # %% ../nbs/03_vision_augment.ipynb 10
 class BraTSMaskConverter(DisplayedTransform):
