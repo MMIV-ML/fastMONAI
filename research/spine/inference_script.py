@@ -21,27 +21,18 @@ loaded_learners = [load_learner(fn, cpu=True) for fn in learner_list]
 vars_fn = models_path/'vars.pkl'
 _, reorder, resample = load_variables(pkl_fn=vars_fn)
 
-
 # Set file name from command line argument
-fn = args.fn
+img_fn = args.fn
 save_fn = fn.split('.nii')[0] + '_pred.nii.gz'
 
-# Initialize mask data
-mask_data = None
+#pred_items
+org_img, input_img, org_size = med_img_reader(img_fn, reorder, resample, only_tensor=False)
 
-# Infer mask for each model
-for learner in loaded_learners:
-    mask = inference(learner, reorder, resample, fn)
-    
-    # Initialize mask data if necessary
-    if mask_data is None:
-        mask_data = torch.zeros_like(mask.data)
-    # Add mask data to accumulated mask data
-    else:
-        mask_data += mask.data
+#Predict with ensemble
+mask_data = [inference(learner, reorder, resample, org_img=org_img, input_img=input_img, org_size=org_size).data for learner in loaded_learners]
 
 # Average the accumulated mask data
-mask_data /= len(loaded_learners)
+mask_data = sum(mask_data)/len(loaded_learners)
 
 # Threshold the averaged mask data to create a binary mask
 mask_data = torch.where(mask_data > 0.5, 1., 0.)
@@ -49,8 +40,6 @@ mask_data = torch.where(mask_data > 0.5, 1., 0.)
 # Apply postprocessing to remove small objects from the binary mask
 mask_data = refine_binary_pred_mask(mask_data, remove_size=10437, percentage=0.2)
 
-# Set the data of the mask object to the processed mask data
-mask.set_data(mask_data)
-
-# Save the mask
-mask.save(save_fn)
+# Set the data of the image object to the processed mask data and save the predicted mask
+org_img.set_data(mask_data)
+org_img.save(save_fn)
