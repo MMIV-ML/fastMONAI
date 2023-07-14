@@ -4,15 +4,16 @@
 __all__ = ['inference', 'refine_binary_pred_mask']
 
 # %% ../nbs/06_vision_inference.ipynb 1
-import numpy as np
+from copy import copy
 from pathlib import Path
-from torchio import Resize
+import torch
+import numpy as np
 from scipy.ndimage import label
-from .vision_core import *
-from .vision_augmentation import do_pad_or_crop
 from skimage.morphology import remove_small_objects
 from SimpleITK import DICOMOrient, GetArrayFromImage
-from copy import copy
+from torchio import Resize
+from .vision_core import *
+from .vision_augmentation import do_pad_or_crop
 
 # %% ../nbs/06_vision_inference.ipynb 3
 def _to_original_orientation(input_img, org_orientation):
@@ -74,7 +75,7 @@ def inference(learn_inf, reorder, resample, fn: (str, Path) = '',
 def refine_binary_pred_mask(pred_mask, 
                             remove_size: (int, float) = None,
                             percentage: float = 0.2,
-                            verbose: bool = False) -> np.ndarray:
+                            verbose: bool = False) -> torch.Tensor:
     """Removes small objects from the predicted binary mask.
 
     Args:
@@ -102,4 +103,4 @@ def refine_binary_pred_mask(pred_mask,
     processed_mask = remove_small_objects(
         labeled_mask, min_size=small_objects_threshold)
 
-    return np.where(processed_mask > 0, 1., 0.)
+    return torch.Tensor(processed_mask > 0).float()                          

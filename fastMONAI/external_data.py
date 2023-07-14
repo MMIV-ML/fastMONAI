@@ -257,6 +257,7 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
     dataset_file_path = path / f'{study}.npz'
 
     try:
+        #todo: check if dataset is downloaded
         download_url(url=MURLs.MEDMNIST_DICT[study], filepath=dataset_file_path)
     except:
         raise ValueError(f"Dataset '{study}' does not exist.")

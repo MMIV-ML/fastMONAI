@@ -110,19 +110,19 @@ class MedImageDataLoaders(DataLoaders):
 # %% ../nbs/02_vision_data.ipynb 16
 @typedispatch
 def show_batch(x: MedImage, y, samples, ctxs=None, max_n=6, nrows=None, 
-               ncols=None, figsize=None, channel: int = 0, indices=None, 
-               anatomical_plane: int = 0, **kwargs):
-    """Showing a batch of samples for classification and regression tasks."""
-    
+               ncols=None, figsize=None, channel=0, indices=None,
+               anatomical_plane=0, **kwargs):
+    '''Showing a batch of samples for classification and regression tasks.'''
+
     if ctxs is None: 
         ctxs = get_grid(min(len(samples), max_n), nrows=nrows, ncols=ncols, figsize=figsize)
-    
+        
     n = 1 if y is None else 2
     
     for i in range(n):
         ctxs = [
-            b.show(ctx=c, channel=channel, indices=indices, anatomical_plane=anatomical_plane, **kwargs) 
-            for b, c, _ in zip(samples.itemgot(i), ctxs, range(max_n))
+            b.show(ctx=c, channel=channel, indices=indices, anatomical_plane=anatomical_plane, **kwargs)
+            for b,c,_ in zip(samples.itemgot(i),ctxs,range(max_n))
         ]
 
     plt.tight_layout()
@@ -131,9 +131,9 @@ def show_batch(x: MedImage, y, samples, ctxs=None, max_n=6, nrows=None,
 
 # %% ../nbs/02_vision_data.ipynb 17
 @typedispatch
-def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows: int = None,
-               ncols: int = None, figsize=None, channel: int = 0, indices: int = None,
-               anatomical_plane: int = 0, **kwargs):
+def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
+               ncols=None, figsize=None, channel=0, indices=None,
+               anatomical_plane=0, **kwargs):
     """Showing a batch of decoded segmentation samples."""
 
     nrows, ncols = min(len(samples), max_n), x.shape[1] + 1
@@ -226,7 +226,7 @@ def show_results(x: MedImage, y: MedMask, samples, outs, ctxs=None, max_n: int =
 
 # %% ../nbs/02_vision_data.ipynb 23
 @typedispatch
-def plot_top_losses(x: MedImage, y, samples, outs, raws, losses, nrows: int = None, 
+def plot_top_losses(x: MedImage, y: TensorCategory, samples, outs, raws, losses, nrows: int = None, 
                     ncols: int = None, figsize=None, channel: int = 0, indices: int = None, 
                     anatomical_plane: int = 0, **kwargs):
     """Show images in top_losses along with their prediction, actual, loss, and probability of actual class."""
