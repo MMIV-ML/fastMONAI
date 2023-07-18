@@ -1,13 +1,15 @@
 # Endometrial cancer segmentation
-The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf)-
+The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf). In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) as reported in the study [Automatic segmentation of uterine endometrial cancer on multi-sequence MRI using a convolutional neural network](https://www.nature.com/articles/s41598-021-93792-7).
 
 The trained weights and exported learner are available on [HugginFace](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
 
 ## How to use
 1. Clone this repository.
 2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/master).
-3. (<b>Optional</b>) Run the `01_ec_training.ipynb` notebook to train your own model.
-4. Run the `02-ec-inference.ipynb` or `inference_script.py` to perform inference with the trained model.
+3. (<b>Optional</b>) Run the `01_ec_training.ipynb` `03_ec_training-multi.ipynb` notebook to train your own model.
+4. Run the 02-ec-inference.ipynb or inference_script.py to perform inference with the trained model for VIBE images.
+5. Run the 04-ec-inference-multi.ipynb to perform inference with the trained model for T2w, VIBE, and ADC images.
+
 If you choose to use `inference_script.py`, please follow these steps:
 
 - Make the script executable using the following command in the terminal: `chmod +x inference_script.py`
@@ -53,7 +55,7 @@ The results from the validation set are also presented in the table below:
 | 531 | 22.08 | 0.892250 | 0.555015 | 0.505062 |
 | 540 | 8.35 | 0.923702 | 0.895905 | 0.880058 |
 
-Median DSC: 0.8946, 0.8212, 0.779
+<b>Median DSC</b>: 0.8946, 0.8212, 0.779
 
 ## Results for multi-sequence (T2, VIBE, and ADC)
 The box plot of the predictions on the validation set: 
@@ -97,8 +99,7 @@ Sure, here is your data without the index numbers, in Markdown table format:
 | 531 | 22.08 | 0.892250 | 0.348378 | 0.318399 |
 | 540 | 8.35 | 0.923702 | 0.894245 | 0.884275 |
 
-Median DSC: 0.8946, 0.868, 0.8137
-
+<b>Median DSC</b>: 0.8946, 0.868, 0.8137
 
 ## Support and Contribution
 For any issues related to the model or the source code, please open an issue in the corresponding GitHub repository. Contributions to the code or the model are welcome and should be proposed through a pull request.
