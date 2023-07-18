@@ -29,7 +29,7 @@ class MURLs():
                      'FractureMNIST3D': 'https://zenodo.org/record/6496656/files/fracturemnist3d.npz?download=1',
                      'VesselMNIST3D': 'https://zenodo.org/record/6496656/files/vesselmnist3d.npz?download=1', 
                      'SynapseMNIST3D': 'https://zenodo.org/record/6496656/files/synapsemnist3d.npz?download=1'}
-    EXAMPLE_EC_DATA = 'https://drive.google.com/uc?id=1cjOBhkdRsoX3unxHiL377R5j8ottN4An'
+    EXAMPLE_EC_DATA = 'https://drive.google.com/uc?id=1yOmbA9-nKfzzsfysgp9OcPw8GAarXPvE'
 
 # %% ../nbs/09_external_data.ipynb 4
 def _process_ixi_xls(xls_path: (str, Path), img_path: Path) -> pd.DataFrame:
@@ -288,7 +288,6 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
 
 # %% ../nbs/09_external_data.ipynb 19
 def download_example_endometrial_cancer_data(path: (str, Path) = '../data') -> Path:
-    study = 'ec'
     
     download_and_extract(
         url=MURLs.EXAMPLE_EC_DATA, 
@@ -296,5 +295,3 @@ def download_example_endometrial_cancer_data(path: (str, Path) = '../data') -> P
         output_dir=path
     )
     Path('ec.zip').unlink()
-    
-    return Path(path) / study

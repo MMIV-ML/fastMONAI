@@ -56,7 +56,7 @@ def _load_and_preprocess(file_path, reorder, resample, dtype):
     return org_img, input_img, org_size
 
 # %% ../nbs/01_vision_core.ipynb 7
-def _multi_channel(image_paths: list, reorder: bool, resample: list, dtype, only_tensor: bool):
+def _multi_channel(image_paths: (L, list), reorder: bool, resample: list, dtype, only_tensor: bool):
     """
     Load and preprocess multisequence data.
 
@@ -84,13 +84,13 @@ def _multi_channel(image_paths: list, reorder: bool, resample: list, dtype, only
 
 
 # %% ../nbs/01_vision_core.ipynb 8
-def med_img_reader(file_path: (str, Path), dtype=torch.Tensor, reorder: bool = False,
+def med_img_reader(file_path: (str, Path, L, list), dtype=torch.Tensor, reorder: bool = False,
                    resample: list = None, only_tensor: bool = True
 ):
     """Loads and preprocesses a medical image.
 
     Args:
-        file_path: Path to the image. Can be a string or a Path object.
+        file_path: Path to the image. Can be a string, Path object or a list.
         dtype: Datatype for the return value. Defaults to torch.Tensor.
         reorder: Whether to reorder the data to be closest to canonical 
             (RAS+) orientation. Defaults to False.
@@ -103,9 +103,12 @@ def med_img_reader(file_path: (str, Path), dtype=torch.Tensor, reorder: bool = F
         only_tensor is True, otherwise returns original image, 
         preprocessed image, and original size.
     """
-    if isinstance(file_path, str) and ';' in file_path:
-        return _multi_channel(
-            file_path.split(';'), reorder, resample, dtype, only_tensor)
+    # if isinstance(file_path, str) and ';' in file_path:
+    #     return _multi_channel(
+    #         file_path.split(';'), reorder, resample, dtype, only_tensor)
+    
+    if isinstance(file_path, (L, list)):
+        return _multi_channel(file_path, reorder, resample, dtype, only_tensor)
 
     org_img, input_img, org_size = _load_and_preprocess(
         file_path, reorder, resample, dtype)
@@ -134,7 +137,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     affine_matrix = None
 
     @classmethod
-    def create(cls, fn: (Path, str, torch.Tensor), **kwargs) -> torch.Tensor:
+    def create(cls, fn: (Path, str, L, list, torch.Tensor), **kwargs) -> torch.Tensor: 
         """
         Opens a medical image and casts it to MedBase object.
         If `fn` is a torch.Tensor, it's cast to MedBase object.
