@@ -238,8 +238,14 @@ def _create_nodule_df(pool, output_dir, imgs, labels, is_val=False):
     return  _df_sort_and_add_columns(df, labels, is_val)
 
 # %% ../nbs/09_external_data.ipynb 17
+def _dataset_available_locally(path: Path):
+    """Checks if the dataset exists in the local directory."""
+    
+    return path.exists() and any(path.iterdir())
+
+# %% ../nbs/09_external_data.ipynb 18
 def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
-                                max_workers: int = 1):
+                                max_workers: int = 1, download: bool = False):
     """Downloads and processes a particular MedMNIST3D dataset.
 
     Args:
@@ -248,18 +254,23 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
         path: Directory to store and extract downloaded data. Defaults to '../data'.
         max_workers: Maximum number of worker processes for data processing. 
                      Defaults to 1.
+        download: Flag to indicate if the dataset should be re-downloaded if the dataset exists locally. 
+                  Default set to False.
 
     Returns:
         Two pandas DataFrames. The first DataFrame combines training and validation 
         data, and the second DataFrame contains the testing data.
     """
-    path = Path(path) / study
+                                    
+    path = Path(path) / study                           
+    if _dataset_available_locally(path) and not download: 
+        return pd.read_csv(path / 'train_val.csv'), pd.read_csv(path / 'test.csv')                                     
+                                    
     dataset_file_path = path / f'{study}.npz'
 
     try:
-        #todo: check if dataset is downloaded
         download_url(url=MURLs.MEDMNIST_DICT[study], filepath=dataset_file_path)
-    except:
+    except KeyError:
         raise ValueError(f"Dataset '{study}' does not exist.")
 
     data = load(dataset_file_path)
@@ -284,9 +295,12 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
 
     dataset_file_path.unlink()
 
+    train_val_df.to_csv(path / 'train_val.csv', index=False)
+    test_df.to_csv(path / 'test.csv', index=False)
+
     return train_val_df, test_df
 
-# %% ../nbs/09_external_data.ipynb 19
+# %% ../nbs/09_external_data.ipynb 20
 def download_example_endometrial_cancer_data(path: (str, Path) = '../data') -> Path:
     
     download_and_extract(
