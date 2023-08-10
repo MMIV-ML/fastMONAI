@@ -17,20 +17,26 @@ from .vision_augmentation import do_pad_or_crop
 from imagedata.series import Series
 
 # %% ../nbs/06_vision_inference.ipynb 3
-def save_series_pred(series_obj, save_dir, val='1234'): 
-    """
-    Save the predicted mask as DICOM.  
-    """
-    my_seriesInstanceUID = series_obj.seriesInstanceUID[:-4] + val
-    series_obj.seriesInstanceUID = my_seriesInstanceUID
+def _update_uid(attribute, series_obj, val='1234', slice_idx=None):
+    """Updates a DICOM UID by replacing its last 4 characters with the provided value."""
     
-    for slice_idx in range(series_obj.slices): 
-        my_SOPInstanceUID = series_obj.getDicomAttribute('SOPInstanceUID',slice=slice_idx)[:-4] + val
-        series_obj.setDicomAttribute('SOPInstanceUID', my_SOPInstanceUID, slice=slice_idx)
-    
-    series_obj.write(save_dir, opts={'keep_uid': True}, formats=['dicom']) 
+    uid = series_obj.getDicomAttribute(attribute, slice=slice_idx)[:-4] + val
+    series_obj.setDicomAttribute(attribute, uid, slice=slice_idx)
+    return series_obj
 
 # %% ../nbs/06_vision_inference.ipynb 4
+def save_series_pred(series_obj, save_dir, val='1234'):
+    """Saves series prediction with updated DICOM UIDs."""
+    
+    series_obj.seriesInstanceUID = series_obj.seriesInstanceUID[:-4] + val
+    
+    for slice_idx in range(series_obj.slices):
+        series_obj = _update_uid('SOPInstanceUID', series_obj, val, slice_idx)
+        series_obj = _update_uid('SeriesInstanceUID', series_obj, val, slice_idx)
+        
+    series_obj.write(save_dir, opts={'keep_uid': True}, formats=['dicom'])
+
+# %% ../nbs/06_vision_inference.ipynb 5
 def _to_original_orientation(input_img, org_orientation):
     """Reorients the image to its original orientation."""
     
@@ -39,7 +45,7 @@ def _to_original_orientation(input_img, org_orientation):
     
     return reoriented_array[None]
 
-# %% ../nbs/06_vision_inference.ipynb 5
+# %% ../nbs/06_vision_inference.ipynb 6
 def _do_resize(o, target_shape, image_interpolation='linear', 
                label_interpolation='nearest'):
     """Resample images so the output shape matches the given target shape."""
@@ -52,7 +58,7 @@ def _do_resize(o, target_shape, image_interpolation='linear',
     
     return resize(o)
 
-# %% ../nbs/06_vision_inference.ipynb 6
+# %% ../nbs/06_vision_inference.ipynb 7
 def inference(learn_inf, reorder, resample, fn: (str, Path) = '',
               save_path: (str, Path) = None, org_img=None, input_img=None,
               org_size=None): 
@@ -84,7 +90,7 @@ def inference(learn_inf, reorder, resample, fn: (str, Path) = '',
     
     return org_img
 
-# %% ../nbs/06_vision_inference.ipynb 8
+# %% ../nbs/06_vision_inference.ipynb 9
 def refine_binary_pred_mask(pred_mask, 
                             remove_size: (int, float) = None,
                             percentage: float = 0.2,

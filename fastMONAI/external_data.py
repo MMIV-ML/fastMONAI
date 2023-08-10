@@ -245,7 +245,7 @@ def _dataset_available_locally(path: Path):
 
 # %% ../nbs/09_external_data.ipynb 18
 def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
-                                max_workers: int = 1, download: bool = False):
+                                max_workers: int = 1, skip_download: bool = True):
     """Downloads and processes a particular MedMNIST3D dataset.
 
     Args:
@@ -254,7 +254,7 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
         path: Directory to store and extract downloaded data. Defaults to '../data'.
         max_workers: Maximum number of worker processes for data processing. 
                      Defaults to 1.
-        download: Flag to indicate if the dataset should be re-downloaded if the dataset exists locally. 
+        skip_download: Flag to indicate if the dataset should be re-downloaded if the dataset exists locally. 
                   Default set to False.
 
     Returns:
@@ -263,7 +263,7 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
     """
                                     
     path = Path(path) / study                           
-    if _dataset_available_locally(path) and not download: 
+    if _dataset_available_locally(path) and skip_download: 
         return pd.read_csv(path / 'train_val.csv'), pd.read_csv(path / 'test.csv')                                     
                                     
     dataset_file_path = path / f'{study}.npz'

@@ -16,7 +16,7 @@ args = parser.parse_args()
 # Download the model from the study repository and load the exported learner. 
 # By default, the latest version from the main branch is downloaded.
 models_path = Path(snapshot_download(repo_id="skaliy/endometrial_cancer_segmentation",  cache_dir='models', revision='main'))
-learner = load_learner(models_path/'learner.pkl', cpu=True) #TODO add an option to run on GPU
+learner = load_learner(models_path/'vibe-learner.pkl', cpu=True) #TODO add an option to run on GPU
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
