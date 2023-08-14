@@ -78,7 +78,6 @@ def predict(fileobj, learner, reorder, resample, save_dir):
 models_path, save_dir = initialize_system()
 learner, reorder, resample = load_system_resources(models_path)
 
-#output_image = gr.outputs.Image(label="Segmentation Image")
 output_text = gr.Textbox(label="Volume of the predicted tumor:")
 
 demo = gr.Interface(
