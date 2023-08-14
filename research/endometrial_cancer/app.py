@@ -10,7 +10,7 @@ def initialize_system():
     models_path = Path(snapshot_download(repo_id="skaliy/endometrial_cancer_segmentation", cache_dir='models', revision='main'))
     save_dir =  Path.cwd() / 'ec_pred'    
     save_dir.mkdir(parents=True, exist_ok=True)
-    download_example_endometrial_cancer_data(path=save_dir)
+    download_example_endometrial_cancer_data(path=save_dir, multi_channel=False)
     
     return models_path, save_dir
 

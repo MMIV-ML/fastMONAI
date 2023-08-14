@@ -29,7 +29,8 @@ class MURLs():
                      'FractureMNIST3D': 'https://zenodo.org/record/6496656/files/fracturemnist3d.npz?download=1',
                      'VesselMNIST3D': 'https://zenodo.org/record/6496656/files/vesselmnist3d.npz?download=1', 
                      'SynapseMNIST3D': 'https://zenodo.org/record/6496656/files/synapsemnist3d.npz?download=1'}
-    EXAMPLE_EC_DATA = 'https://drive.google.com/uc?id=1yOmbA9-nKfzzsfysgp9OcPw8GAarXPvE'
+    EXAMPLE_EC_DATA = 'https://drive.google.com/uc?id=1P_J8MfzbfObTkAyWfY-LlEC_IA_NjYn-'
+    EXAMPLE_MULTI_EC_DATA = 'https://drive.google.com/uc?id=1yOmbA9-nKfzzsfysgp9OcPw8GAarXPvE'
 
 # %% ../nbs/09_external_data.ipynb 4
 def _process_ixi_xls(xls_path: (str, Path), img_path: Path) -> pd.DataFrame:
@@ -301,11 +302,21 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
     return train_val_df, test_df
 
 # %% ../nbs/09_external_data.ipynb 20
-def download_example_endometrial_cancer_data(path: (str, Path) = '../data') -> Path:
+def download_example_endometrial_cancer_data(path: (str, Path) = '../data', multi_channel: bool = True):
+    """Download example data for endometrial cancer.
+    
+    Args:
+        path (str or Path): Path to save the downloaded data.
+        multi_channel (bool): If True, download multi-channel data (Vibe, T2, 
+            and ADC). Otherwise, download only Vibe.
+    """
+    
+    download_url = (MURLs.EXAMPLE_MULTI_EC_DATA if multi_channel 
+                    else MURLs.EXAMPLE_EC_DATA)
     
     download_and_extract(
-        url=MURLs.EXAMPLE_EC_DATA, 
-        filepath='ec.zip', 
-        output_dir=path
-    )
-    Path('ec.zip').unlink()
+        url=download_url, 
+        filepath='ec_example_data.zip', 
+        output_dir=path)
+    
+    Path('ec_example_data.zip').unlink()
