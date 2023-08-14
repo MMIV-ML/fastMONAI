@@ -147,6 +147,7 @@ def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
         im_channels.append(MedMask(mask))
         imgs.extend(im_channels)
 
+    #TODO: Extract the middle slice of the mask in a 3D array                
     ctxs = [im.show(ax=ax, indices=indices, anatomical_plane=anatomical_plane)
             for im, ax in zip(imgs, axs)]
 
