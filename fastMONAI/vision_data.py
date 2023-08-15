@@ -135,7 +135,7 @@ def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
                ncols=None, figsize=None, channel=0, indices=None,
                anatomical_plane=0, **kwargs):
     """Showing a batch of decoded segmentation samples."""
-
+                   
     nrows, ncols = min(len(samples), max_n), x.shape[1] + 1
     imgs = []
 
@@ -147,7 +147,8 @@ def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
         im_channels.append(MedMask(mask))
         imgs.extend(im_channels)
 
-    #TODO: Extract the middle slice of the mask in a 3D array                
+    #TODO: Extract a slice based on the mask. (create a list with slice index for each (img, mask))
+                   
     ctxs = [im.show(ax=ax, indices=indices, anatomical_plane=anatomical_plane)
             for im, ax in zip(imgs, axs)]
 
@@ -208,7 +209,7 @@ def show_results(x: MedImage, y: MedMask, samples, outs, ctxs=None, max_n: int =
                  nrows: int = None, ncols: int = 1, figsize=None, channel: int = 0, 
                  indices: int = None, anatomical_plane: int = 0, **kwargs):
     """Showing decoded samples and their corresponding predictions for segmentation tasks."""
-
+    #TODO: Extract a slice based on the mask.
     if ctxs is None: 
         ctxs = get_grid(min(len(samples), max_n), nrows=nrows, ncols=ncols, 
                         figsize=figsize, double=True, title='Target/Prediction')
