@@ -25,11 +25,11 @@ notebooks.
 
 # Installing
 
-## From PyPI
+## From [PyPI](https://pypi.org/project/fastMONAI/)
 
 `pip install fastMONAI`
 
-## From Github
+## From [GitHub](https://github.com/MMIV-ML/fastMONAI)
 
 If you want to install an editable version of fastMONAI run:
 
