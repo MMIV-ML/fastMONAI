@@ -1,7 +1,6 @@
 import gradio as gr
 import torch
 import cv2
-from pathlib import Path
 from huggingface_hub import snapshot_download
 from fastMONAI.vision_all import *
 
@@ -15,6 +14,25 @@ def initialize_system():
     download_example_endometrial_cancer_data(path=save_dir, multi_channel=False)
     
     return models_path, save_dir
+
+def extract_slice_from_mask(img, mask_data):
+    """Extract a slice from the 3D [W, H, D] image and mask data based on mask data."""
+    
+    sums = mask_data.sum(axis=(0, 1))
+    idx = np.argmax(sums)
+    img, mask_data = img[:, :, idx], mask_data[:, :, idx]
+
+    return np.fliplr(np.rot90(img, -1)), np.fliplr(np.rot90(mask_data, -1))
+
+#| export
+def get_fused_image(img, pred_mask, alpha=0.8):
+    """Fuse a grayscale image with a mask overlay."""
+    
+    gray_img_colored = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    mask_color = np.array([0, 0, 255])
+    colored_mask = (pred_mask[..., None] * mask_color).astype(np.uint8)
+
+    return cv2.addWeighted(gray_img_colored, alpha, colored_mask, 1 - alpha, 0)
 
 
 def gradio_image_segmentation(fileobj, learn, reorder, resample, save_dir):
@@ -41,7 +59,7 @@ def gradio_image_segmentation(fileobj, learn, reorder, resample, save_dir):
     org_img.set_data(mask_data)
     org_img.save(save_path)
 
-    img, pred_mask = get_mid_slice(img[0], mask_data[0])
+    img, pred_mask = extract_slice_from_mask(img[0], mask_data[0])
     img = ((img - img.min()) / (img.max() - img.min()) * 255).astype(np.uint8) #normalize
     
     volume = compute_binary_tumor_volume(org_img)

@@ -170,7 +170,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
         cls.resample = resample
         cls.reorder = reorder
 
-    def show(self, ctx=None, channel: int = 0, indices: int = None, anatomical_plane: int = 0, **kwargs):
+    def show(self, ctx=None, channel: int = 0, slice_index: int = None, anatomical_plane: int = 0, **kwargs):
         """
         Displays the Medimage using `merge(self._show_args, kwargs)`.
 
@@ -179,8 +179,8 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
                 Context to use for the display. Defaults to None.
             channel : int, optional
                 The channel of the image to be displayed. Defaults to 0.
-            indices : list or None, optional
-                Indices of the images to be displayed. Defaults to None.
+            slice_index : int or None, optional
+                Index of the images to be displayed. Defaults to None.
             anatomical_plane : int, optional
                 Anatomical plane of the image to be displayed. Defaults to 0.
             kwargs : dict, optional
@@ -190,7 +190,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
             Shown image.
         """
         return show_med_img(
-            self, ctx=ctx, channel=channel, indices=indices, 
+            self, ctx=ctx, channel=channel, slice_index=slice_index, 
             anatomical_plane=anatomical_plane, voxel_size=self.resample,  
             **merge(self._show_args, kwargs)
         )
