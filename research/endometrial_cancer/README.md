@@ -25,7 +25,7 @@ Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https:
 ## Getting started
 1. Clone this repository:
 ```bash
-git clone git@github.com:MMIV-ML/fastMONAI.git
+git clone https://github.com/MMIV-ML/fastMONAI
 ```
 2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/master).
 3. (<b>Optional</b>) Run the `01_ec_training.ipynb` `03_ec_training_multi.ipynb` notebook to train your own model.
