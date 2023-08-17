@@ -2,9 +2,27 @@
 The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf). In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) as reported in the study [Automatic segmentation of uterine endometrial cancer on multi-sequence MRI using a convolutional neural network](https://www.nature.com/articles/s41598-021-93792-7).
 
 The trained weights and exported learner are available on [Huggin Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
-Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https://skaliy-endometrial-cancer-segmentation-app.hf.space). To run the application on your local system, follow the instructions below.
+Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https://skaliy-endometrial-cancer-segmentation-app.hf.space). To run the application on your local system, follow the instructions in the [Getting started](#getting-started) section.
 
-## How to use
+## Structure overview
+```
+├── figs
+│
+├── nbs            # Jupyter notebooks for training and inference
+│   ├── 01_ec_training.ipynb
+│   ├── 02_ec_inference.ipynb
+│   ├── 03_ec_training_multi.ipynb
+│   ├── 04_ec_inference_multi.ipynb
+│
+├── src                  
+│   ├── app.py               # Gradio app
+│   ├── inference_script.py     # Inference script for single-sequence 
+│   └── inference_script_multi.py  # Inference for multi-sequence 
+│
+└── README.md
+```        
+
+## Getting started
 1. Clone this repository:
 ```bash
 git clone git@github.com:MMIV-ML/fastMONAI.git
@@ -29,6 +47,7 @@ If you choose to use `app.py`, please execute the following command in the termi
 ```bash
 gradio app.py
 ```
+The predicted maske will be stored in folder `ec_pred` in the `src` folder. 
 
 ## Results for VIBE
 The box plot of the predictions on the validation set: 
