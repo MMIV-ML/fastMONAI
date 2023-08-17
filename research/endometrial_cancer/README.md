@@ -1,19 +1,34 @@
 # Endometrial cancer segmentation
 The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf). In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) as reported in the study [Automatic segmentation of uterine endometrial cancer on multi-sequence MRI using a convolutional neural network](https://www.nature.com/articles/s41598-021-93792-7).
 
-The trained weights and exported learner are available on [HugginFace](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
+The trained weights and exported learner are available on [Huggin Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
+Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https://skaliy-endometrial-cancer-segmentation-app.hf.space). To run the application on your local system, follow the instructions below.
 
 ## How to use
-1. Clone this repository.
+1. Clone this repository:
+```bash
+git clone git@github.com:MMIV-ML/fastMONAI.git
+```
 2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/master).
-3. (<b>Optional</b>) Run the `01_ec_training.ipynb` `03_ec_training-multi.ipynb` notebook to train your own model.
-4. Run the 02-ec-inference.ipynb or inference_script.py to perform inference with the trained model for VIBE images.
-5. Run the 04-ec-inference-multi.ipynb to perform inference with the trained model for T2w, VIBE, and ADC images.
+3. (<b>Optional</b>) Run the `01_ec_training.ipynb` `03_ec_training_multi.ipynb` notebook to train your own model.
+4. Run the `02_ec_inference.ipynb`, `inference_script.py` or `app.py` to perform inference with the trained model for VIBE images.
+5. Run the `04_ec_inference_multi.ipynb` or `inference_script_multi.py` to perform inference with the trained model for T2w, VIBE, and ADC images.
 
-If you choose to use `inference_script.py`, please follow these steps:
+If you choose to use `inference_script.py` or `inference_script_multi.py`, please follow these steps:
 
-- Make the script executable using the following command in the terminal: `chmod +x inference_script.py`
-- Run the script by executing the following command in the terminal: `python inference_script.py IMG_PATH`
+- Make the script executable using the following command in the terminal:
+```bash
+chmod +x inference_script.py
+```
+- Run the script by executing the following command in the terminal:
+```bash
+python inference_script.py IMG_PATH
+```
+
+If you choose to use `app.py`, please execute the following command in the terminal:
+```bash
+gradio app.py
+```
 
 ## Results for VIBE
 The box plot of the predictions on the validation set: 
