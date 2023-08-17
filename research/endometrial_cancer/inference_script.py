@@ -32,7 +32,6 @@ save_path = str(img_path).replace(img_path.stem, 'pred_' +img_path.stem)
 org_img, input_img, org_size = med_img_reader(img_path, reorder=reorder, resample=resample, only_tensor=False)
 
 mask_data = inference(learner, reorder=reorder, resample=resample, org_img=org_img, input_img=input_img, org_size=org_size).data 
-mask_data = refine_binary_pred_mask(mask_data, percentage=0.8)
 
 if "".join(org_img.orientation) == 'LSA':        
     mask_data = mask_data.permute(0,1,3,2)
