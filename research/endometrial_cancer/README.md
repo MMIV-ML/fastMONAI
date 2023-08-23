@@ -50,7 +50,7 @@ gradio app.py
 The predicted maske will be stored in folder `ec_pred` in the `src` folder. 
 
 ## Results for VIBE
-Note that our results are not directly comparable with the results reported in [study](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf), as we opted to use the test set for validation to allocate more data to training. Unlike the approach detailed in the study, we refrained from post-processing steps, such as retaining only the largest object. Our analysis indicated that this method could occasionally eliminate the tumor. As a reference, we've included the "n_components" column. Below is the box plot showcasing predictions on the validation set:
+Note that our results are not directly comparable with the results reported in [study](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf), as we opted to use the test set for validation to allocate more data to training. Unlike the approach detailed in the study, we refrained from post-processing steps, such as retaining only the largest object. Predictions from new test cases indicate that this method could occasionally eliminate the tumor. Below is the box plot showcasing predictions on the validation set:
 ![](figs/vibe_boxplot.png)
 
 The results from the validation set are also presented in the table below:
