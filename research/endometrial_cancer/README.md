@@ -1,5 +1,5 @@
 # Endometrial cancer segmentation
-The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf). In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) as reported in the study [Automatic segmentation of uterine endometrial cancer on multi-sequence MRI using a convolutional neural network](https://www.nature.com/articles/s41598-021-93792-7).
+The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf) and to integrate this model into research PACS. In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) as reported in the study [Automatic segmentation of uterine endometrial cancer on multi-sequence MRI using a convolutional neural network](https://www.nature.com/articles/s41598-021-93792-7).
 
 The trained weights and exported learner are available on [Huggin Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
 Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https://skaliy-endometrial-cancer-segmentation-app.hf.space). To run the application on your local system, follow the instructions in the [Getting started](#getting-started) section.
@@ -50,7 +50,7 @@ gradio app.py
 The predicted maske will be stored in folder `ec_pred` in the `src` folder. 
 
 ## Results for VIBE
-The box plot of the predictions on the validation set: 
+Note that our results are not directly comparable with the results reported in [study](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf), as we opted to use the test set for validation to allocate more data to training. Unlike the approach detailed in the study, we refrained from post-processing steps, such as retaining only the largest object. Our analysis indicated that this method could occasionally eliminate the tumor. As a reference, we've included the "n_components" column. Below is the box plot showcasing predictions on the validation set:
 ![](figs/vibe_boxplot.png)
 
 The results from the validation set are also presented in the table below:
@@ -90,6 +90,9 @@ The results from the validation set are also presented in the table below:
 | 30 |          540 |        8.35 |     0.923702  | 0.855009 | 0.840958   |              1 |
 
 <b>Median DSC</b>: 0.8946, 0.8212, 0.779
+
+Prediction on a new subject in the research PACS: 
+![](figs/research_pacs_predicition.png)
 
 ## Results for multi-sequence (T2, VIBE, and ADC)
 The box plot of the predictions on the validation set: 
