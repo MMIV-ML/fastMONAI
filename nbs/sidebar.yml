@@ -14,6 +14,7 @@ website:
       - 09_external_data.ipynb
       - section: Tutorials
         contents:
+        - 10a_tutorial_beginner_video.ipynb
         - 10a_tutorial_classification.ipynb
         - 10b_tutorial_regression.ipynb
         - 10c_tutorial_binary_segmentation.ipynb
