@@ -196,14 +196,14 @@ def download_example_spine_data(path: (str, Path) = '../data') -> Path:
         Path to the directory where the example data has been extracted.
     """
     
-    study = 'example_data'
+    study = 'spine_example_data'
     
     download_and_extract(
         url=MURLs.EXAMPLE_SPINE_DATA, 
-        filepath='example_data.zip', 
+        filepath=f'{study}.zip', 
         output_dir=path
     )
-    Path('example_data.zip').unlink()
+    Path(f'{study}.zip').unlink()
     
     return Path(path) / study
 
