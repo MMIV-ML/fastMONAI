@@ -38,12 +38,7 @@ If you want to install an editable version of fastMONAI run:
 
 # Getting started
 
-The best way to get started using fastMONAI is to read the
-[paper](https://github.com/MMIV-ML/fastMONAI/tree/master/paper) and look
-at the step-by-step tutorial-like notebooks to learn how to train your
-own models on different tasks (e.g., classification, regression,
-segmentation). See the docs at https://fastmonai.no for more
-information.
+The best way to get started using fastMONAI is to dive into our beginner-friendly [video](https://fastmonai.no/tutorial_beginner_video). For a deeper understanding and hands-on experience, our comprehensive instructional notebooks will walk you through model training for various tasks like classification, regression, and segmentation. See the docs at https://fastmonai.no for more information.
 
 | Notebook                                                                                                                                                                                                                                     | 1-Click Notebook                                                                                                                                                                                   |
 |:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -56,11 +51,3 @@ information.
 
 See
 [CONTRIBUTING.md](https://github.com/MMIV-ML/fastMONAI/blob/master/CONTRIBUTING.md)
-
-# Citing fastMONAI
-
-    @article{kaliyugarasan2022fastMONAI,
-      title={fastMONAI: a low-code deep learning library for medical image analysis},
-      author={Kaliyugarasan, Satheshkumar and Lundervold, Alexander Selvikv{\aa}g},
-      year={2022}
-    }
