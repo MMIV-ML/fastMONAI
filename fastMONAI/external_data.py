@@ -22,7 +22,7 @@ class MURLs():
     IXI_DATA = 'http://biomedic.doc.ic.ac.uk/brain-development/downloads/IXI/IXI-T1.tar'
     IXI_DEMOGRAPHIC_INFORMATION = 'http://biomedic.doc.ic.ac.uk/brain-development/downloads/IXI/IXI.xls'
     CHENGWEN_CHU_SPINE_DATA = 'https://drive.google.com/uc?id=1rbm9-KKAexpNm2mC9FsSbfnS8VJaF3Kn&confirm=t'
-    EXAMPLE_SPINE_DATA = 'https://drive.google.com/uc?id=1Ms3Q6MYQrQUA_PKZbJ2t2NeYFQ5jloMh'
+    EXAMPLE_SPINE_DATA = 'https://drive.google.com/uc?id=1K1J2wmWxYUPY0NbylcV4Otv88EqCL4Ys'
     MEDMNIST_DICT = {'OrganMNIST3D': 'https://zenodo.org/record/6496656/files/organmnist3d.npz?download=1',	
                      'NoduleMNIST3D': 'https://zenodo.org/record/6496656/files/nodulemnist3d.npz?download=1',
                      'AdrenalMNIST3D': 'https://zenodo.org/record/6496656/files/adrenalmnist3d.npz?download=1',	
