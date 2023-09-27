@@ -1,0 +1,50 @@
+cff-version: 1.2.0
+title: fastMONAI
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Satheshkumar
+    family-names: Kaliyugarasan
+    email: skaliyugarasan@hotmail.com
+    affiliation: >-
+      Department of Computer Science, Electrical Engineering
+      and Mathematical Sciences, Western Norway University
+      of Applied Sciences, Bergen, Norway
+    orcid: 'https://orcid.org/0000-0002-0038-5540'
+  - given-names: Lundervold
+    family-names: Alexander Selvikvåg
+    email: allu@hvl.no
+    affiliation: >-
+      Department of Computer Science, Electrical Engineering
+      and Mathematical Sciences, Western Norway University
+      of Applied Sciences, Bergen, Norway
+    orcid: 'https://orcid.org/0000-0001-8663-4247'
+repository-code: 'https://github.com/MMIV-ML/fastMONAI'
+url: 'https://fastmonai.no'
+abstract: >-
+  A low-code Python-based open-source deep learning library
+  built on top of fastai, MONAI, and TorchIO.
+
+
+  fastMONAI simplifies using state-of-the-art deep learning
+  techniques in 3D medical image analysis for solving
+  classification, regression, and segmentation tasks.
+  fastMONAI provides users with functionalities to step
+  through data loading, preprocessing, training, and result
+  interpretations.
+license: Apache-2.0
+preferred-citation:
+  type: article
+  authors:
+  - family-names: " Kaliyugarasan"
+    given-names: "Satheshkumar"
+    orcid: "https://orcid.org/0000-0002-0038-5540"
+  - family-names: "Lundervold"
+    given-names: "Alexander Selvikvåg"
+    orcid: "https://orcid.org/0000-0001-8663-4247"
+  doi: "10.1016/j.simpa.2023.100583"
+  journal: "Software Impacts"
+  title: "fastMONAI: A low-code deep learning library for medical image analysis"
+  year: 2023
