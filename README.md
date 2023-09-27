@@ -53,6 +53,7 @@ See
 
 If you are using fastMONAI in your research, please use the following citation:
 
+```
 @article{KALIYUGARASAN2023100583,
 title = {fastMONAI: A low-code deep learning library for medical image analysis},
 journal = {Software Impacts},
@@ -65,3 +66,4 @@ author = {Satheshkumar Kaliyugarasan and Alexander S. Lundervold},
 keywords = {Deep learning, Medical imaging, Radiology},
 abstract = {We introduce fastMONAI, an open-source Python-based deep learning library for 3D medical imaging. Drawing upon the strengths of fastai, MONAI, and TorchIO, fastMONAI simplifies the use of advanced techniques for tasks like classification, regression, and segmentation. The library's design addresses domain-specific demands while promoting best practices, facilitating efficient model development. It offers newcomers an easier entry into the field while keeping the option to make advanced, lower-level customizations if needed. This paper describes the library's design, impact, limitations, and plans for future work.}
 }
+```
