@@ -69,12 +69,12 @@ class MedDataset:
     def suggestion(self):
         """Voxel value that appears most often in dim_0, dim_1 and dim_2, and whether the data should be reoriented."""
         
-        resample = [self.df.voxel_0.mode()[0], self.df.voxel_1.mode()[0], self.df.voxel_2.mode()[0]]
+        resample = [float(self.df.voxel_0.mode()[0]), float(self.df.voxel_1.mode()[0]), float(self.df.voxel_2.mode()[0])]
         return resample, self.reorder
 
     def _get_data_info(self, fn: str):
         """Private method to collect information about an image file."""
-        _, o, _ = med_img_reader(fn, dtype=self.dtype, reorder=self.reorder, only_tensor=False)
+        _, o, _ = med_img_reader(fn, reorder=self.reorder, only_tensor=False, dtype=self.dtype)
 
         info_dict = {'path': fn, 'dim_0': o.shape[1], 'dim_1': o.shape[2], 'dim_2': o.shape[3],
                      'voxel_0': round(o.spacing[0], 4), 'voxel_1': round(o.spacing[1], 4), 'voxel_2': round(o.spacing[2], 4),
@@ -98,10 +98,10 @@ class MedDataset:
 
             ratio = org_voxels/resample
             new_dims = (org_dims * ratio).T
-            dims = [new_dims[0].max().round(), new_dims[1].max().round(), new_dims[2].max().round()]
+            dims = [float(new_dims[0].max().round()), float(new_dims[1].max().round()), float(new_dims[2].max().round())]
 
         else:
-            dims = [df.dim_0.max(), df.dim_1.max(), df.dim_2.max()]
+            dims = [float(self.df.dim_0.max()), float(self.df.dim_1.max()), float(self.df.dim_2.max())]
 
         return dims
 
