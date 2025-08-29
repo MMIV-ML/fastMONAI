@@ -5,10 +5,12 @@ __all__ = ['pred_to_multiclass_mask', 'batch_pred_to_multiclass_mask', 'pred_to_
            'MedImageDataLoaders', 'show_batch', 'show_results', 'plot_top_losses']
 
 # %% ../nbs/02_vision_data.ipynb 2
+import torch
 from fastai.data.all import *
 from fastai.vision.data import *
 from .vision_core import *
 from .vision_plot import find_max_slice
+from plum import dispatch
 
 # %% ../nbs/02_vision_data.ipynb 5
 def pred_to_multiclass_mask(pred: torch.Tensor) -> torch.Tensor:
@@ -65,7 +67,7 @@ class MedDataBlock(DataBlock):
     """Container to quickly build dataloaders."""
     #TODO add get_x
     def __init__(self, blocks: list = None, dl_type: TfmdDL = None, getters: list = None,
-                 n_inp: int = None, item_tfms: list = None, batch_tfms: list = None,
+                 n_inp: int | None = None, item_tfms: list = None, batch_tfms: list = None,
                  reorder: bool = False, resample: (int, list) = None, **kwargs):
 
         super().__init__(blocks, dl_type, getters, n_inp, item_tfms,
@@ -109,7 +111,7 @@ class MedImageDataLoaders(DataLoaders):
         return cls.from_dblock(dblock, df, **kwargs)
 
 # %% ../nbs/02_vision_data.ipynb 16
-@typedispatch
+@dispatch
 def show_batch(x: MedImage, y, samples, ctxs=None, max_n=6, nrows=None, 
                ncols=None, figsize=None, channel=0, slice_index=None,
                anatomical_plane=0, **kwargs):
@@ -131,7 +133,7 @@ def show_batch(x: MedImage, y, samples, ctxs=None, max_n=6, nrows=None,
     return ctxs
 
 # %% ../nbs/02_vision_data.ipynb 17
-@typedispatch
+@dispatch
 def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
                ncols=None, figsize=None, channel=0, slice_index=None,
                anatomical_plane=0, **kwargs):
@@ -162,10 +164,10 @@ def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
     return ctxs
 
 # %% ../nbs/02_vision_data.ipynb 19
-@typedispatch
+@dispatch
 def show_results(x: MedImage, y: torch.Tensor, samples, outs, ctxs=None, max_n: int = 6,
-                 nrows: int = None, ncols: int = None, figsize=None, channel: int = 0,
-                 slice_index: int = None, anatomical_plane: int = 0, **kwargs):
+                 nrows: int | None = None, ncols: int | None = None, figsize=None, channel: int = 0,
+                 slice_index: int | None = None, anatomical_plane: int = 0, **kwargs):
     """Showing samples and their corresponding predictions for regression tasks."""
 
     if ctxs is None:
@@ -188,10 +190,10 @@ def show_results(x: MedImage, y: torch.Tensor, samples, outs, ctxs=None, max_n: 
     return ctxs
 
 # %% ../nbs/02_vision_data.ipynb 20
-@typedispatch
+@dispatch
 def show_results(x: MedImage, y: TensorCategory, samples, outs, ctxs=None, 
-                 max_n: int = 6, nrows: int = None, ncols: int = None, figsize=None, channel: int = 0, 
-                 slice_index: int = None, anatomical_plane: int = 0, **kwargs):
+                 max_n: int = 6, nrows: int | None = None, ncols: int | None = None, figsize=None, channel: int = 0, 
+                 slice_index: int | None = None, anatomical_plane: int = 0, **kwargs):
     """Showing samples and their corresponding predictions for classification tasks."""
 
     if ctxs is None: 
@@ -209,10 +211,10 @@ def show_results(x: MedImage, y: TensorCategory, samples, outs, ctxs=None,
     return ctxs
 
 # %% ../nbs/02_vision_data.ipynb 21
-@typedispatch
+@dispatch
 def show_results(x: MedImage, y: MedMask, samples, outs, ctxs=None, max_n: int = 6, 
-                 nrows: int = None, ncols: int = 3, figsize=None, channel: int = 0, 
-                 slice_index: int = None, anatomical_plane: int = 0, **kwargs):
+                 nrows: int | None = None, ncols: int = 3, figsize=None, channel: int = 0, 
+                 slice_index: int | None = None, anatomical_plane: int = 0, **kwargs):
     """Showing decoded samples and their corresponding predictions for segmentation tasks."""
     
     if ctxs is None: 
@@ -240,9 +242,9 @@ def show_results(x: MedImage, y: MedMask, samples, outs, ctxs=None, max_n: int =
     return ctxs
 
 # %% ../nbs/02_vision_data.ipynb 23
-@typedispatch
-def plot_top_losses(x: MedImage, y: TensorCategory, samples, outs, raws, losses, nrows: int = None, 
-                    ncols: int = None, figsize=None, channel: int = 0, slice_index: int = None, 
+@dispatch
+def plot_top_losses(x: MedImage, y: TensorCategory, samples, outs, raws, losses, nrows: int | None = None, 
+                    ncols: int | None = None, figsize=None, channel: int = 0, slice_index: int | None = None, 
                     anatomical_plane: int = 0, **kwargs):
     """Show images in top_losses along with their prediction, actual, loss, and probability of actual class."""
 
@@ -258,10 +260,10 @@ def plot_top_losses(x: MedImage, y: TensorCategory, samples, outs, raws, losses,
             ax.set_title(f'{o[0]}/{s[1]} / {l.item():.2f} / {r.max().item():.2f}')
 
 # %% ../nbs/02_vision_data.ipynb 24
-@typedispatch
+@dispatch
 def plot_top_losses(x: MedImage, y: TensorMultiCategory, samples, outs, raws, 
-                    losses, nrows: int = None, ncols: int = None, figsize=None, 
-                    channel: int = 0, slice_index: int = None, 
+                    losses, nrows: int | None = None, ncols: int | None = None, figsize=None, 
+                    channel: int = 0, slice_index: int | None = None, 
                     anatomical_plane: int = 0, **kwargs):
     # TODO: not tested yet
     axs = get_grid(len(samples), nrows=nrows, ncols=ncols, figsize=figsize)

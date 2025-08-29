@@ -94,14 +94,28 @@ def inference(learn_inf, reorder, resample, fn: (str, Path) = '',
     reoriented_array = _to_original_orientation(input_img.as_sitk(), 
                                                 ('').join(org_img.orientation))
     
-    org_img.set_data(reoriented_array)
+    # Create new TorchIO image with proper affine matrix
+    # Spatial properties (spacing, origin, direction) are automatically derived from affine
+    from torchio import ScalarImage
+    import numpy as np
+    
+    # Ensure we have a valid affine matrix
+    if hasattr(org_img, 'affine') and org_img.affine is not None:
+        affine_matrix = org_img.affine.copy()
+    elif MedBase.affine_matrix is not None:
+        affine_matrix = MedBase.affine_matrix.copy()
+    else:
+        # Fallback to identity affine if no affine available
+        affine_matrix = np.eye(4, dtype=np.float64)
+    
+    pred_img = ScalarImage(tensor=reoriented_array, affine=affine_matrix)
 
     if save_path:
         save_fn = Path(save_path)/('pred_' + Path(fn).parts[-1])
-        org_img.save(save_fn)
+        pred_img.save(save_fn)
         return save_fn
     
-    return org_img
+    return pred_img
 
 # %% ../nbs/06_vision_inference.ipynb 9
 def compute_binary_tumor_volume(mask_data: Image):
