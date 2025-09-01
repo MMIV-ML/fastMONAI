@@ -28,7 +28,7 @@ Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https:
 ```bash
 git clone https://github.com/MMIV-ML/fastMONAI
 ```
-2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/master).
+2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI).
 3. (<b>Optional</b>) Run the `01_ec_training.ipynb` `03_ec_training_multi.ipynb` notebook to train your own model.
 4. Run the `02_ec_inference.ipynb`, `inference_script.py` or `app.py` to perform inference with the trained model for VIBE images.
 5. Run the `04_ec_inference_multi.ipynb` or `inference_script_multi.py` to perform inference with the trained model for T2w, VIBE, and ADC images.

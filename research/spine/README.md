@@ -11,7 +11,7 @@ Yyou can run the notebooks directly in Google Colab.
 ```bash
 git clone https://github.com/MMIV-ML/fastMONAI
 ```
-2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/master).
+2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/main).
 3. (<b>Optional</b>) Run the `00-spine-segmentation-training-evaluation.ipynb` notebook to train your own model or to reproduce the test results reported in our paper.
 4. Run the `01-spine-segmentation-inference.ipynb` or `inference_script.py` to perform inference with the trained model on own data
 
