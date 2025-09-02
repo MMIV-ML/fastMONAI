@@ -1,0 +1,381 @@
+[
+  {
+    "objectID": "tutorial_beginner_video.html",
+    "href": "tutorial_beginner_video.html",
+    "title": "Getting started video",
+    "section": "",
+    "text": "Video tutorial detailing the classification notebook and explaining key functionalities within fastMONAI:",
+    "crumbs": [
+      "Tutorials",
+      "Getting started video"
+    ]
+  },
+  {
+    "objectID": "tutorial_regression.html",
+    "href": "tutorial_regression.html",
+    "title": "Regression",
+    "section": "",
+    "text": "Google Colab\n\n\n\nfrom fastMONAI.vision_all import *\n\n\npath = Path('../data')\npath.mkdir(exist_ok=True)\n\n\nSTUDY_DIR = download_ixi_data(path=path)\n\nImages already downloaded and extracted to ../data/IXI/T1_images\n2022-12-22 16:47:36,114 - INFO - Expected md5 is None, skip md5 check for file ../data/IXI/IXI.xls.\n2022-12-22 16:47:36,115 - INFO - File exists: ../data/IXI/IXI.xls, skipped downloading.\nPreprocessing ../data/IXI/IXI.xls\n\n\n\nLooking at the data\n\ndf = pd.read_csv(STUDY_DIR/'dataset.csv')\ndf['age'] = np.around(df.age_at_scan.tolist(), decimals=0)\n\n\ndf.head()\n\n\n\n\n\n\n\n\nt1_path\nsubject_id\ngender\nage_at_scan\nage\n\n\n\n\n0\n../data/IXI/T1_images/IXI002-Guys-0828-T1.nii.gz\nIXI002\nF\n35.80\n36.0\n\n\n1\n../data/IXI/T1_images/IXI012-HH-1211-T1.nii.gz\nIXI012\nM\n38.78\n39.0\n\n\n2\n../data/IXI/T1_images/IXI013-HH-1212-T1.nii.gz\nIXI013\nM\n46.71\n47.0\n\n\n3\n../data/IXI/T1_images/IXI014-HH-1236-T1.nii.gz\nIXI014\nF\n34.24\n34.0\n\n\n4\n../data/IXI/T1_images/IXI015-HH-1258-T1.nii.gz\nIXI015\nM\n24.28\n24.0\n\n\n\n\n\n\n\n\ndf.age.min(), df.age.max()\n\n(20.0, 86.0)\n\n\n\nmed_dataset = MedDataset(path=STUDY_DIR/'T1_images', max_workers=12)\n\n\ndata_info_df = med_dataset.summary()\n\n\ndata_info_df.head()\n\n\n\n\n\n\n\n\ndim_0\ndim_1\ndim_2\nvoxel_0\nvoxel_1\nvoxel_2\norientation\nexample_path\ntotal\n\n\n\n\n3\n256\n256\n150\n0.9375\n0.9375\n1.2\nPSR+\n../data/IXI/T1_images/IXI002-Guys-0828-T1.nii.gz\n498\n\n\n2\n256\n256\n146\n0.9375\n0.9375\n1.2\nPSR+\n../data/IXI/T1_images/IXI035-IOP-0873-T1.nii.gz\n74\n\n\n4\n256\n256\n150\n0.9766\n0.9766\n1.2\nPSR+\n../data/IXI/T1_images/IXI297-Guys-0886-T1.nii.gz\n5\n\n\n0\n256\n256\n130\n0.9375\n0.9375\n1.2\nPSR+\n../data/IXI/T1_images/IXI023-Guys-0699-T1.nii.gz\n2\n\n\n1\n256\n256\n140\n0.9375\n0.9375\n1.2\nPSR+\n../data/IXI/T1_images/IXI020-Guys-0700-T1.nii.gz\n2\n\n\n\n\n\n\n\n\nresample, reorder = med_dataset.suggestion()\n\n\nbs=4\nin_shape = [1, 256, 256, 160]\n\n\nitem_tfms = [ZNormalization(), PadOrCrop(in_shape[1:]), RandomAffine(scales=0, degrees=5, isotropic=False)]\n\n\ndblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), RegressionBlock), \n                      splitter=RandomSplitter(seed=32),\n                      get_x=ColReader('t1_path'),\n                      get_y=ColReader('age'),\n                      item_tfms=item_tfms,\n                      reorder=reorder,\n                      resample=resample)\n\n\ndls = dblock.dataloaders(df, bs=bs)\n\n\nlen(dls.train_ds.items), len(dls.valid_ds.items)\n\n(449, 112)\n\n\n\ndls.show_batch(anatomical_plane=2)\n\n\n\n\n\n\n\n\n\n\nCreate and train a 3D model\nImport a network from MONAI that can be used for regression tasks, and define the input image size, the output size, channels, etc.\n\nfrom monai.networks.nets import Regressor\nmodel = Regressor(in_shape=[1, 256, 256, 160], out_shape=1, channels=(16, 32, 64, 128, 256),strides=(2, 2, 2, 2), kernel_size=3, num_res_units=2)\n\n\nloss_func = L1LossFlat()\n\n\nlearn = Learner(dls, model, loss_func=loss_func, metrics=[mae])\n\n\nlearn.summary()\n\n\n\n\n\n\n\n\nRegressor (Input shape: 4 x 1 x 256 x 256 x 160)\n============================================================================\nLayer (type)         Output Shape         Param #    Trainable \n============================================================================\n                     4 x 16 x 128 x 128  \nConv3d                                    448        True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    6928       True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    448        True      \n____________________________________________________________________________\n                     4 x 32 x 64 x 64 x  \nConv3d                                    13856      True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    27680      True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    13856      True      \n____________________________________________________________________________\n                     4 x 64 x 32 x 32 x  \nConv3d                                    55360      True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    110656     True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    55360      True      \n____________________________________________________________________________\n                     4 x 128 x 16 x 16 x \nConv3d                                    221312     True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    442496     True      \nInstanceNorm3d                            0          False     \nPReLU                                     1          True      \nConv3d                                    221312     True      \nReshape                                                        \n____________________________________________________________________________\n                     4 x 327680          \nFlatten                                                        \n____________________________________________________________________________\n                     4 x 1               \nLinear                                    327681     True      \n____________________________________________________________________________\n\nTotal params: 1,497,401\nTotal trainable params: 1,497,401\nTotal non-trainable params: 0\n\nOptimizer used: &lt;function Adam at 0x7f6ed28f1e50&gt;\nLoss function: FlattenedLoss of L1Loss()\n\nCallbacks:\n  - TrainEvalCallback\n  - CastToTensor\n  - Recorder\n  - ProgressCallback\n\n\n\nlearn.lr_find()\n\n\n\n\n\n\n\n\nSuggestedLRs(valley=5.248074739938602e-05)\n\n\n\n\n\n\n\n\n\n\nlr = 1e-4\n\n\nlearn.fit_one_cycle(4)\n\n\n\n\n\n\n\n\nepoch\ntrain_loss\nvalid_loss\nmae\ntime\n\n\n\n\n0\n22.412138\n47.074982\n47.074982\n01:14\n\n\n1\n26.331188\n12.824456\n12.824456\n01:16\n\n\n2\n13.703990\n15.106963\n15.106963\n01:10\n\n\n3\n9.790899\n10.356420\n10.356420\n01:13\n\n\n\n\n\n\nlearn.save('brainage-weights');\n\n\n\nInference\n\nlearn.load('brainage-weights');\n\n\ninterp = Interpretation.from_learner(learn)\n\n\n\n\n\n\n\n\n\ninterp.plot_top_losses(k=9, anatomical_plane=2)",
+    "crumbs": [
+      "Tutorials",
+      "Regression"
+    ]
+  },
+  {
+    "objectID": "tutorial_classification.html",
+    "href": "tutorial_classification.html",
+    "title": "Classification",
+    "section": "",
+    "text": "Google Colab\nThe following line imports all of the functions and classes from the fastMONAI library:\nfrom fastMONAI.vision_all import *",
+    "crumbs": [
+      "Tutorials",
+      "Classification"
+    ]
+  },
+  {
+    "objectID": "tutorial_classification.html#inference-on-test-data",
+    "href": "tutorial_classification.html#inference-on-test-data",
+    "title": "Classification",
+    "section": "Inference on test data",
+    "text": "Inference on test data\n\nlearn.load('model-weights');\n\n\ndls.valid_ds.items = df_test\n\n\npreds, targs = learn.get_preds();\n\n\n\n\n\n\n\n\n\naccuracy(preds, targs)\n\nTensorBase(0.8194)\n\n\n\nTest-time augmentation\nTest-time augmentation (TTA) is a technique where you apply data augmentation transforms when making predictions to produce average output. In addition to often yielding better performance, the variation in the output of the TTA runs can provide some measure of its robustness and sensitivity to augmentations.\n\npreds, targs = learn.tta();\n\n\n\n\n\n\n    \n      \n      \n    \n    \n\n\n\n\n\n\n\n\n\n\naccuracy(preds, targs)\n\nTensorBase(0.8387)",
+    "crumbs": [
+      "Tutorials",
+      "Classification"
+    ]
+  },
+  {
+    "objectID": "tutorial_classification.html#export-learner",
+    "href": "tutorial_classification.html#export-learner",
+    "title": "Classification",
+    "section": "Export learner",
+    "text": "Export learner\n\nmodel_artifact_path = Path(f'model_artifacts/{task}')\nmodel_artifact_path.mkdir(parents=True, exist_ok=True)\n\n\nstore_variables(pkl_fn=model_artifact_path/'model_config.pkl', size=in_shape, reorder=reorder,  resample=resample)\n\n\nlearn.export(model_artifact_path/'classification_learner.pkl')",
+    "crumbs": [
+      "Tutorials",
+      "Classification"
+    ]
+  },
+  {
+    "objectID": "tutorial_classification.html#make-a-simple-web-app",
+    "href": "tutorial_classification.html#make-a-simple-web-app",
+    "title": "Classification",
+    "section": "Make a simple web app",
+    "text": "Make a simple web app\nMake a simple web application with Gradio and host it on Hugging Face Spaces.\n\nlearn = load_learner(model_artifact_path/'classification_learner.pkl', cpu=True)\n_, reorder, resample = load_variables(pkl_fn='model_config.pkl')\n\n\nimport gradio as gr\n\ngr.Interface(fn=lambda fileobj: gradio_image_classifier(fileobj, learn,\n                                                        reorder, resample),\n             inputs=['file'],\n             outputs=gr.Label(num_top_classes=2),\n             examples=[df_test.img_path[0], df_test.img_path[200]],\n             title='Example app').launch()\n\nRunning on local URL:  http://127.0.0.1:7860\n\nTo create a public link, set `share=True` in `launch()`.",
+    "crumbs": [
+      "Tutorials",
+      "Classification"
+    ]
+  },
+  {
+    "objectID": "vision_inference.html",
+    "href": "vision_inference.html",
+    "title": "Vision inference",
+    "section": "",
+    "text": "source",
+    "crumbs": [
+      "Vision inference"
+    ]
+  },
+  {
+    "objectID": "vision_inference.html#post-processing",
+    "href": "vision_inference.html#post-processing",
+    "title": "Vision inference",
+    "section": "Post-processing",
+    "text": "Post-processing\n\nsource\n\nrefine_binary_pred_mask\n\n refine_binary_pred_mask (pred_mask,\n                          remove_size:(&lt;class'int'&gt;,&lt;class'float'&gt;)=None,\n                          percentage:float=0.2, verbose:bool=False)\n\n*Removes small objects from the predicted binary mask.\nArgs: pred_mask: The predicted mask from which small objects are to be removed. remove_size: The size under which objects are considered ‘small’. percentage: The percentage of the remove_size to be used as threshold. Defaults to 0.2. verbose: If True, print the number of components. Defaults to False.\nReturns: The processed mask with small objects removed.*",
+    "crumbs": [
+      "Vision inference"
+    ]
+  },
+  {
+    "objectID": "vision_inference.html#gradio",
+    "href": "vision_inference.html#gradio",
+    "title": "Vision inference",
+    "section": "Gradio",
+    "text": "Gradio\n\nsource\n\ngradio_image_classifier\n\n gradio_image_classifier (file_obj, learn, reorder, resample)\n\nPredict on images using exported learner and return the result as a dictionary.",
+    "crumbs": [
+      "Vision inference"
+    ]
+  },
+  {
+    "objectID": "vision_metrics.html",
+    "href": "vision_metrics.html",
+    "title": "Vision metrics",
+    "section": "",
+    "text": "source\n\ncalculate_dsc\n\n calculate_dsc (pred:torch.Tensor, targ:torch.Tensor)\n\nMONAI compute_meandice\n\nsource\n\n\ncalculate_haus\n\n calculate_haus (pred:torch.Tensor, targ:torch.Tensor)\n\nMONAI compute_hausdorff_distance\n\nsource\n\n\nbinary_dice_score\n\n binary_dice_score (act:&lt;built-\n                    inmethodtensoroftypeobjectat0x7fc67bf36c20&gt;,\n                    targ:torch.Tensor)\n\n*Calculates the mean Dice score for binary semantic segmentation tasks.\nArgs: act: Activation tensor with dimensions [B, C, W, H, D]. targ: Target masks with dimensions [B, C, W, H, D].\nReturns: Mean Dice score.*\n\nsource\n\n\nmulti_dice_score\n\n multi_dice_score (act:torch.Tensor, targ:torch.Tensor)\n\n*Calculate the mean Dice score for each class in multi-class semantic segmentation tasks.\nArgs: act: Activation tensor with dimensions [B, C, W, H, D]. targ: Target masks with dimensions [B, C, W, H, D].\nReturns: Mean Dice score for each class.*\n\nsource\n\n\nbinary_hausdorff_distance\n\n binary_hausdorff_distance (act:torch.Tensor, targ:torch.Tensor)\n\n*Calculate the mean Hausdorff distance for binary semantic segmentation tasks.\nArgs: act: Activation tensor with dimensions [B, C, W, H, D]. targ: Target masks with dimensions [B, C, W, H, D].\nReturns: Mean Hausdorff distance.*\n\nsource\n\n\nmulti_hausdorff_distance\n\n multi_hausdorff_distance (act:torch.Tensor, targ:torch.Tensor)\n\n*Calculate the mean Hausdorff distance for each class in multi-class semantic segmentation tasks.\nArgs: act: Activation tensor with dimensions [B, C, W, H, D]. targ: Target masks with dimensions [B, C, W, H, D].\nReturns: Mean Hausdorff distance for each class.*",
+    "crumbs": [
+      "Vision metrics"
+    ]
+  },
+  {
+    "objectID": "tutorial_multiclass_segmentation.html",
+    "href": "tutorial_multiclass_segmentation.html",
+    "title": "Multi-class semantic segmentation",
+    "section": "",
+    "text": "Google Colab\n\n\n\nfrom fastMONAI.vision_all import *\n\nfrom monai.apps import DecathlonDataset\nfrom sklearn.model_selection import train_test_split\n\n\nDownload external data\nWe use the MONAI function DecathlonDataset to download the data and generate items for training.\n\npath = Path('../data')\npath.mkdir(exist_ok=True)\n\n\ntask = \"Task01_BrainTumour\"\ntraining_data = DecathlonDataset(root_dir=path, task=task, section=\"training\", download=True,\n                                 cache_num=0, num_workers=3)\n\n2025-08-29 09:44:58,814 - INFO - Verified 'Task01_BrainTumour.tar', md5: 240a19d752f0d9e9101544901065d872.\n2025-08-29 09:44:58,815 - INFO - File exists: ../data/Task01_BrainTumour.tar, skipped downloading.\n2025-08-29 09:44:58,816 - INFO - Non-empty folder exists in ../data/Task01_BrainTumour, skipped extracting.\n\n\n\ndf = pd.DataFrame(training_data.data)\ndf.shape\n\n(388, 2)\n\n\nSplit the labled data into training and test\n\ntrain_df, test_df = train_test_split(df, test_size=0.1, random_state=42)\ntrain_df.shape, test_df.shape\n\n((349, 2), (39, 2))\n\n\n\n\nLook at training data\n\nmed_dataset = MedDataset(img_list=train_df.label.tolist(), dtype=MedMask, max_workers=12)\n\n\nmed_dataset.df.head()\n\n\n\n\n\n\n\n\npath\ndim_0\ndim_1\ndim_2\nvoxel_0\nvoxel_1\nvoxel_2\norientation\nvoxel_count_0\nvoxel_count_1\nvoxel_count_2\nvoxel_count_3\n\n\n\n\n0\n../data/Task01_BrainTumour/labelsTr/BRATS_477.nii.gz\n240\n240\n155\n1.0\n1.0\n1.0\nRAS+\n8765377\n83088\n15826\n63709.0\n\n\n1\n../data/Task01_BrainTumour/labelsTr/BRATS_350.nii.gz\n240\n240\n155\n1.0\n1.0\n1.0\nRAS+\n8872636\n21364\n8872\n25128.0\n\n\n2\n../data/Task01_BrainTumour/labelsTr/BRATS_266.nii.gz\n240\n240\n155\n1.0\n1.0\n1.0\nRAS+\n8725071\n83276\n69784\n49869.0\n\n\n3\n../data/Task01_BrainTumour/labelsTr/BRATS_294.nii.gz\n240\n240\n155\n1.0\n1.0\n1.0\nRAS+\n8790699\n90806\n20231\n26264.0\n\n\n4\n../data/Task01_BrainTumour/labelsTr/BRATS_466.nii.gz\n240\n240\n155\n1.0\n1.0\n1.0\nRAS+\n8911252\n14046\n60\n2642.0\n\n\n\n\n\n\n\n\nsummary_df = med_dataset.summary()\n\n\nsummary_df.head()\n\n\n\n\n\n\n\n\ndim_0\ndim_1\ndim_2\nvoxel_0\nvoxel_1\nvoxel_2\norientation\nexample_path\ntotal\n\n\n\n\n0\n240\n240\n155\n1.0\n1.0\n1.0\nRAS+\n../data/Task01_BrainTumour/labelsTr/BRATS_002.nii.gz\n349\n\n\n\n\n\n\n\n\nresample, reorder = med_dataset.suggestion()\nresample, reorder\n\n([1.0, 1.0, 1.0], False)\n\n\n\nimg_size = med_dataset.get_largest_img_size(resample=resample)\nimg_size\n\n[240.0, 240.0, 155.0]\n\n\n\nbs=4\nsize=[224,224,128]\n\n\nitem_tfms = [ZNormalization(), PadOrCrop(size), RandomAffine(scales=0, degrees=5, isotropic=True)]\n\n\ndblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), MedMaskBlock), \n                      splitter=RandomSplitter(seed=42),\n                      get_x=ColReader('image'),\n                      get_y=ColReader('label'),\n                      item_tfms=item_tfms,\n                      reorder=reorder,\n                      resample=resample)\n\n\ndls = dblock.dataloaders(train_df, bs=bs)\n\n\n# training and validation\nlen(dls.train_ds.items), len(dls.valid_ds.items)\n\n(280, 69)\n\n\n\ndls.show_batch(anatomical_plane=0)\n\n\n\n\n\n\n\n\n\n\nCreate and train a 3D model\nAs in the binary segmentation task, we import an enhanced version of UNet from MONAI. This time instead of using Dice loss, we import a loss function that combines Dice loss and Cross Entropy loss and returns the weighted sum of these two losses.\n\nfrom monai.losses import DiceCELoss\nfrom monai.networks.nets import UNet\n\n\ncodes = np.unique(med_img_reader(train_df.label.tolist()[0]))\nn_classes = len(codes)\nprint(\"Unique classes:\",*codes)\n\nUnique classes: 0.0 1.0 2.0 3.0\n\n\n\nmonai_model = UNet(spatial_dims=3, in_channels=4, out_channels=n_classes, channels=(16, 32, 64, 128, 256),strides=(2, 2, 2, 2), num_res_units=2)\npytorch_model = monai_model.model\n\n\nloss_func = CustomLoss(loss_func=DiceCELoss(to_onehot_y=True, include_background=True, softmax=True))\n\n\nlearn = Learner(dls, monai_model, loss_func=loss_func, opt_func=ranger, metrics=multi_dice_score)#.to_fp16()\n\n\nlearn.lr_find()\n\n\n\n\n\n\n\n\nSuggestedLRs(valley=0.001737800776027143)\n\n\n\n\n\n\n\n\n\n\nlr = 1e-1\n\n\nimport mlflow\n\n# Set experiment name\nmlflow.set_experiment(task)\n\nmlflow_callback = ModelTrackingCallback(\n    model_name=f\"{task}_{monai_model._get_name()}\",\n    loss_function=loss_func.loss_func._get_name(),\n    item_tfms=item_tfms,\n    size=size,\n    resample=resample,\n    reorder=reorder,\n)\n\nwith mlflow.start_run(run_name=\"initial_training\"):\n    learn.fit_flat_cos(2, lr, cbs=[mlflow_callback])\n\n\nlearn.save('braintumor-weights')\n\nPath('models/braintumor-model.pth')\n\n\n\nlearn.show_results(anatomical_plane=0, ds_idx=1)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nmlflow_ui = MLflowUIManager()\nmlflow_ui.start_ui()\n\n\n\nInference on test data\n\nlearn.load('braintumor-weights');\n\n\ntest_dl = learn.dls.test_dl(test_df[:10],with_labels=True)\n\n\ntest_dl.show_batch(anatomical_plane=0, figsize=(10,10))\n\n\n\n\n\n\n\n\n\npred_acts, labels = learn.get_preds(dl=test_dl)\npred_acts.shape, labels.shape\n\n\n\n\n\n\n\n\n(torch.Size([10, 4, 224, 224, 128]), torch.Size([10, 1, 224, 224, 128]))\n\n\nDice score for labels 1,2 and 3:\n\nmulti_dice_score(pred_acts, labels)\n\ntensor([0.5708, 0.4186, 0.6994])\n\n\n\nlearn.show_results(anatomical_plane=0, dl=test_dl)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nmlflow_ui.stop()",
+    "crumbs": [
+      "Tutorials",
+      "Multi-class semantic segmentation"
+    ]
+  },
+  {
+    "objectID": "vision_loss_functions.html",
+    "href": "vision_loss_functions.html",
+    "title": "Custom loss functions",
+    "section": "",
+    "text": "source\n\nCustomLoss\n\n CustomLoss (loss_func)\n\nA custom loss wrapper class for loss functions to allow them to work with the ‘show_results’ method in fastai.\n\nsource\n\n\nTverskyFocalLoss\n\n TverskyFocalLoss (include_background:bool=True, to_onehot_y:bool=False,\n                   sigmoid:bool=False, softmax:bool=False, gamma:float=2,\n                   alpha:float=0.5, beta:float=0.99)\n\nCompute Tversky loss with a focus parameter, gamma, applied. The details of Tversky loss is shown in monai.losses.TverskyLoss.",
+    "crumbs": [
+      "Custom loss functions"
+    ]
+  },
+  {
+    "objectID": "external_data.html",
+    "href": "external_data.html",
+    "title": "External data",
+    "section": "",
+    "text": "source",
+    "crumbs": [
+      "External data"
+    ]
+  },
+  {
+    "objectID": "external_data.html#ixi",
+    "href": "external_data.html#ixi",
+    "title": "External data",
+    "section": "IXI",
+    "text": "IXI\n\nsource\n\ndownload_ixi_data\n\n download_ixi_data (path:(&lt;class'str'&gt;,&lt;class'pathlib.Path'&gt;)='../data')\n\n*Download T1 scans and demographic information from the IXI dataset.\nArgs: path: Path to the directory where the data will be stored. Defaults to ‘../data’.\nReturns: The path to the stored CSV file.*",
+    "crumbs": [
+      "External data"
+    ]
+  },
+  {
+    "objectID": "external_data.html#ixitiny",
+    "href": "external_data.html#ixitiny",
+    "title": "External data",
+    "section": "IXITiny",
+    "text": "IXITiny\n\nsource\n\ndownload_ixi_tiny\n\n download_ixi_tiny (path:(&lt;class'str'&gt;,&lt;class'pathlib.Path'&gt;)='../data')\n\n*Download the tiny version of the IXI dataset provided by TorchIO.\nArgs: path: The directory where the data will be stored. If not provided, defaults to ‘../data’.\nReturns: The path to the directory where the data is stored.*",
+    "crumbs": [
+      "External data"
+    ]
+  },
+  {
+    "objectID": "external_data.html#lower-spine-data",
+    "href": "external_data.html#lower-spine-data",
+    "title": "External data",
+    "section": "Lower spine data",
+    "text": "Lower spine data\n\nsource\n\ndownload_spine_test_data\n\n download_spine_test_data\n                           (path:(&lt;class'str'&gt;,&lt;class'pathlib.Path'&gt;)='../\n                           data')\n\n*Downloads T2w scans from the study ‘Fully Automatic Localization and Segmentation of 3D Vertebral Bodies from CT/MR Images via a Learning-Based Method’ by Chu et. al. \nArgs: path: Directory where the downloaded data will be stored and extracted. Defaults to ‘../data’.\nReturns: Processed dataframe containing image paths, label paths, and subject IDs.*\n\nsource\n\n\ndownload_example_spine_data\n\n download_example_spine_data\n                              (path:(&lt;class'str'&gt;,&lt;class'pathlib.Path'&gt;)='\n                              ../data')\n\n*Downloads example T2w scan and corresponding predicted mask.\nArgs: path: Directory where the downloaded data will be stored and extracted. Defaults to ‘../data’.\nReturns: Path to the directory where the example data has been extracted.*",
+    "crumbs": [
+      "External data"
+    ]
+  },
+  {
+    "objectID": "external_data.html#medmnist3d",
+    "href": "external_data.html#medmnist3d",
+    "title": "External data",
+    "section": "MedMNIST3D",
+    "text": "MedMNIST3D\n\nsource\n\ndownload_medmnist3d_dataset\n\n download_medmnist3d_dataset (study:str,\n                              path:(&lt;class'str'&gt;,&lt;class'pathlib.Path'&gt;)='.\n                              ./data', max_workers:int=1,\n                              skip_download:bool=True)\n\n*Downloads and processes a particular MedMNIST3D dataset.\nArgs: study: MedMNIST dataset (‘OrganMNIST3D’, ‘NoduleMNIST3D’, ‘AdrenalMNIST3D’, ‘FractureMNIST3D’, ‘VesselMNIST3D’, ‘SynapseMNIST3D’) path: Directory to store and extract downloaded data. Defaults to ‘../data’. max_workers: Maximum number of worker processes for data processing. Defaults to 1. skip_download: Flag to indicate if the dataset should be re-downloaded if the dataset exists locally. Default set to False.\nReturns: Two pandas DataFrames. The first DataFrame combines training and validation data, and the second DataFrame contains the testing data.*",
+    "crumbs": [
+      "External data"
+    ]
+  },
+  {
+    "objectID": "external_data.html#endometrical-cancer",
+    "href": "external_data.html#endometrical-cancer",
+    "title": "External data",
+    "section": "Endometrical cancer",
+    "text": "Endometrical cancer\n\nsource\n\ndownload_example_endometrial_cancer_data\n\n download_example_endometrial_cancer_data\n                                           (path:(&lt;class'str'&gt;,&lt;class'path\n                                           lib.Path'&gt;)='../data',\n                                           multi_channel:bool=True)\n\n*Download example data for endometrial cancer.\nArgs: path (str or Path): Path to save the downloaded data. multi_channel (bool): If True, download multi-channel data (Vibe, T2, and ADC). Otherwise, download only Vibe.*",
+    "crumbs": [
+      "External data"
+    ]
+  },
+  {
+    "objectID": "tutorial_inference.html",
+    "href": "tutorial_inference.html",
+    "title": "Inference with exported learner",
+    "section": "",
+    "text": "#all_skip\nfrom fastMONAI.vision_all import *\nfrom monai.apps import DecathlonDataset\n\n\ntasks = {\n    \"brain\": \"Task01_BrainTumour\",\n    \"heart\": \"Task02_Heart\", \n    \"spleen\": \"Task09_Spleen\"\n}\n\ntask = tasks[\"heart\"]\n\nmodel_artifact_path = Path(f\"model_artifacts/{task}\")\n\n\npath = Path('../data')\npath.mkdir(exist_ok=True)\n\n\ntest_data = DecathlonDataset(root_dir=path, task=task, section=\"test\", download=True,\n                                 cache_num=0, num_workers=3)\n\n2025-08-29 14:42:58,879 - INFO - Verified 'Task02_Heart.tar', md5: 06ee59366e1e5124267b774dbd654057.\n2025-08-29 14:42:58,879 - INFO - File exists: ../data/Task02_Heart.tar, skipped downloading.\n2025-08-29 14:42:58,880 - INFO - Non-empty folder exists in ../data/Task02_Heart, skipped extracting.\n\n\n\ntest_imgs = [data['image'] for data in test_data.data]\n\n\nimport mlflow\nfrom mlflow.tracking import MlflowClient\n\nclient = MlflowClient()\nexperiment = mlflow.get_experiment_by_name(task)\n\n# Get latest run\nruns = mlflow.search_runs(\n    experiment_ids=[experiment.experiment_id],\n    order_by=[\"start_time DESC\"], \n    max_results=1\n)\n\nlatest_run_id = runs.iloc[0].run_id\nprint(f\"Loading artifacts from run: {latest_run_id}\")\n\n# Download artifacts\nlearner_path = client.download_artifacts(latest_run_id, \"model/learner.pkl\")\nconfig_path = client.download_artifacts(latest_run_id, \"config/inference_settings.pkl\")\n\n\nlearn_inf = load_learner(learner_path, cpu=False);\n\nload_learner` uses Python's insecure pickle module, which can execute malicious arbitrary code when loading. Only load files you trust.\nIf you only need to load model weights and optimizer state, use the safe `Learner.load` instead.\n\n\n\n_, reorder, resample = load_variables(pkl_fn=config_path)\nreorder, resample\n\n(False, [1.25, 1.25, 1.37])\n\n\n\nsave_path = Path(f'../data/{task}/pred_masks')\nsave_path.mkdir(parents=True, exist_ok=True)\n\n\nidx = 3\nimg_fn = test_imgs[idx]\nimg_fn\n\n'../data/Task02_Heart/imagesTs/la_001.nii.gz'\n\n\n\npred_fn = inference(learn_inf, reorder=reorder, resample=resample, fn=img_fn, save_path=save_path)\n\n\n\n\n\n\n\n\n\nfrom torchio import Subject, ScalarImage, LabelMap\n\nsubject = Subject(image=ScalarImage(img_fn), mask=LabelMap(pred_fn))\nsubject.plot(figsize=(10,5))",
+    "crumbs": [
+      "Tutorials",
+      "Inference with exported learner"
+    ]
+  },
+  {
+    "objectID": "vision_plot.html",
+    "href": "vision_plot.html",
+    "title": "Vision plot",
+    "section": "",
+    "text": "source\n\nvalidate_anatomical_plane\n\n validate_anatomical_plane (anatomical_plane)\n\nEnsure anatomical_plane is either 0, 1, or 2.\n\nsource\n\n\nshow_med_img\n\n show_med_img (im, ctx, channel:int, slice_index:int,\n               anatomical_plane:int,\n               voxel_size:(&lt;class'int'&gt;,&lt;class'list'&gt;), ax=None,\n               figsize=None, title=None, cmap=None, norm=None,\n               aspect=None, interpolation=None, alpha=None, vmin=None,\n               vmax=None, colorizer=None, origin=None, extent=None,\n               interpolation_stage=None, filternorm=True, filterrad=4.0,\n               resample=None, url=None, data=None, **kwargs)\n\n*Show an image on ax. This is a modified code from the fastai function show_image.\nArgs: im: The input image. ctx: The context. channel: Channel of the image. slice_index: Index of the 2D slice. anatomical_plane: Anatomical plane of the image. voxel_size: Voxel size for the image. ax: Axis for the plot. figsize: Figure size for the plot. title: Title for the plot. kwargs: Additional parameters for plt.Axes.imshow method.\nReturns: Axis with the plot.*\n\nsource\n\n\nfind_max_slice\n\n find_max_slice (mask_data, anatomical_plane)\n\nFind slice index based on mask",
+    "crumbs": [
+      "Vision plot"
+    ]
+  },
+  {
+    "objectID": "utils.html",
+    "href": "utils.html",
+    "title": "Utils",
+    "section": "",
+    "text": "source\n\nstore_variables\n\n store_variables (pkl_fn:str|pathlib.Path, size:list, reorder:bool,\n                  resample:int|list)\n\nSave variable values in a pickle file.\n\nsource\n\n\nload_variables\n\n load_variables (pkl_fn:(&lt;class'str'&gt;,&lt;class'pathlib.Path'&gt;))\n\n*Loads stored variable values from a pickle file.\nArgs: pkl_fn: File path of the pickle file to be loaded.\nReturns: The deserialized value of the pickled data.*\n\nsource\n\n\nprint_colab_gpu_info\n\n print_colab_gpu_info ()\n\nCheck if we have a GPU attached to the runtime.\n\nsource\n\n\nModelTrackingCallback\n\n ModelTrackingCallback (model_name:str, loss_function:str,\n                        item_tfms:list[typing.Any], size:list[int],\n                        resample:list[float], reorder:bool)\n\n*A FastAI callback for comprehensive MLflow experiment tracking.\nThis callback automatically logs hyperparameters, metrics, model artifacts, and configuration to MLflow during training.*\n\nsource\n\n\nMLflowUIManager\n\n MLflowUIManager ()\n\nInitialize self. See help(type(self)) for accurate signature.",
+    "crumbs": [
+      "Utils"
+    ]
+  },
+  {
+    "objectID": "tutorial_binary_segmentation.html",
+    "href": "tutorial_binary_segmentation.html",
+    "title": "Binary semantic segmentation",
+    "section": "",
+    "text": "Google Colab\n\n\n\nfrom fastMONAI.vision_all import *\n\nfrom monai.apps import DecathlonDataset\nfrom sklearn.model_selection import train_test_split\n\n\nDownload external data\nWe use the MONAI function DecathlonDataset to download the data and generate items for training.\n\npath = Path('../data')\npath.mkdir(exist_ok=True)\n\n\ntask = \"Task02_Heart\"\ntraining_data = DecathlonDataset(root_dir=path, task=task, section=\"training\", \n    download=True, cache_num=0, num_workers=3)\n\n2025-08-29 12:59:55,613 - INFO - Verified 'Task02_Heart.tar', md5: 06ee59366e1e5124267b774dbd654057.\n2025-08-29 12:59:55,613 - INFO - File exists: ../data/Task02_Heart.tar, skipped downloading.\n2025-08-29 12:59:55,614 - INFO - Non-empty folder exists in ../data/Task02_Heart, skipped extracting.\n\n\n\ndf = pd.DataFrame(training_data.data)\ndf.shape\n\n(16, 2)\n\n\nSplit the labled data into training and test\n\ntrain_df, test_df = train_test_split(df, test_size=0.1, random_state=42)\ntrain_df.shape, test_df.shape\n\n((14, 2), (2, 2))\n\n\n\n\nLook at training data\nEach class label will be counted for the masks (including the background) if you pass in the mask path and define the dtype to be MedMask in MedDataset\n\nmed_dataset = MedDataset(img_list=train_df.label.tolist(), dtype=MedMask, max_workers=12)\n\n\nmed_dataset.df.head()\n\n\n\n\n\n\n\n\npath\ndim_0\ndim_1\ndim_2\nvoxel_0\nvoxel_1\nvoxel_2\norientation\nvoxel_count_0\nvoxel_count_1\n\n\n\n\n0\n../data/Task02_Heart/labelsTr/la_023.nii.gz\n320\n320\n110\n1.25\n1.25\n1.37\nRAS+\n11220796\n43204\n\n\n1\n../data/Task02_Heart/labelsTr/la_004.nii.gz\n320\n320\n110\n1.25\n1.25\n1.37\nRAS+\n11205525\n58475\n\n\n2\n../data/Task02_Heart/labelsTr/la_007.nii.gz\n320\n320\n130\n1.25\n1.25\n1.37\nRAS+\n13256556\n55444\n\n\n3\n../data/Task02_Heart/labelsTr/la_022.nii.gz\n320\n320\n110\n1.25\n1.25\n1.37\nRAS+\n11230449\n33551\n\n\n4\n../data/Task02_Heart/labelsTr/la_011.nii.gz\n320\n320\n120\n1.25\n1.25\n1.37\nRAS+\n12229545\n58455\n\n\n\n\n\n\n\n\ndata_info_df = med_dataset.summary()\n\n\ndata_info_df.head()\n\n\n\n\n\n\n\n\ndim_0\ndim_1\ndim_2\nvoxel_0\nvoxel_1\nvoxel_2\norientation\nexample_path\ntotal\n\n\n\n\n3\n320\n320\n110\n1.25\n1.25\n1.37\nRAS+\n../data/Task02_Heart/labelsTr/la_004.nii.gz\n4\n\n\n4\n320\n320\n120\n1.25\n1.25\n1.37\nRAS+\n../data/Task02_Heart/labelsTr/la_005.nii.gz\n4\n\n\n1\n320\n320\n100\n1.25\n1.25\n1.37\nRAS+\n../data/Task02_Heart/labelsTr/la_009.nii.gz\n2\n\n\n2\n320\n320\n109\n1.25\n1.25\n1.37\nRAS+\n../data/Task02_Heart/labelsTr/la_029.nii.gz\n1\n\n\n0\n320\n320\n90\n1.25\n1.25\n1.37\nRAS+\n../data/Task02_Heart/labelsTr/la_016.nii.gz\n1\n\n\n\n\n\n\n\n\nresample, reorder = med_dataset.suggestion()\nresample, reorder\n\n([1.25, 1.25, 1.37], False)\n\n\n\nbs=4\n\n\nimg_size = med_dataset.get_largest_img_size(resample=resample)\nimg_size\n\n[320.0, 320.0, 130.0]\n\n\n\nsize = [160,160,128]\n\n\nitem_tfms = [ZNormalization(), PadOrCrop(size), RandomAffine(scales=0, degrees=5)]  # RandomMotion()\n\n\ndblock = MedDataBlock(blocks=(ImageBlock(cls=MedImage), MedMaskBlock), \n                      splitter=RandomSplitter(valid_pct=0.1, seed=42), # By passing valid_pct=0.1, we tell it to get a random 10% of the training set for validation.\n                      get_x=ColReader('image'),\n                      get_y=ColReader('label'),\n                      item_tfms=item_tfms,\n                      reorder=reorder,\n                      resample=resample)\n\n\ndls = dblock.dataloaders(train_df, bs=bs)\n\n\n# training and validation\nlen(dls.train_ds.items), len(dls.valid_ds.items)\n\n(13, 1)\n\n\n\ndls.show_batch(anatomical_plane=2)\n\n\n\n\n\n\n\n\n\n\nCreate and train a 3D model\nThe current state-of-the-art CNN models for medical image segmentation tasks are based on encoder-decoder architectures like the U-Net. In the following line, we import an enhanced version of 3D UNet from MONAI. In addition, we import the Dice coefficient (Dice) loss, a commonly used loss function in medical image segmentation tasks: \\[\\begin{equation*}\n\\begin{aligned}\nloss = 1- \\frac{y \\cap \\hat{y}}{\\left | y \\right |+\\left | \\hat{y} \\right |}\n\\end{aligned}\n\\end{equation*}\\]\n\nfrom monai.networks.nets import UNet\nfrom monai.losses import DiceLoss\n\n\nmonai_model = UNet(spatial_dims=3, in_channels=1, out_channels=1, channels=(16, 32, 64, 128, 256),strides=(2, 2, 2, 2), num_res_units=2)\npytorch_model = monai_model.model\n\n\nloss_func = CustomLoss(loss_func=DiceLoss(sigmoid=True))\n\nWe use a built-in ranger optimizer from fastai, that combines (RAdam + Lookahead) into a single optimizer. Ranger21 tested with fastai available: https://github.com/lessw2020/Ranger21\n\nlearn = Learner(dls, pytorch_model, loss_func=loss_func, opt_func=ranger, metrics=binary_dice_score)\n\n\nlearn.lr_find()\n\n\n\n\n\n\n    \n      \n      0.00% [0/34 00:00&lt;?]\n    \n    \n\n\n    \n      \n      0.00% [0/3 00:00&lt;?]\n    \n    \n\n\nSuggestedLRs(valley=0.007585775572806597)\n\n\n\n\n\n\n\n\n\n\nlr = 1e-2\n\nAs shown in https://walkwithfastai.com/Segmentation, with the ranger optimizer, we want to use a different fit function, called fit_flat_cos\n\nimport mlflow\n\n# Set experiment name\nmlflow.set_experiment(task)\n\nmlflow_callback = ModelTrackingCallback(\n    model_name=f\"{task}_{monai_model._get_name()}\",\n    loss_function=loss_func.loss_func._get_name(),\n    item_tfms=item_tfms,\n    size=size,\n    resample=resample,\n    reorder=reorder,\n)\n\nwith mlflow.start_run(run_name=\"initial_training\"):\n    learn.fit_flat_cos(200, lr, cbs=[mlflow_callback])\n\n\nlearn.recorder.plot_loss();\n\n\nlearn.save('heart-weights')\n\nPath('models/heart-weights.pth')\n\n\n\nlearn.show_results(anatomical_plane=1)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nmlflow_ui = MLflowUIManager()\nmlflow_ui.start_ui()\n\n\n                        \n                            \n                                ✅ MLflow UI is running successfully!\n                            \n                            \n                                🔗 Open MLflow UI\n                            \n                            \n                                URL: http://localhost:5001\n                            \n                        \n                    \n\n\nTrue\n\n\n\n\nTest data (with labels to evaulate the model)\nEvaluate the performance of the selected model on unseen data. It’s important to not touch this data until you have fine tuned your model to get an unbiased evaluation!\n\nlearn.load('heart-weights');\n\n\ntest_dl = learn.dls.test_dl(test_df,with_labels=True)\n\n\ntest_dl.show_batch(anatomical_plane=0, figsize=(10,10))\n\n\n\n\n\n\n\n\n\npred_acts, labels = learn.get_preds(dl=test_dl)\npred_acts.shape, labels.shape\n\n\n\n\n\n\n\n\n(torch.Size([2, 1, 160, 160, 128]), torch.Size([2, 1, 160, 160, 128]))\n\n\n\nbinary_dice_score(pred_acts, labels)\n\ntensor(0.9120)\n\n\n\nlearn.show_results(anatomical_plane=0, dl=test_dl)\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nmlflow_ui.stop()\n\n\n                \n                    🛑 MLflow UI stopped",
+    "crumbs": [
+      "Tutorials",
+      "Binary semantic segmentation"
+    ]
+  },
+  {
+    "objectID": "vision_core.html",
+    "href": "vision_core.html",
+    "title": "Vision core",
+    "section": "",
+    "text": "source\n\n\n\n med_img_reader (file_path:str|pathlib.Path|fastcore.foundation.L|list,\n                 reorder:bool=False, resample:list=None,\n                 only_tensor:bool=True, dtype=&lt;class 'torch.Tensor'&gt;)\n\n*Loads and preprocesses a medical image.\nArgs: file_path: Path to the image. Can be a string, Path object or a list. reorder: Whether to reorder the data to be closest to canonical (RAS+) orientation. Defaults to False. resample: Whether to resample image to different voxel sizes and image dimensions. Defaults to None. only_tensor: Whether to return only image tensor. Defaults to True. dtype: Datatype for the return value. Defaults to torch.Tensor.\nReturns: The preprocessed image. Returns only the image tensor if only_tensor is True, otherwise returns original image, preprocessed image, and original size.*\n\nsource\n\n\n\n\n MetaResolver (*args, **kwargs)\n\n*A class to bypass metaclass conflict: https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html*\n\nsource\n\n\n\n\n MedBase (*args, **kwargs)\n\nA class that represents an image object. Metaclass casts x to this class if it is of type cls._bypass_type.\n\nsource\n\n\n\n\n MedImage (*args, **kwargs)\n\nSubclass of MedBase that represents an image object.\n\nsource\n\n\n\n\n MedMask (*args, **kwargs)\n\nSubclass of MedBase that represents an mask object.\n\nsource\n\n\n\n\n setup_vscode_progress ()\n\nConfigure fastai to use VS Code-compatible progress callback.\n\nsource\n\n\n\n\n VSCodeProgressCallback (**kwargs)\n\nEnhanced progress callback that works better in VS Code notebooks.\n\nMedBase.item_preprocessing(resample=[1,1,1], reorder=True)\nim = MedImage.create('images/IXI002-Guys-0828-T1.nii.gz')\ntest_eq(type(im), MedImage)\n\n\nax = im.show(anatomical_plane=0)",
+    "crumbs": [
+      "Vision core"
+    ]
+  },
+  {
+    "objectID": "vision_core.html#load-images",
+    "href": "vision_core.html#load-images",
+    "title": "Vision core",
+    "section": "",
+    "text": "source\n\n\n\n med_img_reader (file_path:str|pathlib.Path|fastcore.foundation.L|list,\n                 reorder:bool=False, resample:list=None,\n                 only_tensor:bool=True, dtype=&lt;class 'torch.Tensor'&gt;)\n\n*Loads and preprocesses a medical image.\nArgs: file_path: Path to the image. Can be a string, Path object or a list. reorder: Whether to reorder the data to be closest to canonical (RAS+) orientation. Defaults to False. resample: Whether to resample image to different voxel sizes and image dimensions. Defaults to None. only_tensor: Whether to return only image tensor. Defaults to True. dtype: Datatype for the return value. Defaults to torch.Tensor.\nReturns: The preprocessed image. Returns only the image tensor if only_tensor is True, otherwise returns original image, preprocessed image, and original size.*\n\nsource\n\n\n\n\n MetaResolver (*args, **kwargs)\n\n*A class to bypass metaclass conflict: https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/data/batch.html*\n\nsource\n\n\n\n\n MedBase (*args, **kwargs)\n\nA class that represents an image object. Metaclass casts x to this class if it is of type cls._bypass_type.\n\nsource\n\n\n\n\n MedImage (*args, **kwargs)\n\nSubclass of MedBase that represents an image object.\n\nsource\n\n\n\n\n MedMask (*args, **kwargs)\n\nSubclass of MedBase that represents an mask object.\n\nsource\n\n\n\n\n setup_vscode_progress ()\n\nConfigure fastai to use VS Code-compatible progress callback.\n\nsource\n\n\n\n\n VSCodeProgressCallback (**kwargs)\n\nEnhanced progress callback that works better in VS Code notebooks.\n\nMedBase.item_preprocessing(resample=[1,1,1], reorder=True)\nim = MedImage.create('images/IXI002-Guys-0828-T1.nii.gz')\ntest_eq(type(im), MedImage)\n\n\nax = im.show(anatomical_plane=0)",
+    "crumbs": [
+      "Vision core"
+    ]
+  },
+  {
+    "objectID": "vision_augment.html",
+    "href": "vision_augment.html",
+    "title": "Data augmentation",
+    "section": "",
+    "text": "source\n\n\n\n CustomDictTransform (aug)\n\nA class that serves as a wrapper to perform an identical transformation on both the image and the target (if it’s a mask).",
+    "crumbs": [
+      "Data augmentation"
+    ]
+  },
+  {
+    "objectID": "vision_augment.html#transforms-wrapper",
+    "href": "vision_augment.html#transforms-wrapper",
+    "title": "Data augmentation",
+    "section": "",
+    "text": "source\n\n\n\n CustomDictTransform (aug)\n\nA class that serves as a wrapper to perform an identical transformation on both the image and the target (if it’s a mask).",
+    "crumbs": [
+      "Data augmentation"
+    ]
+  },
+  {
+    "objectID": "vision_augment.html#vanilla-transforms",
+    "href": "vision_augment.html#vanilla-transforms",
+    "title": "Data augmentation",
+    "section": "Vanilla transforms",
+    "text": "Vanilla transforms\n\nsource\n\ndo_pad_or_crop\n\n do_pad_or_crop (o, target_shape, padding_mode, mask_name, dtype=&lt;class\n                 'torch.Tensor'&gt;)\n\n\nsource\n\n\nPadOrCrop\n\n PadOrCrop (size, padding_mode=0, mask_name=None)\n\nResize image using TorchIO CropOrPad.\n\nsource\n\n\nZNormalization\n\n ZNormalization (masking_method=None, channel_wise=True)\n\nApply TorchIO ZNormalization.\n\nsource\n\n\nRescaleIntensity\n\n RescaleIntensity (out_min_max:tuple[float,float],\n                   in_min_max:tuple[float,float])\n\n*Apply TorchIO RescaleIntensity for robust intensity scaling.\nArgs: out_min_max (tuple[float, float]): Output intensity range (min, max) in_min_max (tuple[float, float]): Input intensity range (min, max)\nExample for CT images: # Normalize CT from air (-1000 HU) to bone (1000 HU) into range (-1, 1) transform = RescaleIntensity(out_min_max=(-1, 1), in_min_max=(-1000, 1000))*\n\nsource\n\n\nNormalizeIntensity\n\n NormalizeIntensity (nonzero:bool=True, channel_wise:bool=True,\n                     subtrahend:float=None, divisor:float=None)\n\n*Apply MONAI NormalizeIntensity.\nArgs: nonzero (bool): Only normalize non-zero values (default: True) channel_wise (bool): Apply normalization per channel (default: True) subtrahend (float, optional): Value to subtract\ndivisor (float, optional): Value to divide by*\n\nsource\n\n\nBraTSMaskConverter\n\n BraTSMaskConverter (enc=None, dec=None, split_idx=None, order=None)\n\nConvert BraTS masks.\n\nsource\n\n\nBinaryConverter\n\n BinaryConverter (enc=None, dec=None, split_idx=None, order=None)\n\nConvert to binary mask.\n\nsource\n\n\nRandomGhosting\n\n RandomGhosting (intensity=(0.5, 1), p=0.5)\n\nApply TorchIO RandomGhosting.\n\nsource\n\n\nRandomSpike\n\n RandomSpike (num_spikes=1, intensity=(1, 3), p=0.5)\n\nApply TorchIO RandomSpike.\n\nsource\n\n\nRandomNoise\n\n RandomNoise (mean=0, std=(0, 0.25), p=0.5)\n\nApply TorchIO RandomNoise.\n\nsource\n\n\nRandomBiasField\n\n RandomBiasField (coefficients=0.5, order=3, p=0.5)\n\nApply TorchIO RandomBiasField.\n\nsource\n\n\nRandomBlur\n\n RandomBlur (std=(0, 2), p=0.5)\n\nApply TorchIO RandomBiasField.\n\nsource\n\n\nRandomGamma\n\n RandomGamma (log_gamma=(-0.3, 0.3), p=0.5)\n\nApply TorchIO RandomGamma.\n\nsource\n\n\nRandomMotion\n\n RandomMotion (degrees=10, translation=10, num_transforms=2,\n               image_interpolation='linear', p=0.5)\n\nApply TorchIO RandomMotion.",
+    "crumbs": [
+      "Data augmentation"
+    ]
+  },
+  {
+    "objectID": "vision_augment.html#dictionary-transforms",
+    "href": "vision_augment.html#dictionary-transforms",
+    "title": "Data augmentation",
+    "section": "Dictionary transforms",
+    "text": "Dictionary transforms\n\nsource\n\nRandomElasticDeformation\n\n RandomElasticDeformation (num_control_points=7, max_displacement=7.5,\n                           image_interpolation='linear', p=0.5)\n\nApply TorchIO RandomElasticDeformation.\n\nsource\n\n\nRandomAffine\n\n RandomAffine (scales=0, degrees=10, translation=0, isotropic=False,\n               image_interpolation='linear', default_pad_value=0.0, p=0.5)\n\nApply TorchIO RandomAffine.\n\nsource\n\n\nRandomFlip\n\n RandomFlip (axes='LR', p=0.5)\n\nApply TorchIO RandomFlip.\n\nsource\n\n\nOneOf\n\n OneOf (transform_dict, p=1)\n\nApply only one of the given transforms using TorchIO OneOf.",
+    "crumbs": [
+      "Data augmentation"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Overview",
+    "section": "",
+    "text": "A low-code Python-based open source deep learning library built on top of fastai, MONAI, TorchIO, and Imagedata.\nfastMONAI simplifies the use of state-of-the-art deep learning techniques in 3D medical image analysis for solving classification, regression, and segmentation tasks. fastMONAI provides the users with functionalities to step through data loading, preprocessing, training, and result interpretations.\nNote: This documentation is also available as interactive notebooks.",
+    "crumbs": [
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#requirements",
+    "href": "index.html#requirements",
+    "title": "Overview",
+    "section": "Requirements",
+    "text": "Requirements\n\nPython: 3.10, 3.11, or 3.12 (Python 3.11 recommended)\nGPU: CUDA-compatible GPU recommended for training (CPU supported for inference)",
+    "crumbs": [
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#environment-setup-recommended",
+    "href": "index.html#environment-setup-recommended",
+    "title": "Overview",
+    "section": "Environment setup (recommended)",
+    "text": "Environment setup (recommended)\nWe recommend using a conda environment to avoid dependency conflicts:\nconda create -n fastmonai python=3.11\nconda activate fastmonai",
+    "crumbs": [
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#quick-install-pypi",
+    "href": "index.html#quick-install-pypi",
+    "title": "Overview",
+    "section": "Quick Install (PyPI)",
+    "text": "Quick Install (PyPI)\npip install fastMONAI",
+    "crumbs": [
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "index.html#development-install-github",
+    "href": "index.html#development-install-github",
+    "title": "Overview",
+    "section": "Development install (GitHub)",
+    "text": "Development install (GitHub)\nIf you want to install an editable version of fastMONAI for development:\ngit clone https://github.com/MMIV-ML/fastMONAI\ncd fastMONAI\n\n# Create development environment\nconda create -n fastmonai-dev python=3.11\nconda activate fastmonai-dev\n\n# Install in development mode\npip install -e '.[dev]'",
+    "crumbs": [
+      "Overview"
+    ]
+  },
+  {
+    "objectID": "vision_data.html",
+    "href": "vision_data.html",
+    "title": "Vision data",
+    "section": "",
+    "text": "source\n\n\n\n pred_to_multiclass_mask (pred:torch.Tensor)\n\n*Apply Softmax on the predicted tensor to rescale the values in the range [0, 1] and sum to 1. Then apply argmax to get the indices of the maximum value of all elements in the predicted Tensor.\nArgs: pred: [C,W,H,D] activation tensor.\nReturns: Predicted mask.*\n\nsource\n\n\n\n\n batch_pred_to_multiclass_mask (pred:torch.Tensor)\n\n*Convert a batch of predicted activation tensors to masks.\nArgs: pred: [B, C, W, H, D] batch of activations.\nReturns: Tuple of batch of predicted masks and number of classes.*\n\nsource\n\n\n\n\n pred_to_binary_mask (pred:torch.Tensor)\n\n*Apply Sigmoid function that squishes activations into a range between 0 and 1. Then we classify all values greater than or equal to 0.5 to 1, and the values below 0.5 to 0.\nArgs: pred: [B, C, W, H, D] or [C, W, H, D] activation tensor\nReturns: Predicted binary mask(s).*\n\nsource\n\n\n\n\n MedDataBlock (blocks:list=None, dl_type:fastai.data.core.TfmdDL=None,\n               getters:list=None, n_inp:int|None=None,\n               item_tfms:list=None, batch_tfms:list=None,\n               reorder:bool=False,\n               resample:(&lt;class'int'&gt;,&lt;class'list'&gt;)=None, **kwargs)\n\nContainer to quickly build dataloaders.",
+    "crumbs": [
+      "Vision data"
+    ]
+  },
+  {
+    "objectID": "vision_data.html#prediction-to-mask",
+    "href": "vision_data.html#prediction-to-mask",
+    "title": "Vision data",
+    "section": "",
+    "text": "source\n\n\n\n pred_to_multiclass_mask (pred:torch.Tensor)\n\n*Apply Softmax on the predicted tensor to rescale the values in the range [0, 1] and sum to 1. Then apply argmax to get the indices of the maximum value of all elements in the predicted Tensor.\nArgs: pred: [C,W,H,D] activation tensor.\nReturns: Predicted mask.*\n\nsource\n\n\n\n\n batch_pred_to_multiclass_mask (pred:torch.Tensor)\n\n*Convert a batch of predicted activation tensors to masks.\nArgs: pred: [B, C, W, H, D] batch of activations.\nReturns: Tuple of batch of predicted masks and number of classes.*\n\nsource\n\n\n\n\n pred_to_binary_mask (pred:torch.Tensor)\n\n*Apply Sigmoid function that squishes activations into a range between 0 and 1. Then we classify all values greater than or equal to 0.5 to 1, and the values below 0.5 to 0.\nArgs: pred: [B, C, W, H, D] or [C, W, H, D] activation tensor\nReturns: Predicted binary mask(s).*\n\nsource\n\n\n\n\n MedDataBlock (blocks:list=None, dl_type:fastai.data.core.TfmdDL=None,\n               getters:list=None, n_inp:int|None=None,\n               item_tfms:list=None, batch_tfms:list=None,\n               reorder:bool=False,\n               resample:(&lt;class'int'&gt;,&lt;class'list'&gt;)=None, **kwargs)\n\nContainer to quickly build dataloaders.",
+    "crumbs": [
+      "Vision data"
+    ]
+  },
+  {
+    "objectID": "vision_data.html#transformblock-for-segmentation",
+    "href": "vision_data.html#transformblock-for-segmentation",
+    "title": "Vision data",
+    "section": "TransformBlock for segmentation",
+    "text": "TransformBlock for segmentation\n\nsource\n\nMedMaskBlock\n\n MedMaskBlock ()\n\nCreate a TransformBlock for medical masks.\n\nsource\n\n\nMedImageDataLoaders\n\n MedImageDataLoaders (*loaders, path:str|pathlib.Path='.', device=None)\n\nHigher-level MedDataBlock API.\n\n\n\n\nType\nDefault\nDetails\n\n\n\n\nloaders\nVAR_POSITIONAL\n\nDataLoader objects to wrap\n\n\npath\nstr | pathlib.Path\n.\nPath to store export objects\n\n\ndevice\nNoneType\nNone\nDevice to put DataLoaders",
+    "crumbs": [
+      "Vision data"
+    ]
+  },
+  {
+    "objectID": "dataset_info.html",
+    "href": "dataset_info.html",
+    "title": "Dataset information",
+    "section": "",
+    "text": "source\n\nMedDataset\n\n MedDataset (path=None, postfix:str='', img_list:list=None,\n             reorder:bool=False, dtype:(&lt;class'fastMONAI.vision_core.MedIm\n             age'&gt;,&lt;class'fastMONAI.vision_core.MedMask'&gt;)=&lt;class\n             'fastMONAI.vision_core.MedImage'&gt;, max_workers:int=1)\n\nA class to extract and present information about the dataset.\n\nsource\n\n\nget_class_weights\n\n get_class_weights (labels:(&lt;built-infunctionarray&gt;,&lt;class'list'&gt;),\n                    class_weight:str='balanced')\n\n*Calculates and returns the class weights.\nArgs: labels: An array or list of class labels for each instance in the dataset. class_weight: Defaults to ‘balanced’.\nReturns: A tensor of class weights.*",
+    "crumbs": [
+      "Dataset information"
+    ]
+  }
+]
