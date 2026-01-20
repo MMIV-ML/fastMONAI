@@ -154,3 +154,18 @@ data/
 
 #Models
 models/
+*.pkl
+*.pth
+
+# Claude
+.claude/
+CLAUDE*.md
+
+# nbdev processed notebooks
+_proc/
+
+# Cline
+.clinerules
+
+# MLflow
+mlruns/

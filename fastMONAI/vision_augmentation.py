@@ -212,7 +212,11 @@ class RandomGhosting(DisplayedTransform):
         self.add_ghosts = tio.RandomGhosting(intensity=intensity, p=p)
 
     def encodes(self, o: MedImage):
-        return MedImage.create(self.add_ghosts(o))
+        result = self.add_ghosts(o)
+        # Handle potential complex values from k-space operations
+        if result.is_complex():
+            result = torch.real(result)
+        return MedImage.create(result)
 
     def encodes(self, o: MedMask):
         return o
@@ -227,7 +231,11 @@ class RandomSpike(DisplayedTransform):
         self.add_spikes = tio.RandomSpike(num_spikes=num_spikes, intensity=intensity, p=p)
 
     def encodes(self, o:MedImage): 
-        return MedImage.create(self.add_spikes(o))
+        result = self.add_spikes(o)
+        # Handle potential complex values from k-space operations
+        if result.is_complex():
+            result = torch.real(result)
+        return MedImage.create(result)
         
     def encodes(self, o:MedMask):
         return o
@@ -316,7 +324,11 @@ class RandomMotion(DisplayedTransform):
         )
 
     def encodes(self, o: MedImage):
-        return MedImage.create(self.add_motion(o))
+        result = self.add_motion(o)
+        # Handle potential complex values from k-space operations
+        if result.is_complex():
+            result = torch.real(result)
+        return MedImage.create(result)
 
     def encodes(self, o: MedMask):
         return o
