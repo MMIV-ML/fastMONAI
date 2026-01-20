@@ -2,12 +2,15 @@
 
 # %% auto 0
 __all__ = ['calculate_dsc', 'calculate_haus', 'binary_dice_score', 'multi_dice_score', 'binary_hausdorff_distance',
-           'multi_hausdorff_distance']
+           'multi_hausdorff_distance', 'calculate_confusion_metrics', 'binary_sensitivity', 'multi_sensitivity',
+           'binary_precision', 'multi_precision', 'calculate_lesion_detection_rate', 'binary_lesion_detection_rate',
+           'multi_lesion_detection_rate', 'calculate_signed_rve', 'binary_signed_rve', 'multi_signed_rve']
 
 # %% ../nbs/05_vision_metrics.ipynb 1
 import torch
 import numpy as np
-from monai.metrics import compute_hausdorff_distance, compute_dice
+from monai.metrics import compute_hausdorff_distance, compute_dice, get_confusion_matrix, compute_confusion_matrix_metric
+from scipy.ndimage import label as scipy_label
 from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
 
 # %% ../nbs/05_vision_metrics.ipynb 3
@@ -18,9 +21,19 @@ def calculate_dsc(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
 
 # %% ../nbs/05_vision_metrics.ipynb 4
 def calculate_haus(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
-    """MONAI `compute_hausdorff_distance`"""
-
-    return torch.Tensor([compute_hausdorff_distance(p[None], t[None]) for p, t in list(zip(pred,targ))])
+    """Compute 95th percentile Hausdorff distance (HD95) using MONAI.
+    
+    HD95 is more robust than standard Hausdorff distance as it ignores 
+    the top 5% of outlier distances.
+    
+    Args:
+        pred: Binary prediction tensor [B, C, W, H, D].
+        targ: Binary target tensor [B, C, W, H, D].
+    
+    Returns:
+        HD95 values for each sample in batch.
+    """
+    return torch.Tensor([compute_hausdorff_distance(p[None], t[None], percentile=95) for p, t in list(zip(pred,targ))])
 
 # %% ../nbs/05_vision_metrics.ipynb 5
 def binary_dice_score(act: torch.tensor, targ: torch.Tensor) -> torch.Tensor:
@@ -62,39 +75,275 @@ def multi_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
 
 # %% ../nbs/05_vision_metrics.ipynb 7
 def binary_hausdorff_distance(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
-    """Calculate the mean Hausdorff distance for binary semantic segmentation tasks.
+    """Calculate the mean HD95 for binary semantic segmentation tasks.
     
     Args:
         act: Activation tensor with dimensions [B, C, W, H, D].
         targ: Target masks with dimensions [B, C, W, H, D].
 
     Returns:
-        Mean Hausdorff distance.
+        Mean HD95.
     """
-    
-
     pred = pred_to_binary_mask(act)
-
     haus = calculate_haus(pred.cpu(), targ.cpu())
     return torch.mean(haus)
 
 # %% ../nbs/05_vision_metrics.ipynb 8
-def multi_hausdorff_distance(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor :
-    """Calculate the mean Hausdorff distance for each class in multi-class semantic segmentation tasks.
+def multi_hausdorff_distance(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate the mean HD95 for each class in multi-class semantic segmentation tasks.
     
     Args:
         act: Activation tensor with dimensions [B, C, W, H, D].
         targ: Target masks with dimensions [B, C, W, H, D].
 
     Returns:
-        Mean Hausdorff distance for each class.
+        Mean HD95 for each class.
     """
-
     pred, n_classes = batch_pred_to_multiclass_mask(act)
     binary_haus = []
 
     for c in range(1, n_classes):
         c_pred, c_targ = torch.where(pred==c, 1, 0), torch.where(targ==c, 1, 0)
-        haus = calculate_haus(pred, targ)
+        haus = calculate_haus(c_pred, c_targ)
         binary_haus.append(np.nanmean(haus))
     return torch.Tensor(binary_haus)
+
+# %% ../nbs/05_vision_metrics.ipynb 10
+def calculate_confusion_metrics(pred: torch.Tensor, targ: torch.Tensor, metric_name: str) -> torch.Tensor:
+    """Calculate confusion matrix-based metric using MONAI.
+    
+    Args:
+        pred: Binary prediction tensor [B, C, W, H, D].
+        targ: Binary target tensor [B, C, W, H, D].
+        metric_name: One of "sensitivity", "precision", "specificity", "f1 score".
+    
+    Returns:
+        Metric values for each sample in batch.
+    """
+    # get_confusion_matrix expects one-hot format and returns [B, n_class, 4] where 4 = [TP, FP, TN, FN]
+    confusion_matrix = get_confusion_matrix(pred, targ, include_background=False)
+    metric = compute_confusion_matrix_metric(metric_name, confusion_matrix)
+    return metric
+
+# %% ../nbs/05_vision_metrics.ipynb 11
+def binary_sensitivity(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean sensitivity (recall) for binary segmentation.
+    
+    Sensitivity = TP / (TP + FN) - measures the proportion of actual positives
+    that are correctly identified.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean sensitivity score.
+    """
+    pred = pred_to_binary_mask(act)
+    sens = calculate_confusion_metrics(pred.cpu(), targ.cpu(), "sensitivity")
+    return torch.nanmean(sens)
+
+# %% ../nbs/05_vision_metrics.ipynb 12
+def multi_sensitivity(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean sensitivity for each class in multi-class segmentation.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean sensitivity for each class.
+    """
+    pred, n_classes = batch_pred_to_multiclass_mask(act)
+    class_sens = []
+    
+    for c in range(1, n_classes):
+        c_pred = torch.where(pred == c, 1, 0)
+        c_targ = torch.where(targ == c, 1, 0)
+        sens = calculate_confusion_metrics(c_pred, c_targ, "sensitivity")
+        class_sens.append(np.nanmean(sens.numpy()))
+    
+    return torch.Tensor(class_sens)
+
+# %% ../nbs/05_vision_metrics.ipynb 13
+def binary_precision(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean precision for binary segmentation.
+    
+    Precision = TP / (TP + FP) - measures the proportion of positive predictions
+    that are actually correct.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean precision score.
+    """
+    pred = pred_to_binary_mask(act)
+    prec = calculate_confusion_metrics(pred.cpu(), targ.cpu(), "precision")
+    return torch.nanmean(prec)
+
+# %% ../nbs/05_vision_metrics.ipynb 14
+def multi_precision(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean precision for each class in multi-class segmentation.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean precision for each class.
+    """
+    pred, n_classes = batch_pred_to_multiclass_mask(act)
+    class_prec = []
+    
+    for c in range(1, n_classes):
+        c_pred = torch.where(pred == c, 1, 0)
+        c_targ = torch.where(targ == c, 1, 0)
+        prec = calculate_confusion_metrics(c_pred, c_targ, "precision")
+        class_prec.append(np.nanmean(prec.numpy()))
+    
+    return torch.Tensor(class_prec)
+
+# %% ../nbs/05_vision_metrics.ipynb 16
+def calculate_lesion_detection_rate(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate lesion-wise detection rate.
+    
+    For each connected component (lesion) in the target, check if there is
+    any overlap with the prediction. A lesion is considered detected if
+    at least one voxel overlaps.
+    
+    Args:
+        pred: Binary prediction tensor [B, C, W, H, D].
+        targ: Binary target tensor [B, C, W, H, D].
+    
+    Returns:
+        Detection rate (detected lesions / total lesions) for each sample.
+    """
+    detection_rates = []
+    
+    for p, t in zip(pred, targ):
+        p_np = p.squeeze().cpu().numpy()
+        t_np = t.squeeze().cpu().numpy()
+        
+        # Label connected components in target
+        labeled_targ, n_lesions = scipy_label(t_np)
+        
+        if n_lesions == 0:
+            detection_rates.append(float('nan'))
+            continue
+        
+        detected = 0
+        for lesion_id in range(1, n_lesions + 1):
+            lesion_mask = (labeled_targ == lesion_id)
+            overlap = (p_np * lesion_mask).sum()
+            if overlap > 0:
+                detected += 1
+        
+        detection_rates.append(detected / n_lesions)
+    
+    return torch.Tensor(detection_rates)
+
+# %% ../nbs/05_vision_metrics.ipynb 17
+def binary_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean lesion detection rate for binary segmentation.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean lesion detection rate.
+    """
+    pred = pred_to_binary_mask(act)
+    ldr = calculate_lesion_detection_rate(pred.cpu(), targ.cpu())
+    return torch.nanmean(ldr)
+
+# %% ../nbs/05_vision_metrics.ipynb 18
+def multi_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean lesion detection rate for each class in multi-class segmentation.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean lesion detection rate for each class.
+    """
+    pred, n_classes = batch_pred_to_multiclass_mask(act)
+    class_ldr = []
+    
+    for c in range(1, n_classes):
+        c_pred = torch.where(pred == c, 1, 0)
+        c_targ = torch.where(targ == c, 1, 0)
+        ldr = calculate_lesion_detection_rate(c_pred, c_targ)
+        class_ldr.append(np.nanmean(ldr.numpy()))
+    
+    return torch.Tensor(class_ldr)
+
+# %% ../nbs/05_vision_metrics.ipynb 20
+def calculate_signed_rve(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate signed Relative Volume Error.
+    
+    RVE = (pred_volume - targ_volume) / targ_volume
+    
+    Positive values indicate over-segmentation (model predicts too large),
+    negative values indicate under-segmentation (model predicts too small).
+    
+    Args:
+        pred: Binary prediction tensor [B, C, W, H, D].
+        targ: Binary target tensor [B, C, W, H, D].
+    
+    Returns:
+        Signed RVE for each sample in batch.
+    """
+    rve_values = []
+    
+    for p, t in zip(pred, targ):
+        pred_vol = p.sum().float()
+        targ_vol = t.sum().float()
+        
+        if targ_vol == 0:
+            rve_values.append(float('nan'))
+        else:
+            rve = (pred_vol - targ_vol) / targ_vol
+            rve_values.append(rve.item())
+    
+    return torch.Tensor(rve_values)
+
+# %% ../nbs/05_vision_metrics.ipynb 21
+def binary_signed_rve(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean signed RVE for binary segmentation.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean signed RVE.
+    """
+    pred = pred_to_binary_mask(act)
+    rve = calculate_signed_rve(pred.cpu(), targ.cpu())
+    return torch.nanmean(rve)
+
+# %% ../nbs/05_vision_metrics.ipynb 22
+def multi_signed_rve(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+    """Calculate mean signed RVE for each class in multi-class segmentation.
+    
+    Args:
+        act: Activation tensor [B, C, W, H, D].
+        targ: Target masks [B, C, W, H, D].
+    
+    Returns:
+        Mean signed RVE for each class.
+    """
+    pred, n_classes = batch_pred_to_multiclass_mask(act)
+    class_rve = []
+    
+    for c in range(1, n_classes):
+        c_pred = torch.where(pred == c, 1, 0)
+        c_targ = torch.where(targ == c, 1, 0)
+        rve = calculate_signed_rve(c_pred, c_targ)
+        class_rve.append(np.nanmean(rve.numpy()))
+    
+    return torch.Tensor(class_rve)

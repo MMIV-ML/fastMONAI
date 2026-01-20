@@ -5,6 +5,7 @@ __all__ = ['MedDataset', 'get_class_weights']
 
 # %% ../nbs/08_dataset_info.ipynb 2
 from .vision_core import *
+from .vision_plot import find_max_slice
 
 from sklearn.utils.class_weight import compute_class_weight
 from concurrent.futures import ThreadPoolExecutor
@@ -12,28 +13,22 @@ import pandas as pd
 import numpy as np
 import torch
 import glob
+import matplotlib.pyplot as plt
 
-# %% ../nbs/08_dataset_info.ipynb 4
+# %% ../nbs/08_dataset_info.ipynb 3
 class MedDataset:
     """A class to extract and present information about the dataset."""
 
-    def __init__(self, path=None, postfix: str = '', img_list: list = None,
+    def __init__(self, dataframe=None, img_col:str =None, mask_col:str ="mask_path", path=None, postfix: str = '',
                  reorder: bool = False, dtype: (MedImage, MedMask) = MedImage,
                  max_workers: int = 1):
-        """Constructs MedDataset object.
+        """Constructs MedDataset object."""
 
-        Args:
-            path (str, optional): Path to the image folder.
-            postfix (str, optional): Specify the file type if there are different files in the folder.
-            img_list (List[str], optional): Alternatively, pass in a list with image paths.
-            reorder (bool, optional): Whether to reorder the data to be closest to canonical (RAS+) orientation.
-            dtype (Union[MedImage, MedMask], optional): Load data as datatype. Default is MedImage.
-            max_workers (int, optional): The number of worker threads. Default is 1.
-        """
-                     
+        self.input_df = dataframe
+        self.img_col = img_col
+        self.mask_col = mask_col
         self.path = path
         self.postfix = postfix
-        self.img_list = img_list
         self.reorder = reorder
         self.dtype = dtype
         self.max_workers = max_workers
@@ -41,19 +36,34 @@ class MedDataset:
 
     def _create_data_frame(self):
         """Private method that returns a dataframe with information about the dataset."""
-
+        
+        # Handle path-based initialization (legacy mode)
         if self.path:
-            self.img_list = glob.glob(f'{self.path}/*{self.postfix}*')
-            if not self.img_list: print('Could not find images. Check the image path')
+            img_list = glob.glob(f'{self.path}/*{self.postfix}*')
+            if not img_list: 
+                print('Could not find images. Check the image path')
+                return pd.DataFrame()
+        
+        # Handle dataframe-based initialization (new mode)
+        elif self.input_df is not None and self.mask_col in self.input_df.columns:
+            img_list = self.input_df[self.mask_col].tolist()
+        
+        else:
+            print('Error: Must provide either path or dataframe with mask_col')
+            return pd.DataFrame()
 
+        # Process images to extract metadata
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            data_info_dict = list(executor.map(self._get_data_info, self.img_list))
+            data_info_dict = list(executor.map(self._get_data_info, img_list))
 
         df = pd.DataFrame(data_info_dict)
         
-        if df.orientation.nunique() > 1:
-            print('The volumes in this dataset have different orientations. '
-                  'Recommended to pass in the argument reorder=True when creating a MedDataset object for this dataset')
+        if len(df) > 0 and df.orientation.nunique() > 1 and not self.reorder:
+            raise ValueError(
+                'Mixed orientations detected in dataset. '
+                'Please recreate MedDataset with reorder=True to get correct resample values: '
+                'MedDataset(..., reorder=True)'
+            )
 
         return df
 
@@ -74,18 +84,32 @@ class MedDataset:
 
     def _get_data_info(self, fn: str):
         """Private method to collect information about an image file."""
-        _, o, _ = med_img_reader(fn, reorder=self.reorder, only_tensor=False, dtype=self.dtype)
+        try:
+            _, o, _ = med_img_reader(fn, reorder=self.reorder, only_tensor=False, dtype=self.dtype)
 
-        info_dict = {'path': fn, 'dim_0': o.shape[1], 'dim_1': o.shape[2], 'dim_2': o.shape[3],
-                     'voxel_0': round(o.spacing[0], 4), 'voxel_1': round(o.spacing[1], 4), 'voxel_2': round(o.spacing[2], 4),
-                     'orientation': f'{"".join(o.orientation)}+'}
+            info_dict = {'path': fn, 'dim_0': o.shape[1], 'dim_1': o.shape[2], 'dim_2': o.shape[3],
+                         'voxel_0': round(o.spacing[0], 4), 'voxel_1': round(o.spacing[1], 4), 'voxel_2': round(o.spacing[2], 4),
+                         'orientation': f'{"".join(o.orientation)}+'}
 
-        if self.dtype is MedMask:
-            mask_labels_dict = o.count_labels()
-            mask_labels_dict = {f'voxel_count_{int(key)}': val for key, val in mask_labels_dict.items()}
-            info_dict.update(mask_labels_dict)
+            if self.dtype is MedMask:
+                # Calculate voxel volume in mm³
+                voxel_volume = o.spacing[0] * o.spacing[1] * o.spacing[2]
+                
+                # Get voxel counts for each label
+                mask_labels_dict = o.count_labels()
+                
+                # Calculate volumes for each label > 0 (skip background)
+                for key, voxel_count in mask_labels_dict.items():
+                    label_int = int(key)
+                    if label_int > 0 and voxel_count > 0:  # Skip background (label 0)
+                        volume_mm3 = voxel_count * voxel_volume
+                        info_dict[f'label_{label_int}_volume_mm3'] = round(volume_mm3, 4)
 
-        return info_dict
+            return info_dict
+        
+        except Exception as e:
+            print(f"Warning: Failed to process {fn}: {e}")
+            return {'path': fn, 'error': str(e)}
 
     def get_largest_img_size(self, resample: list = None) -> list:
         """Get the largest image size in the dataset."""
@@ -104,6 +128,102 @@ class MedDataset:
             dims = [float(self.df.dim_0.max()), float(self.df.dim_1.max()), float(self.df.dim_2.max())]
 
         return dims
+
+    def get_volume_summary(self):
+        """Get summary statistics for volume columns."""
+        volume_cols = [col for col in self.df.columns if col.endswith('_volume_mm3')]
+        
+        if not volume_cols:
+            print("No volume columns found. Make sure dtype=MedMask when creating the dataset.")
+            return None
+            
+        print("📊 Volume Summary:")
+        print("=" * 50)
+        
+        for col in volume_cols:
+            # Get non-zero volumes
+            non_zero_volumes = self.df[self.df[col] > 0][col]
+            
+            if len(non_zero_volumes) > 0:
+                print(f"\n{col}:")
+                print(f"  Cases with volume: {len(non_zero_volumes)}")
+                print(f"  Mean volume: {non_zero_volumes.mean():.2f} mm³")
+                print(f"  Median volume: {non_zero_volumes.median():.2f} mm³")
+                print(f"  Min volume: {non_zero_volumes.min():.2f} mm³")
+                print(f"  Max volume: {non_zero_volumes.max():.2f} mm³")
+            else:
+                print(f"\n{col}: No cases with volume > 0")
+        
+    def _visualize_single_case(self, img_path, mask_path, case_id, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
+        """Helper method to visualize a single case."""
+        try:
+            # Create MedImage and MedMask with current preprocessing settings
+            resample, reorder = self.suggestion()
+            MedBase.item_preprocessing(resample=resample, reorder=reorder)
+            
+            img = MedImage.create(img_path)
+            mask = MedMask.create(mask_path)
+            
+            # Find optimal slice using explicit function
+            mask_data = mask.numpy()[0]  # Remove channel dimension
+            optimal_slice = find_max_slice(mask_data, anatomical_plane)
+            
+            # Create subplot
+            fig, axes = plt.subplots(1, 2, figsize=figsize)
+            
+            # Show image
+            img.show(ctx=axes[0], anatomical_plane=anatomical_plane, slice_index=optimal_slice)
+            axes[0].set_title(f"{case_id} - Image (slice {optimal_slice})")
+            
+            # Show overlay
+            img.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice)
+            mask.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice, 
+                     alpha=0.3, cmap=cmap)
+            axes[1].set_title(f"{case_id} - Overlay (slice {optimal_slice})")
+            
+            # Adjust spacing to bring plots closer
+            plt.subplots_adjust(wspace=0.1)
+            plt.tight_layout()
+            plt.show()
+            
+        except Exception as e:
+            print(f"❌ Failed to visualize case {case_id}: {e}")
+
+    def visualize_cases(self, n_cases=4, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
+        """
+        Visualize cases from the dataset.
+        
+        Args:
+            n_cases: Number of cases to show. If None, shows all cases.
+            anatomical_plane: 0=sagittal, 1=coronal, 2=axial
+            cmap: Colormap for mask overlay
+            figsize: Figure size for each case
+        """
+        if self.input_df is None:
+            print("Error: No dataframe provided. Cannot visualize cases.")
+            return
+            
+        if self.img_col is None:
+            print("Error: No img_col specified. Cannot visualize cases.")
+            return
+            
+        # Check if required columns exist
+        if self.img_col not in self.input_df.columns:
+            print(f"Error: Column '{self.img_col}' not found in dataframe.")
+            return
+            
+        if self.mask_col not in self.input_df.columns:
+            print(f"Error: Column '{self.mask_col}' not found in dataframe.")
+            return
+
+        for idx in range(min(n_cases, len(self.input_df))):
+            row = self.input_df.iloc[idx]
+            case_id = row.get('case_id', f'Case_{idx}')  # Fallback if no case_id
+            img_path = row[self.img_col]
+            mask_path = row[self.mask_col]
+
+            self._visualize_single_case(img_path, mask_path, case_id, anatomical_plane, cmap, figsize)
+            print("-" * 60)
 
 # %% ../nbs/08_dataset_info.ipynb 5
 def get_class_weights(labels: (np.array, list), class_weight: str = 'balanced') -> torch.Tensor: 
