@@ -15,25 +15,58 @@ from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
 
 # %% ../nbs/05_vision_metrics.ipynb 3
 def calculate_dsc(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
-    """MONAI `compute_meandice`"""
+    """Calculate Dice score using MONAI's compute_dice.
 
-    return torch.Tensor([compute_dice(p[None], t[None]) for p, t in list(zip(pred,targ))])
+    Accepts tensors of various shapes and automatically reshapes to 5D format.
+
+    Args:
+        pred: Binary prediction tensor. Accepts:
+              - [D, H, W] single 3D volume
+              - [C, D, H, W] single volume with channel
+              - [B, C, D, H, W] batched volumes
+        targ: Binary target tensor (same shape options as pred).
+
+    Returns:
+        Dice score(s). Single value for 3D/4D input, tensor of values for 5D batch.
+    """
+    # Normalize to 5D: [B, C, D, H, W]
+    if pred.ndim == 3:  # [D, H, W] -> [1, 1, D, H, W]
+        pred = pred.unsqueeze(0).unsqueeze(0)
+        targ = targ.unsqueeze(0).unsqueeze(0)
+    elif pred.ndim == 4:  # [C, D, H, W] -> [1, C, D, H, W]
+        pred = pred.unsqueeze(0)
+        targ = targ.unsqueeze(0)
+
+    return torch.Tensor([compute_dice(p[None], t[None]) for p, t in zip(pred, targ)])
 
 # %% ../nbs/05_vision_metrics.ipynb 4
 def calculate_haus(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     """Compute 95th percentile Hausdorff distance (HD95) using MONAI.
-    
-    HD95 is more robust than standard Hausdorff distance as it ignores 
+
+    HD95 is more robust than standard Hausdorff distance as it ignores
     the top 5% of outlier distances.
-    
+
+    Accepts tensors of various shapes and automatically reshapes to 5D format.
+
     Args:
-        pred: Binary prediction tensor [B, C, W, H, D].
-        targ: Binary target tensor [B, C, W, H, D].
-    
+        pred: Binary prediction tensor. Accepts:
+              - [D, H, W] single 3D volume
+              - [C, D, H, W] single volume with channel
+              - [B, C, D, H, W] batched volumes
+        targ: Binary target tensor (same shape options as pred).
+
     Returns:
-        HD95 values for each sample in batch.
+        HD95 value(s). Single value for 3D/4D input, tensor of values for 5D batch.
     """
-    return torch.Tensor([compute_hausdorff_distance(p[None], t[None], percentile=95) for p, t in list(zip(pred,targ))])
+    # Normalize to 5D: [B, C, D, H, W]
+    if pred.ndim == 3:  # [D, H, W] -> [1, 1, D, H, W]
+        pred = pred.unsqueeze(0).unsqueeze(0)
+        targ = targ.unsqueeze(0).unsqueeze(0)
+    elif pred.ndim == 4:  # [C, D, H, W] -> [1, C, D, H, W]
+        pred = pred.unsqueeze(0)
+        targ = targ.unsqueeze(0)
+
+    return torch.Tensor([compute_hausdorff_distance(p[None], t[None], percentile=95) for p, t in zip(pred, targ)])
 
 # %% ../nbs/05_vision_metrics.ipynb 5
 def binary_dice_score(act: torch.tensor, targ: torch.Tensor) -> torch.Tensor:
@@ -206,79 +239,100 @@ def multi_precision(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     return torch.Tensor(class_prec)
 
 # %% ../nbs/05_vision_metrics.ipynb 16
-def calculate_lesion_detection_rate(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+def calculate_lesion_detection_rate(pred: torch.Tensor, targ: torch.Tensor, threshold: float = 0.0) -> torch.Tensor:
     """Calculate lesion-wise detection rate.
-    
-    For each connected component (lesion) in the target, check if there is
-    any overlap with the prediction. A lesion is considered detected if
-    at least one voxel overlaps.
-    
+
+    For each connected component (lesion) in the target, check if it is
+    detected by the prediction. Detection criteria depends on threshold:
+    - threshold=0: any overlap counts as detected
+    - threshold>0: per-lesion Dice score must exceed threshold
+
     Args:
         pred: Binary prediction tensor [B, C, W, H, D].
         targ: Binary target tensor [B, C, W, H, D].
-    
+        threshold: Minimum Dice score for a lesion to be considered detected.
+                   Default 0.0 means any overlap counts as detected.
+
     Returns:
         Detection rate (detected lesions / total lesions) for each sample.
     """
     detection_rates = []
-    
+
     for p, t in zip(pred, targ):
         p_np = p.squeeze().cpu().numpy()
         t_np = t.squeeze().cpu().numpy()
-        
+
         # Label connected components in target
         labeled_targ, n_lesions = scipy_label(t_np)
-        
+
         if n_lesions == 0:
             detection_rates.append(float('nan'))
             continue
-        
+
         detected = 0
         for lesion_id in range(1, n_lesions + 1):
             lesion_mask = (labeled_targ == lesion_id)
-            overlap = (p_np * lesion_mask).sum()
-            if overlap > 0:
-                detected += 1
-        
+
+            if threshold == 0.0:
+                # Original behavior: any overlap counts as detected
+                overlap = (p_np * lesion_mask).sum()
+                if overlap > 0:
+                    detected += 1
+            else:
+                # Compute per-lesion Dice score
+                pred_in_lesion = p_np * lesion_mask
+                intersection = (pred_in_lesion * lesion_mask).sum()
+                lesion_vol = lesion_mask.sum()
+                pred_vol = pred_in_lesion.sum()
+
+                if (lesion_vol + pred_vol) > 0:
+                    dice = 2 * intersection / (lesion_vol + pred_vol)
+                    if dice > threshold:
+                        detected += 1
+
         detection_rates.append(detected / n_lesions)
-    
+
     return torch.Tensor(detection_rates)
 
 # %% ../nbs/05_vision_metrics.ipynb 17
-def binary_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+def binary_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor, threshold: float = 0.0) -> torch.Tensor:
     """Calculate mean lesion detection rate for binary segmentation.
-    
+
     Args:
         act: Activation tensor [B, C, W, H, D].
         targ: Target masks [B, C, W, H, D].
-    
+        threshold: Minimum Dice score for a lesion to be considered detected.
+                   Default 0.0 means any overlap counts as detected.
+
     Returns:
         Mean lesion detection rate.
     """
     pred = pred_to_binary_mask(act)
-    ldr = calculate_lesion_detection_rate(pred.cpu(), targ.cpu())
+    ldr = calculate_lesion_detection_rate(pred.cpu(), targ.cpu(), threshold)
     return torch.nanmean(ldr)
 
 # %% ../nbs/05_vision_metrics.ipynb 18
-def multi_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
+def multi_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor, threshold: float = 0.0) -> torch.Tensor:
     """Calculate mean lesion detection rate for each class in multi-class segmentation.
-    
+
     Args:
         act: Activation tensor [B, C, W, H, D].
         targ: Target masks [B, C, W, H, D].
-    
+        threshold: Minimum Dice score for a lesion to be considered detected.
+                   Default 0.0 means any overlap counts as detected.
+
     Returns:
         Mean lesion detection rate for each class.
     """
     pred, n_classes = batch_pred_to_multiclass_mask(act)
     class_ldr = []
-    
+
     for c in range(1, n_classes):
         c_pred = torch.where(pred == c, 1, 0)
         c_targ = torch.where(targ == c, 1, 0)
-        ldr = calculate_lesion_detection_rate(c_pred, c_targ)
+        ldr = calculate_lesion_detection_rate(c_pred, c_targ, threshold)
         class_ldr.append(np.nanmean(ldr.numpy()))
-    
+
     return torch.Tensor(class_ldr)
 
 # %% ../nbs/05_vision_metrics.ipynb 20
