@@ -3,8 +3,8 @@
 # %% auto 0
 __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization', 'RescaleIntensity', 'NormalizeIntensity',
            'BraTSMaskConverter', 'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField',
-           'RandomBlur', 'RandomGamma', 'RandomMotion', 'RandomElasticDeformation', 'RandomAffine', 'RandomFlip',
-           'OneOf']
+           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomElasticDeformation',
+           'RandomAffine', 'RandomFlip', 'OneOf']
 
 # %% ../nbs/03_vision_augment.ipynb 2
 from fastai.data.all import *
@@ -302,6 +302,38 @@ class RandomGamma(DisplayedTransform):
         return o
 
 # %% ../nbs/03_vision_augment.ipynb 20
+class RandomIntensityScale(DisplayedTransform):
+    """Randomly scale image intensities by a multiplicative factor.
+
+    Useful for domain generalization across different acquisition protocols
+    with varying intensity ranges.
+
+    Args:
+        scale_range (tuple[float, float]): Range of scale factors (min, max).
+            Values > 1 increase intensity, < 1 decrease intensity.
+        p (float): Probability of applying the transform (default: 0.5)
+
+    Example:
+        # Scale intensities randomly between 0.5x and 2.0x
+        transform = RandomIntensityScale(scale_range=(0.5, 2.0), p=0.3)
+    """
+
+    split_idx, order = 0, 1
+
+    def __init__(self, scale_range: tuple[float, float] = (0.5, 2.0), p: float = 0.5):
+        self.scale_range = scale_range
+        self.p = p
+
+    def encodes(self, o: MedImage):
+        if torch.rand(1).item() > self.p:
+            return o
+        scale = torch.empty(1).uniform_(self.scale_range[0], self.scale_range[1]).item()
+        return MedImage.create(o * scale)
+
+    def encodes(self, o: MedMask):
+        return o
+
+# %% ../nbs/03_vision_augment.ipynb 21
 class RandomMotion(DisplayedTransform):
     """Apply TorchIO `RandomMotion`."""
 
@@ -333,7 +365,7 @@ class RandomMotion(DisplayedTransform):
     def encodes(self, o: MedMask):
         return o
 
-# %% ../nbs/03_vision_augment.ipynb 22
+# %% ../nbs/03_vision_augment.ipynb 23
 class RandomElasticDeformation(CustomDictTransform):
     """Apply TorchIO `RandomElasticDeformation`."""
 
@@ -346,7 +378,7 @@ class RandomElasticDeformation(CustomDictTransform):
             image_interpolation=image_interpolation,
             p=p))
 
-# %% ../nbs/03_vision_augment.ipynb 23
+# %% ../nbs/03_vision_augment.ipynb 24
 class RandomAffine(CustomDictTransform):
     """Apply TorchIO `RandomAffine`."""
 
@@ -362,14 +394,14 @@ class RandomAffine(CustomDictTransform):
             default_pad_value=default_pad_value,
             p=p))
 
-# %% ../nbs/03_vision_augment.ipynb 24
+# %% ../nbs/03_vision_augment.ipynb 25
 class RandomFlip(CustomDictTransform):
     """Apply TorchIO `RandomFlip`."""
 
     def __init__(self, axes='LR', p=0.5):
         super().__init__(tio.RandomFlip(axes=axes, flip_probability=p))
 
-# %% ../nbs/03_vision_augment.ipynb 25
+# %% ../nbs/03_vision_augment.ipynb 26
 class OneOf(CustomDictTransform):
     """Apply only one of the given transforms using TorchIO `OneOf`."""
 
