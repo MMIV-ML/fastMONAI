@@ -19,17 +19,17 @@ loaded_learners = [load_learner(fn, cpu=True) for fn in learner_list]
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
-_, reorder, resample = load_variables(pkl_fn=vars_fn)
+_, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
 
 # Set file name from command line argument
 img_fn = args.fn
 save_fn = fn.split('.nii')[0] + '_pred.nii.gz'
 
 #pred_items
-org_img, input_img, org_size = med_img_reader(img_fn, reorder, resample, only_tensor=False)
+org_img, input_img, org_size = med_img_reader(img_fn, apply_reorder, target_spacing, only_tensor=False)
 
 #Predict with ensemble
-mask_data = [inference(learner, reorder, resample, org_img=org_img, input_img=input_img, org_size=org_size).data for learner in loaded_learners]
+mask_data = [inference(learner, apply_reorder, target_spacing, org_img=org_img, input_img=input_img, org_size=org_size).data for learner in loaded_learners]
 
 # Average the accumulated mask data
 mask_data = sum(mask_data)/len(loaded_learners)

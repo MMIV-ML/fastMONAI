@@ -20,7 +20,7 @@ learner = load_learner(models_path/'vibe-learner.pkl', cpu=True) #TODO add an op
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
-_, reorder, resample = load_variables(pkl_fn=vars_fn)
+_, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
 
 # Set file name from command line argument
 img_path = Path(args.fn)
@@ -29,9 +29,9 @@ img_path = Path(args.fn)
 save_path = str(img_path).replace(img_path.stem, 'pred_' +img_path.stem)
 
 #pred_items
-org_img, input_img, org_size = med_img_reader(img_path, reorder=reorder, resample=resample, only_tensor=False)
+org_img, input_img, org_size = med_img_reader(img_path, apply_reorder=apply_reorder, target_spacing=target_spacing, only_tensor=False)
 
-mask_data = inference(learner, reorder=reorder, resample=resample, org_img=org_img, input_img=input_img, org_size=org_size).data 
+mask_data = inference(learner, apply_reorder=apply_reorder, target_spacing=target_spacing, org_img=org_img, input_img=input_img, org_size=org_size).data 
 
 if "".join(org_img.orientation) == 'LSA':        
     mask_data = mask_data.permute(0,1,3,2)

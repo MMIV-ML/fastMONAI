@@ -104,7 +104,7 @@ def multi_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     for c in range(1, n_classes):
         c_pred, c_targ = torch.where(pred == c, 1, 0), torch.where(targ == c, 1, 0)
         dsc = calculate_dsc(c_pred, c_targ)
-        binary_dice_scores.append(np.nanmean(dsc)) # #TODO update torch to get torch.nanmean() to work
+        binary_dice_scores.append(float(torch.nanmean(dsc)))
 
     return torch.Tensor(binary_dice_scores)
 
@@ -140,7 +140,7 @@ def multi_hausdorff_distance(act: torch.Tensor, targ: torch.Tensor) -> torch.Ten
     for c in range(1, n_classes):
         c_pred, c_targ = torch.where(pred==c, 1, 0), torch.where(targ==c, 1, 0)
         haus = calculate_haus(c_pred, c_targ)
-        binary_haus.append(np.nanmean(haus))
+        binary_haus.append(float(torch.nanmean(haus)))
     return torch.Tensor(binary_haus)
 
 # %% ../nbs/05_vision_metrics.ipynb 10
@@ -196,7 +196,7 @@ def multi_sensitivity(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         c_pred = torch.where(pred == c, 1, 0)
         c_targ = torch.where(targ == c, 1, 0)
         sens = calculate_confusion_metrics(c_pred, c_targ, "sensitivity")
-        class_sens.append(np.nanmean(sens.numpy()))
+        class_sens.append(float(torch.nanmean(sens)))
     
     return torch.Tensor(class_sens)
 
@@ -236,7 +236,7 @@ def multi_precision(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         c_pred = torch.where(pred == c, 1, 0)
         c_targ = torch.where(targ == c, 1, 0)
         prec = calculate_confusion_metrics(c_pred, c_targ, "precision")
-        class_prec.append(np.nanmean(prec.numpy()))
+        class_prec.append(float(torch.nanmean(prec)))
     
     return torch.Tensor(class_prec)
 
@@ -333,7 +333,7 @@ def multi_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor, threshold
         c_pred = torch.where(pred == c, 1, 0)
         c_targ = torch.where(targ == c, 1, 0)
         ldr = calculate_lesion_detection_rate(c_pred, c_targ, threshold)
-        class_ldr.append(np.nanmean(ldr.numpy()))
+        class_ldr.append(float(torch.nanmean(ldr)))
 
     return torch.Tensor(class_ldr)
 
@@ -400,7 +400,7 @@ def multi_signed_rve(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         c_pred = torch.where(pred == c, 1, 0)
         c_targ = torch.where(targ == c, 1, 0)
         rve = calculate_signed_rve(c_pred, c_targ)
-        class_rve.append(np.nanmean(rve.numpy()))
+        class_rve.append(float(torch.nanmean(rve)))
     
     return torch.Tensor(class_rve)
 
