@@ -23,7 +23,7 @@ learner = load_learner(models_path/'t2-vibe-adc-learner.pkl', cpu=True) #TODO ad
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
-_, reorder, resample = load_variables(pkl_fn=vars_fn)
+_, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
 
 # Set file name from command line argument
 img_path = [Path(args.fn_t2), Path(args.fn_vibe), Path(args.fn_adc)]
@@ -32,9 +32,9 @@ img_path = [Path(args.fn_t2), Path(args.fn_vibe), Path(args.fn_adc)]
 save_path = str(img_path[0]).replace(img_path[0].stem, 'pred_' +img_path[0].stem)
 
 #pred_items
-org_img, input_img, org_size = med_img_reader(img_path, reorder=reorder, resample=resample, only_tensor=False)
+org_img, input_img, org_size = med_img_reader(img_path, apply_reorder=apply_reorder, target_spacing=target_spacing, only_tensor=False)
 
-mask_data = inference(learner, reorder=reorder, resample=resample, org_img=org_img, input_img=input_img, org_size=org_size).data 
+mask_data = inference(learner, apply_reorder=apply_reorder, target_spacing=target_spacing, org_img=org_img, input_img=input_img, org_size=org_size).data 
 
 if "".join(org_img.orientation) == 'LSA':        
     mask_data = mask_data.permute(0,1,3,2)

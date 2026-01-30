@@ -35,18 +35,18 @@ def get_fused_image(img, pred_mask, alpha=0.8):
     return cv2.addWeighted(gray_img_colored, alpha, colored_mask, 1 - alpha, 0)
 
 
-def gradio_image_segmentation(fileobj, learn, reorder, resample, save_dir):
+def gradio_image_segmentation(fileobj, learn, apply_reorder, target_spacing, save_dir):
     """Predict function using the learner and other resources."""
     img_path = Path(fileobj.name)
 
     save_fn = 'pred_' + img_path.stem
     save_path = save_dir / save_fn
-    org_img, input_img, org_size = med_img_reader(img_path, 
-                                                  reorder=reorder,
-                                                  resample=resample,
+    org_img, input_img, org_size = med_img_reader(img_path,
+                                                  apply_reorder=apply_reorder,
+                                                  target_spacing=target_spacing,
                                                   only_tensor=False)
-    
-    mask_data = inference(learn, reorder=reorder, resample=resample,
+
+    mask_data = inference(learn, apply_reorder=apply_reorder, target_spacing=target_spacing,
                           org_img=org_img, input_img=input_img,
                           org_size=org_size).data 
     
@@ -68,13 +68,13 @@ def gradio_image_segmentation(fileobj, learn, reorder, resample, save_dir):
 
 
 models_path, save_dir = initialize_system()
-learn, reorder, resample = load_system_resources(models_path=models_path,
+learn, apply_reorder, target_spacing = load_system_resources(models_path=models_path,
                                                  learner_fn='vibe-learner.pkl',
                                                  variables_fn='vars.pkl')
 output_text = gr.Textbox(label="Volume of the predicted tumor:")
 
 demo = gr.Interface(
-    fn=lambda fileobj: gradio_image_segmentation(fileobj, learn, reorder, resample, save_dir),
+    fn=lambda fileobj: gradio_image_segmentation(fileobj, learn, apply_reorder, target_spacing, save_dir),
     inputs=["file"],
     outputs=["image", output_text],
     examples=[[save_dir/"vibe.nii.gz"]])
