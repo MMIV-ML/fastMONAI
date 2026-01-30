@@ -4,7 +4,8 @@
 __all__ = ['calculate_dsc', 'calculate_haus', 'binary_dice_score', 'multi_dice_score', 'binary_hausdorff_distance',
            'multi_hausdorff_distance', 'calculate_confusion_metrics', 'binary_sensitivity', 'multi_sensitivity',
            'binary_precision', 'multi_precision', 'calculate_lesion_detection_rate', 'binary_lesion_detection_rate',
-           'multi_lesion_detection_rate', 'calculate_signed_rve', 'binary_signed_rve', 'multi_signed_rve']
+           'multi_lesion_detection_rate', 'calculate_signed_rve', 'binary_signed_rve', 'multi_signed_rve',
+           'AccumulatedDice', 'AccumulatedMultiDice']
 
 # %% ../nbs/05_vision_metrics.ipynb 1
 import torch
@@ -12,6 +13,7 @@ import numpy as np
 from monai.metrics import compute_hausdorff_distance, compute_dice, get_confusion_matrix, compute_confusion_matrix_metric
 from scipy.ndimage import label as scipy_label
 from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
+from fastai.learner import Metric
 
 # %% ../nbs/05_vision_metrics.ipynb 3
 def calculate_dsc(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
@@ -69,7 +71,7 @@ def calculate_haus(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     return torch.Tensor([compute_hausdorff_distance(p[None], t[None], percentile=95) for p, t in zip(pred, targ)])
 
 # %% ../nbs/05_vision_metrics.ipynb 5
-def binary_dice_score(act: torch.tensor, targ: torch.Tensor) -> torch.Tensor:
+def binary_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     """Calculates the mean Dice score for binary semantic segmentation tasks.
     
     Args:
@@ -401,3 +403,99 @@ def multi_signed_rve(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         class_rve.append(np.nanmean(rve.numpy()))
     
     return torch.Tensor(class_rve)
+
+# %% ../nbs/05_vision_metrics.ipynb 24
+class AccumulatedDice(Metric):
+    """nnU-Net-style accumulated Dice metric for reliable pseudo dice during training.
+
+    Instead of averaging per-batch Dice scores, this metric accumulates
+    true positives, false positives, and false negatives across ALL validation
+    batches, then computes Dice from the totals. This gives more weight to
+    batches with more foreground voxels and is more statistically robust.
+
+    Args:
+        n_classes: Number of classes including background (default: 2 for binary).
+        include_background: Whether to include background in metric (default: False).
+
+    Example:
+        ```python
+        learn = Learner(dls, model, loss_func=loss_func,
+                       metrics=[AccumulatedDice(n_classes=2)])
+        
+        # For checkpoint selection based on accumulated dice:
+        save_best = SaveModelCallback(
+            monitor='accumulated_dice',
+            comp=np.greater,  # Higher dice is better
+            fname='best_model'
+        )
+        ```
+    """
+    def __init__(self, n_classes: int = 2, include_background: bool = False):
+        self.n_classes = n_classes
+        self.include_background = include_background
+        self.start_class = 0 if include_background else 1
+
+    def reset(self):
+        """Called at start of validation epoch."""
+        n_fg_classes = self.n_classes if self.include_background else self.n_classes - 1
+        self.tp = torch.zeros(n_fg_classes, dtype=torch.float64)
+        self.fp = torch.zeros(n_fg_classes, dtype=torch.float64)
+        self.fn = torch.zeros(n_fg_classes, dtype=torch.float64)
+
+    def accumulate(self, learn):
+        """Called after each validation batch to accumulate TP/FP/FN."""
+        pred = learn.pred  # Model output [B, C, D, H, W]
+        targ = learn.y     # Target [B, 1, D, H, W] or [B, D, H, W]
+
+        # Get predicted segmentation
+        pred_seg = pred.argmax(dim=1)  # [B, D, H, W]
+
+        # Ensure target has same shape
+        if targ.ndim == pred_seg.ndim + 1:
+            targ = targ.squeeze(1)
+
+        # Accumulate TP/FP/FN for each foreground class
+        idx = 0
+        for c in range(self.start_class, self.n_classes):
+            c_pred = (pred_seg == c)
+            c_targ = (targ == c)
+
+            self.tp[idx] += (c_pred & c_targ).sum().float().cpu()
+            self.fp[idx] += (c_pred & ~c_targ).sum().float().cpu()
+            self.fn[idx] += (~c_pred & c_targ).sum().float().cpu()
+            idx += 1
+
+    @property
+    def value(self):
+        """Compute Dice from accumulated counts at end of epoch."""
+        dice = 2 * self.tp / (2 * self.tp + self.fp + self.fn + 1e-8)
+        return dice.mean().item()
+
+    @property
+    def name(self):
+        return 'accumulated_dice'
+
+# %% ../nbs/05_vision_metrics.ipynb 25
+class AccumulatedMultiDice(AccumulatedDice):
+    """Multi-class version of AccumulatedDice that returns per-class Dice scores.
+
+    Instead of returning a single mean Dice, this returns a tensor with the
+    Dice score for each foreground class. Useful for monitoring per-class
+    performance during training.
+
+    Example:
+        ```python
+        # For 3-class segmentation (background + 2 foreground classes)
+        learn = Learner(dls, model, loss_func=loss_func,
+                       metrics=[AccumulatedMultiDice(n_classes=3)])
+        ```
+    """
+    @property
+    def value(self):
+        """Return per-class Dice scores."""
+        dice = 2 * self.tp / (2 * self.tp + self.fp + self.fn + 1e-8)
+        return dice  # Returns tensor, fastai will display all values
+
+    @property
+    def name(self):
+        return 'accumulated_multi_dice'

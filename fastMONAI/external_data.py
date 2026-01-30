@@ -94,7 +94,7 @@ def download_ixi_data(path: (str, Path) = '../data') -> Path:
         if len(list(img_path.iterdir())) >= 581:  # 581 imgs in the IXI dataset
             is_extracted = True
             print(f"Images already downloaded and extracted to {img_path}")
-    except:
+    except (FileNotFoundError, StopIteration, OSError):
         is_extracted = False
 
     if not is_extracted:

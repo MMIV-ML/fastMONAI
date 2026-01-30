@@ -2,7 +2,7 @@
 
 # %% auto 0
 __all__ = ['save_series_pred', 'load_system_resources', 'inference', 'compute_binary_tumor_volume', 'refine_binary_pred_mask',
-           'gradio_image_classifier']
+           'keep_largest', 'gradio_image_classifier']
 
 # %% ../nbs/06_vision_inference.ipynb 1
 from copy import copy
@@ -67,18 +67,18 @@ def load_system_resources(models_path, learner_fn, variables_fn):
 
     learn = load_learner(models_path / learner_fn, cpu=True) 
     vars_fn = models_path / variables_fn
-    _, reorder, resample = load_variables(pkl_fn=vars_fn)
+    _, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
 
-    return learn, reorder, resample
+    return learn, apply_reorder, target_spacing
 
 # %% ../nbs/06_vision_inference.ipynb 8
-def inference(learn_inf, reorder, resample, fn: (str, Path) = '',
+def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
               save_path: (str, Path) = None, org_img=None, input_img=None,
               org_size=None): 
     """Predict on new data using exported model."""         
     
     if None in [org_img, input_img, org_size]: 
-        org_img, input_img, org_size = med_img_reader(fn, reorder, resample, 
+        org_img, input_img, org_size = med_img_reader(fn, apply_reorder, target_spacing, 
                                                       only_tensor=False)
     else: 
         org_img, input_img = copy(org_img), copy(input_img)
@@ -148,6 +148,10 @@ def refine_binary_pred_mask(pred_mask,
     if verbose:
         print(n_components)
 
+    # Handle empty mask case (no foreground components)
+    if n_components == 0:
+        return torch.zeros_like(torch.Tensor(pred_mask)).float()
+
     if remove_size is None:
         sizes = np.bincount(labeled_mask.ravel())
         max_label = sizes[1:].argmax() + 1
@@ -157,14 +161,36 @@ def refine_binary_pred_mask(pred_mask,
     processed_mask = remove_small_objects(
         labeled_mask, min_size=small_objects_threshold)
 
-    return torch.Tensor(processed_mask > 0).float()                          
+    return torch.Tensor(processed_mask > 0).float()
 
-# %% ../nbs/06_vision_inference.ipynb 13
-def gradio_image_classifier(file_obj, learn, reorder, resample):
+# %% ../nbs/06_vision_inference.ipynb 12
+def keep_largest(pred_mask: torch.Tensor) -> torch.Tensor:
+    """Keep only the largest connected component in a binary mask.
+
+    Args:
+        pred_mask: Binary prediction mask tensor.
+
+    Returns:
+        Binary mask with only the largest connected component.
+    """
+    mask_np = pred_mask.numpy() if isinstance(pred_mask, torch.Tensor) else pred_mask
+    labeled_mask, n_components = label(mask_np)
+
+    if n_components == 0:
+        return torch.zeros_like(pred_mask) if isinstance(pred_mask, torch.Tensor) else mask_np
+
+    sizes = np.bincount(labeled_mask.ravel())
+    largest_label = sizes[1:].argmax() + 1  # Skip background (label 0)
+
+    result = (labeled_mask == largest_label).astype(np.float32)
+    return torch.from_numpy(result) if isinstance(pred_mask, torch.Tensor) else result
+
+# %% ../nbs/06_vision_inference.ipynb 14
+def gradio_image_classifier(file_obj, learn, apply_reorder, target_spacing):
     """Predict on images using exported learner and return the result as a dictionary."""
     
     img_path = Path(file_obj.name)
-    img = med_img_reader(img_path, reorder=reorder, resample=resample)
+    img = med_img_reader(img_path, apply_reorder=apply_reorder, target_spacing=target_spacing)
     
     _, _, predictions = learn.predict(img)
     prediction_dict = {index: value.item() for index, value in enumerate(predictions)}

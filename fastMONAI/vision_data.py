@@ -27,7 +27,7 @@ def pred_to_multiclass_mask(pred: torch.Tensor) -> torch.Tensor:
     
     pred = pred.softmax(dim=0)
 
-    return pred.argmax(dim=0, keepdims=True)
+    return pred.argmax(dim=0, keepdim=True)
 
 # %% ../nbs/02_vision_data.ipynb 6
 def batch_pred_to_multiclass_mask(pred: torch.Tensor) -> (torch.Tensor, int):
@@ -68,12 +68,12 @@ class MedDataBlock(DataBlock):
     #TODO add get_x
     def __init__(self, blocks: list = None, dl_type: TfmdDL = None, getters: list = None,
                  n_inp: int | None = None, item_tfms: list = None, batch_tfms: list = None,
-                 reorder: bool = False, resample: (int, list) = None, **kwargs):
+                 apply_reorder: bool = False, target_spacing: (int, list) = None, **kwargs):
 
         super().__init__(blocks, dl_type, getters, n_inp, item_tfms,
                          batch_tfms, **kwargs)
 
-        MedBase.item_preprocessing(resample, reorder)
+        MedBase.item_preprocessing(target_spacing, apply_reorder)
 
 # %% ../nbs/02_vision_data.ipynb 11
 def MedMaskBlock():
@@ -88,7 +88,7 @@ class MedImageDataLoaders(DataLoaders):
     @delegates(DataLoaders.from_dblock)
     def from_df(cls, df, valid_pct=0.2, seed=None, fn_col=0, folder=None, suff='',
                 label_col=1, label_delim=None, y_block=None, valid_col=None,
-                item_tfms=None, batch_tfms=None, reorder=False, resample=None, **kwargs):
+                item_tfms=None, batch_tfms=None, apply_reorder=False, target_spacing=None, **kwargs):
         """Create from DataFrame."""
                     
         if y_block is None:
@@ -104,8 +104,8 @@ class MedImageDataLoaders(DataLoaders):
             get_y=ColReader(label_col, label_delim=label_delim),
             splitter=splitter,
             item_tfms=item_tfms,
-            reorder=reorder,
-            resample=resample
+            apply_reorder=apply_reorder,
+            target_spacing=target_spacing
         )
 
         return cls.from_dblock(dblock, df, **kwargs)

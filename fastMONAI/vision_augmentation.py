@@ -14,10 +14,10 @@ from monai.transforms import NormalizeIntensity as MonaiNormalizeIntensity
 
 # %% ../nbs/03_vision_augment.ipynb 5
 class CustomDictTransform(ItemTransform):
-    """A class that serves as a wrapper to perform an identical transformation on both 
+    """A class that serves as a wrapper to perform an identical transformation on both
     the image and the target (if it's a mask).
     """
-    
+
     split_idx = 0  # Only perform transformations on training data. Use TTA() for transformations on validation data.
 
     def __init__(self, aug):
@@ -28,30 +28,41 @@ class CustomDictTransform(ItemTransform):
         """
         self.aug = aug
 
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform.
+
+        This property enables using fastMONAI wrappers in patch-based workflows
+        where raw TorchIO transforms are needed for tio.Compose().
+        """
+        return self.aug
+
     def encodes(self, x):
         """
-        Applies the stored transformation to an image, and the same random transformation 
+        Applies the stored transformation to an image, and the same random transformation
         to the target if it is a mask. If the target is not a mask, it returns the target as is.
 
         Args:
-            x (Tuple[MedImage, Union[MedMask, TensorCategory]]): A tuple containing the 
+            x (Tuple[MedImage, Union[MedMask, TensorCategory]]): A tuple containing the
             image and the target.
 
         Returns:
-            Tuple[MedImage, Union[MedMask, TensorCategory]]: The transformed image and target. 
-            If the target is a mask, it's transformed identically to the image. If the target 
+            Tuple[MedImage, Union[MedMask, TensorCategory]]: The transformed image and target.
+            If the target is a mask, it's transformed identically to the image. If the target
             is not a mask, the original target is returned.
         """
         img, y_true = x
+        
+        # Use identity affine if MedImage.affine_matrix is not set
+        affine = MedImage.affine_matrix if MedImage.affine_matrix is not None else np.eye(4)
 
         if isinstance(y_true, (MedMask)):
-            aug = self.aug(tio.Subject(img=tio.ScalarImage(tensor=img, affine=MedImage.affine_matrix), 
-                                        mask=tio.LabelMap(tensor=y_true, affine=MedImage.affine_matrix)))
+            aug = self.aug(tio.Subject(img=tio.ScalarImage(tensor=img, affine=affine),
+                                        mask=tio.LabelMap(tensor=y_true, affine=affine)))
             return MedImage.create(aug['img'].data), MedMask.create(aug['mask'].data)
 
         aug = self.aug(tio.Subject(img=tio.ScalarImage(tensor=img)))
         return MedImage.create(aug['img'].data), y_true
-
 
 # %% ../nbs/03_vision_augment.ipynb 7
 def do_pad_or_crop(o, target_shape, padding_mode, mask_name, dtype=torch.Tensor):
@@ -72,6 +83,11 @@ class PadOrCrop(DisplayedTransform):
                                     padding_mode=padding_mode, 
                                     mask_name=mask_name)
 
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.pad_or_crop
+
     def encodes(self, o: (MedImage, MedMask)):
         return type(o)(self.pad_or_crop(o))
 
@@ -84,6 +100,11 @@ class ZNormalization(DisplayedTransform):
     def __init__(self, masking_method=None, channel_wise=True):
         self.z_normalization = tio.ZNormalization(masking_method=masking_method)
         self.channel_wise = channel_wise
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.z_normalization
 
     def encodes(self, o: MedImage):
         try:
@@ -132,7 +153,12 @@ class RescaleIntensity(DisplayedTransform):
     
     def __init__(self, out_min_max: tuple[float, float], in_min_max: tuple[float, float]):
         self.rescale = tio.RescaleIntensity(out_min_max=out_min_max, in_min_max=in_min_max)
-    
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.rescale
+
     def encodes(self, o: MedImage):
         return MedImage.create(self.rescale(o))
         
@@ -211,6 +237,11 @@ class RandomGhosting(DisplayedTransform):
     def __init__(self, intensity=(0.5, 1), p=0.5):
         self.add_ghosts = tio.RandomGhosting(intensity=intensity, p=p)
 
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_ghosts
+
     def encodes(self, o: MedImage):
         result = self.add_ghosts(o)
         # Handle potential complex values from k-space operations
@@ -225,29 +256,39 @@ class RandomGhosting(DisplayedTransform):
 class RandomSpike(DisplayedTransform):
     '''Apply TorchIO `RandomSpike`.'''
     
-    split_idx,order=0,1
+    split_idx, order = 0, 1
 
     def __init__(self, num_spikes=1, intensity=(1, 3), p=0.5):
         self.add_spikes = tio.RandomSpike(num_spikes=num_spikes, intensity=intensity, p=p)
 
-    def encodes(self, o:MedImage): 
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_spikes
+
+    def encodes(self, o: MedImage): 
         result = self.add_spikes(o)
         # Handle potential complex values from k-space operations
         if result.is_complex():
             result = torch.real(result)
         return MedImage.create(result)
         
-    def encodes(self, o:MedMask):
+    def encodes(self, o: MedMask):
         return o
 
 # %% ../nbs/03_vision_augment.ipynb 16
 class RandomNoise(DisplayedTransform):
     '''Apply TorchIO `RandomNoise`.'''
 
-    split_idx,order=0,1
+    split_idx, order = 0, 1
 
     def __init__(self, mean=0, std=(0, 0.25), p=0.5):
         self.add_noise = tio.RandomNoise(mean=mean, std=std, p=p)
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_noise
 
     def encodes(self, o: MedImage): 
         return MedImage.create(self.add_noise(o))
@@ -259,10 +300,15 @@ class RandomNoise(DisplayedTransform):
 class RandomBiasField(DisplayedTransform):
     '''Apply TorchIO `RandomBiasField`.'''
 
-    split_idx,order=0,1
+    split_idx, order = 0, 1
 
     def __init__(self, coefficients=0.5, order=3, p=0.5):
         self.add_biasfield = tio.RandomBiasField(coefficients=coefficients, order=order, p=p)
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_biasfield
 
     def encodes(self, o: MedImage): 
         return MedImage.create(self.add_biasfield(o))
@@ -272,13 +318,18 @@ class RandomBiasField(DisplayedTransform):
 
 # %% ../nbs/03_vision_augment.ipynb 18
 class RandomBlur(DisplayedTransform):
-    '''Apply TorchIO `RandomBiasField`.'''
+    '''Apply TorchIO `RandomBlur`.'''
 
-    split_idx,order=0,1
+    split_idx, order = 0, 1
 
     def __init__(self, std=(0, 2), p=0.5):
         self.add_blur = tio.RandomBlur(std=std, p=p)
-        
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_blur
+
     def encodes(self, o: MedImage): 
         return MedImage.create(self.add_blur(o))
     
@@ -289,11 +340,15 @@ class RandomBlur(DisplayedTransform):
 class RandomGamma(DisplayedTransform):
     '''Apply TorchIO `RandomGamma`.'''
 
-
-    split_idx,order=0,1
+    split_idx, order = 0, 1
 
     def __init__(self, log_gamma=(-0.3, 0.3), p=0.5):
         self.add_gamma = tio.RandomGamma(log_gamma=log_gamma, p=p)
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_gamma
 
     def encodes(self, o: MedImage): 
         return MedImage.create(self.add_gamma(o))
@@ -354,6 +409,11 @@ class RandomMotion(DisplayedTransform):
             image_interpolation=image_interpolation, 
             p=p
         )
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_motion
 
     def encodes(self, o: MedImage):
         result = self.add_motion(o)
