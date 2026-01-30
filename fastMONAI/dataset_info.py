@@ -19,73 +19,92 @@ import matplotlib.pyplot as plt
 class MedDataset:
     """A class to extract and present information about the dataset."""
 
-    def __init__(self, dataframe=None, img_col:str =None, mask_col:str ="mask_path", path=None, postfix: str = '',
-                 reorder: bool = False, dtype: (MedImage, MedMask) = MedImage,
-                 max_workers: int = 1):
-        """Constructs MedDataset object."""
+    def __init__(self, dataframe=None, image_col:str=None, mask_col:str="mask_path",
+                 path=None, img_list=None, postfix:str='', apply_reorder:bool=False,
+                 dtype:(MedImage, MedMask)=MedImage, max_workers:int=1):
+        """Constructs MedDataset object.
 
+        Args:
+            dataframe: DataFrame containing image paths.
+            image_col: Column name for image paths (used for visualization).
+            mask_col: Column name for mask/label paths when using dataframe mode.
+            path: Directory path containing images.
+            img_list: List of image file paths to analyze.
+            postfix: File postfix filter when using path mode.
+            apply_reorder: Whether to reorder images to RAS+ orientation.
+            dtype: MedImage for images or MedMask for segmentation masks.
+            max_workers: Number of parallel workers for processing.
+        """
         self.input_df = dataframe
-        self.img_col = img_col
+        self.image_col = image_col
         self.mask_col = mask_col
         self.path = path
+        self.img_list = img_list
         self.postfix = postfix
-        self.reorder = reorder
+        self.apply_reorder = apply_reorder
         self.dtype = dtype
         self.max_workers = max_workers
         self.df = self._create_data_frame()
 
     def _create_data_frame(self):
         """Private method that returns a dataframe with information about the dataset."""
-        
-        # Handle path-based initialization (legacy mode)
-        if self.path:
-            img_list = glob.glob(f'{self.path}/*{self.postfix}*')
-            if not img_list: 
+
+        # Handle img_list (simple list of paths)
+        if self.img_list is not None:
+            file_list = self.img_list
+
+        # Handle path-based initialization
+        elif self.path:
+            file_list = glob.glob(f'{self.path}/*{self.postfix}*')
+            if not file_list:
                 print('Could not find images. Check the image path')
                 return pd.DataFrame()
-        
-        # Handle dataframe-based initialization (new mode)
+
+        # Handle dataframe-based initialization
         elif self.input_df is not None and self.mask_col in self.input_df.columns:
-            img_list = self.input_df[self.mask_col].tolist()
-        
+            file_list = self.input_df[self.mask_col].tolist()
+
         else:
-            print('Error: Must provide either path or dataframe with mask_col')
+            print('Error: Must provide path, img_list, or dataframe with mask_col')
             return pd.DataFrame()
 
         # Process images to extract metadata
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            data_info_dict = list(executor.map(self._get_data_info, img_list))
+            data_info_dict = list(executor.map(self._get_data_info, file_list))
 
         df = pd.DataFrame(data_info_dict)
-        
-        if len(df) > 0 and df.orientation.nunique() > 1 and not self.reorder:
+
+        if len(df) > 0 and df.orientation.nunique() > 1 and not self.apply_reorder:
             raise ValueError(
                 'Mixed orientations detected in dataset. '
-                'Please recreate MedDataset with reorder=True to get correct resample values: '
-                'MedDataset(..., reorder=True)'
+                'Please recreate MedDataset with apply_reorder=True to get correct resample values: '
+                'MedDataset(..., apply_reorder=True)'
             )
 
         return df
 
     def summary(self):
         """Summary DataFrame of the dataset with example path for similar data."""
-        
+
         columns = ['dim_0', 'dim_1', 'dim_2', 'voxel_0', 'voxel_1', 'voxel_2', 'orientation']
-        
+
         return self.df.groupby(columns, as_index=False).agg(
             example_path=('path', 'min'), total=('path', 'size')
         ).sort_values('total', ascending=False)
 
-    def suggestion(self):
-        """Voxel value that appears most often in dim_0, dim_1 and dim_2, and whether the data should be reoriented."""
-        
-        resample = [float(self.df.voxel_0.mode()[0]), float(self.df.voxel_1.mode()[0]), float(self.df.voxel_2.mode()[0])]
-        return resample, self.reorder
+    def get_suggestion(self):
+        """Returns suggested preprocessing parameters as a dictionary.
+
+        Returns:
+            dict: {'target_spacing': [voxel_0, voxel_1, voxel_2], 'apply_reorder': bool}
+        """
+        target_spacing = [float(self.df.voxel_0.mode()[0]), float(self.df.voxel_1.mode()[0]), float(self.df.voxel_2.mode()[0])]
+        return {'target_spacing': target_spacing, 'apply_reorder': self.apply_reorder}
 
     def _get_data_info(self, fn: str):
         """Private method to collect information about an image file."""
         try:
-            _, o, _ = med_img_reader(fn, reorder=self.reorder, only_tensor=False, dtype=self.dtype)
+            _, o, _ = med_img_reader(fn, apply_reorder=self.apply_reorder, only_tensor=False, dtype=self.dtype)
 
             info_dict = {'path': fn, 'dim_0': o.shape[1], 'dim_1': o.shape[2], 'dim_2': o.shape[3],
                          'voxel_0': round(o.spacing[0], 4), 'voxel_1': round(o.spacing[1], 4), 'voxel_2': round(o.spacing[2], 4),
@@ -94,10 +113,10 @@ class MedDataset:
             if self.dtype is MedMask:
                 # Calculate voxel volume in mm³
                 voxel_volume = o.spacing[0] * o.spacing[1] * o.spacing[2]
-                
+
                 # Get voxel counts for each label
                 mask_labels_dict = o.count_labels()
-                
+
                 # Calculate volumes for each label > 0 (skip background)
                 for key, voxel_count in mask_labels_dict.items():
                     label_int = int(key)
@@ -106,95 +125,101 @@ class MedDataset:
                         info_dict[f'label_{label_int}_volume_mm3'] = round(volume_mm3, 4)
 
             return info_dict
-        
+
         except Exception as e:
             print(f"Warning: Failed to process {fn}: {e}")
             return {'path': fn, 'error': str(e)}
 
-    def get_largest_img_size(self, resample: list = None) -> list:
-        """Get the largest image size in the dataset."""
-        
-        dims = None
+    def calculate_target_size(self, target_spacing: list = None) -> list:
+        """Calculate the target image size for the dataset.
 
-        if resample is not None:
+        Args:
+            target_spacing: If provided, calculates size after resampling to this spacing.
+                           If None, returns original dimensions.
+
+        Returns:
+            list: [dim_0, dim_1, dim_2] largest dimensions in dataset.
+        """
+        if target_spacing is not None:
             org_voxels = self.df[["voxel_0", "voxel_1", 'voxel_2']].values
             org_dims = self.df[["dim_0", "dim_1", 'dim_2']].values
 
-            ratio = org_voxels/resample
+            ratio = org_voxels/target_spacing
             new_dims = (org_dims * ratio).T
-            dims = [float(new_dims[0].max().round()), float(new_dims[1].max().round()), float(new_dims[2].max().round())]
-
+            # Use floor() to match TorchIO's Resample dimension calculation
+            dims = [float(np.floor(new_dims[0].max())), float(np.floor(new_dims[1].max())), float(np.floor(new_dims[2].max()))]
         else:
             dims = [float(self.df.dim_0.max()), float(self.df.dim_1.max()), float(self.df.dim_2.max())]
 
         return dims
 
     def get_volume_summary(self):
-        """Get summary statistics for volume columns."""
+        """Returns DataFrame with volume statistics for each label.
+
+        Returns:
+            DataFrame with columns: label, count, mean_mm3, median_mm3, min_mm3, max_mm3
+            Returns None if no volume columns found (dtype was not MedMask).
+        """
         volume_cols = [col for col in self.df.columns if col.endswith('_volume_mm3')]
-        
+
         if not volume_cols:
-            print("No volume columns found. Make sure dtype=MedMask when creating the dataset.")
             return None
-            
-        print("📊 Volume Summary:")
-        print("=" * 50)
-        
+
+        summary_data = []
         for col in volume_cols:
-            # Get non-zero volumes
-            non_zero_volumes = self.df[self.df[col] > 0][col]
-            
-            if len(non_zero_volumes) > 0:
-                print(f"\n{col}:")
-                print(f"  Cases with volume: {len(non_zero_volumes)}")
-                print(f"  Mean volume: {non_zero_volumes.mean():.2f} mm³")
-                print(f"  Median volume: {non_zero_volumes.median():.2f} mm³")
-                print(f"  Min volume: {non_zero_volumes.min():.2f} mm³")
-                print(f"  Max volume: {non_zero_volumes.max():.2f} mm³")
-            else:
-                print(f"\n{col}: No cases with volume > 0")
-        
+            non_zero = self.df[self.df[col] > 0][col]
+            if len(non_zero) > 0:
+                summary_data.append({
+                    'label': col.replace('_volume_mm3', ''),
+                    'count': len(non_zero),
+                    'mean_mm3': non_zero.mean(),
+                    'median_mm3': non_zero.median(),
+                    'min_mm3': non_zero.min(),
+                    'max_mm3': non_zero.max()
+                })
+
+        return pd.DataFrame(summary_data) if summary_data else None
+
     def _visualize_single_case(self, img_path, mask_path, case_id, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
         """Helper method to visualize a single case."""
         try:
             # Create MedImage and MedMask with current preprocessing settings
-            resample, reorder = self.suggestion()
-            MedBase.item_preprocessing(resample=resample, reorder=reorder)
-            
+            suggestion = self.get_suggestion()
+            MedBase.item_preprocessing(target_spacing=suggestion['target_spacing'], apply_reorder=suggestion['apply_reorder'])
+
             img = MedImage.create(img_path)
             mask = MedMask.create(mask_path)
-            
+
             # Find optimal slice using explicit function
             mask_data = mask.numpy()[0]  # Remove channel dimension
             optimal_slice = find_max_slice(mask_data, anatomical_plane)
-            
+
             # Create subplot
             fig, axes = plt.subplots(1, 2, figsize=figsize)
-            
+
             # Show image
             img.show(ctx=axes[0], anatomical_plane=anatomical_plane, slice_index=optimal_slice)
             axes[0].set_title(f"{case_id} - Image (slice {optimal_slice})")
-            
+
             # Show overlay
             img.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice)
-            mask.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice, 
+            mask.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice,
                      alpha=0.3, cmap=cmap)
             axes[1].set_title(f"{case_id} - Overlay (slice {optimal_slice})")
-            
+
             # Adjust spacing to bring plots closer
             plt.subplots_adjust(wspace=0.1)
             plt.tight_layout()
             plt.show()
-            
+
         except Exception as e:
-            print(f"❌ Failed to visualize case {case_id}: {e}")
+            print(f"Failed to visualize case {case_id}: {e}")
 
     def visualize_cases(self, n_cases=4, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
-        """
-        Visualize cases from the dataset.
-        
+        """Visualize cases from the dataset.
+
         Args:
-            n_cases: Number of cases to show. If None, shows all cases.
+            n_cases: Number of cases to show.
             anatomical_plane: 0=sagittal, 1=coronal, 2=axial
             cmap: Colormap for mask overlay
             figsize: Figure size for each case
@@ -202,16 +227,16 @@ class MedDataset:
         if self.input_df is None:
             print("Error: No dataframe provided. Cannot visualize cases.")
             return
-            
-        if self.img_col is None:
-            print("Error: No img_col specified. Cannot visualize cases.")
+
+        if self.image_col is None:
+            print("Error: No image_col specified. Cannot visualize cases.")
             return
-            
+
         # Check if required columns exist
-        if self.img_col not in self.input_df.columns:
-            print(f"Error: Column '{self.img_col}' not found in dataframe.")
+        if self.image_col not in self.input_df.columns:
+            print(f"Error: Column '{self.image_col}' not found in dataframe.")
             return
-            
+
         if self.mask_col not in self.input_df.columns:
             print(f"Error: Column '{self.mask_col}' not found in dataframe.")
             return
@@ -219,7 +244,7 @@ class MedDataset:
         for idx in range(min(n_cases, len(self.input_df))):
             row = self.input_df.iloc[idx]
             case_id = row.get('case_id', f'Case_{idx}')  # Fallback if no case_id
-            img_path = row[self.img_col]
+            img_path = row[self.image_col]
             mask_path = row[self.mask_col]
 
             self._visualize_single_case(img_path, mask_path, case_id, anatomical_plane, cmap, figsize)

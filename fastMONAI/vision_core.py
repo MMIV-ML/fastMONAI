@@ -10,26 +10,26 @@ from torchio import ScalarImage, LabelMap, ToCanonical, Resample
 import copy
 
 # %% ../nbs/01_vision_core.ipynb 5
-def _preprocess(obj, reorder, resample):
+def _preprocess(obj, apply_reorder, target_spacing):
     """
     Preprocesses the given object.
 
     Args:
         obj: The object to preprocess.
-        reorder: Whether to reorder the object.
-        resample: Whether to resample the object.
+        apply_reorder: Whether to reorder the object.
+        target_spacing: Whether to resample the object.
 
     Returns:
         The preprocessed object and its original size.
     """
-    if reorder:
+    if apply_reorder:
         transform = ToCanonical()
         obj = transform(obj)
 
     original_size = obj.shape[1:]
 
-    if resample and not all(np.isclose(obj.spacing, resample)):
-        transform = Resample(resample)
+    if target_spacing and not all(np.isclose(obj.spacing, target_spacing)):
+        transform = Resample(target_spacing)
         obj = transform(obj)
 
     if MedBase.affine_matrix is None:
@@ -38,33 +38,33 @@ def _preprocess(obj, reorder, resample):
     return obj, original_size
 
 # %% ../nbs/01_vision_core.ipynb 6
-def _load_and_preprocess(file_path, reorder, resample, dtype):
+def _load_and_preprocess(file_path, apply_reorder, target_spacing, dtype):
     """
     Helper function to load and preprocess an image.
 
     Args:
         file_path: Image file path.
-        reorder: Whether to reorder data for canonical (RAS+) orientation.
-        resample: Whether to resample image to different voxel sizes and dimensions.
+        apply_reorder: Whether to reorder data for canonical (RAS+) orientation.
+        target_spacing: Whether to resample image to different voxel sizes and dimensions.
         dtype: Desired datatype for output.
 
     Returns:
         tuple: Original image, preprocessed image, and its original size.
     """
     org_img = LabelMap(file_path) if dtype is MedMask else ScalarImage(file_path) #_load(file_path, dtype=dtype) 
-    input_img, org_size = _preprocess(org_img, reorder, resample)
+    input_img, org_size = _preprocess(org_img, apply_reorder, target_spacing)
     
     return org_img, input_img, org_size
 
 # %% ../nbs/01_vision_core.ipynb 7
-def _multi_channel(image_paths: L | list, reorder: bool, resample: list, only_tensor: bool, dtype):
+def _multi_channel(image_paths: L | list, apply_reorder: bool, target_spacing: list, only_tensor: bool, dtype):
     """
     Load and preprocess multisequence data.
 
     Args:
         image_paths: List of image paths (e.g., T1, T2, T1CE, DWI).
-        reorder: Whether to reorder data for canonical (RAS+) orientation.
-        resample: Whether to resample image to different voxel sizes and dimensions.
+        apply_reorder: Whether to reorder data for canonical (RAS+) orientation.
+        target_spacing: Whether to resample image to different voxel sizes and dimensions.
         only_tensor: Whether to return only image tensor.
         dtype: Desired datatype for output.
 
@@ -72,7 +72,7 @@ def _multi_channel(image_paths: L | list, reorder: bool, resample: list, only_te
         torch.Tensor: A stacked 4D tensor, if `only_tensor` is True.
         tuple: Original image, preprocessed image, original size, if `only_tensor` is False.
     """
-    image_data = [_load_and_preprocess(image, reorder, resample, dtype) for image in image_paths]
+    image_data = [_load_and_preprocess(image, apply_reorder, target_spacing, dtype) for image in image_paths]
     org_img, input_img, org_size = image_data[-1]
 
     tensor = torch.stack([img.data[0] for _, img, _ in image_data], dim=0)
@@ -84,15 +84,15 @@ def _multi_channel(image_paths: L | list, reorder: bool, resample: list, only_te
     return org_img, input_img, org_size
 
 # %% ../nbs/01_vision_core.ipynb 8
-def med_img_reader(file_path: str | Path | L | list, reorder: bool = False, resample: list = None, 
+def med_img_reader(file_path: str | Path | L | list, apply_reorder: bool = False, target_spacing: list = None, 
                    only_tensor: bool = True, dtype = torch.Tensor):
     """Loads and preprocesses a medical image.
 
     Args:
         file_path: Path to the image. Can be a string, Path object or a list.
-        reorder: Whether to reorder the data to be closest to canonical 
+        apply_reorder: Whether to reorder the data to be closest to canonical 
             (RAS+) orientation. Defaults to False.
-        resample: Whether to resample image to different voxel sizes and 
+        target_spacing: Whether to resample image to different voxel sizes and 
             image dimensions. Defaults to None.
         only_tensor: Whether to return only image tensor. Defaults to True.
         dtype: Datatype for the return value. Defaults to torch.Tensor.
@@ -104,10 +104,10 @@ def med_img_reader(file_path: str | Path | L | list, reorder: bool = False, resa
     """
     
     if isinstance(file_path, (list, L)):
-        return _multi_channel(file_path, reorder, resample, only_tensor, dtype)
+        return _multi_channel(file_path, apply_reorder, target_spacing, only_tensor, dtype)
 
     org_img, input_img, org_size = _load_and_preprocess(
-        file_path, reorder, resample, dtype)
+        file_path, apply_reorder, target_spacing, dtype)
 
     if only_tensor:
         return dtype(input_img.data.type(torch.float))
@@ -129,7 +129,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     
     _bypass_type = torch.Tensor
     _show_args = {'cmap':'gray'}
-    resample, reorder = None, False
+    target_spacing, apply_reorder = None, False
     affine_matrix = None
 
     @classmethod
@@ -150,7 +150,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
         if isinstance(fn, torch.Tensor):
             return cls(fn)
 
-        return med_img_reader(fn, resample=cls.resample, reorder=cls.reorder, dtype=cls)
+        return med_img_reader(fn, target_spacing=cls.target_spacing, apply_reorder=cls.apply_reorder, dtype=cls)
 
     def __new__(cls, x, **kwargs):
         """Creates a new instance of MedBase from a tensor."""
@@ -196,18 +196,18 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
         return copied
 
     @classmethod
-    def item_preprocessing(cls, resample: (list, int, tuple), reorder: bool):
+    def item_preprocessing(cls, target_spacing: (list, int, tuple), apply_reorder: bool):
         """
-        Changes the values for the class variables `resample` and `reorder`.
+        Changes the values for the class variables `target_spacing` and `apply_reorder`.
 
         Args:
-            resample : (list, int, tuple)
+            target_spacing : (list, int, tuple)
                 A list with voxel spacing.
-            reorder : bool
+            apply_reorder : bool
                 Whether to reorder the data to be closest to canonical (RAS+) orientation.
         """
-        cls.resample = resample
-        cls.reorder = reorder
+        cls.target_spacing = target_spacing
+        cls.apply_reorder = apply_reorder
 
     def show(self, ctx=None, channel: int = 0, slice_index: int = None, anatomical_plane: int = 0, **kwargs):
         """
@@ -230,7 +230,7 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
         """
         return show_med_img(
             self, ctx=ctx, channel=channel, slice_index=slice_index, 
-            anatomical_plane=anatomical_plane, voxel_size=self.resample,  
+            anatomical_plane=anatomical_plane, voxel_size=self.target_spacing,  
             **merge(self._show_args, kwargs)
         )
 

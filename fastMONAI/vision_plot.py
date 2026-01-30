@@ -4,6 +4,7 @@
 __all__ = ['validate_anatomical_plane', 'show_med_img', 'find_max_slice']
 
 # %% ../nbs/00_vision_plot.ipynb 1
+import warnings
 from fastai.data.all import *
 from torchio.visualization import rotate
 

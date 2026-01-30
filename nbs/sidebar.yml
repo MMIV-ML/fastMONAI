@@ -12,11 +12,12 @@ website:
       - 07_utils.ipynb
       - 08_dataset_info.ipynb
       - 09_external_data.ipynb
+      - 10_vision_patch.ipynb
       - section: Tutorials
         contents:
-        - 10a_tutorial_beginner_video.ipynb
-        - 10a_tutorial_classification.ipynb
-        - 10b_tutorial_regression.ipynb
-        - 10c_tutorial_binary_segmentation.ipynb
-        - 10d_tutorial_multiclass_segmentation.ipynb
-        - 10e_tutorial_inference.ipynb
+        - 11a_tutorial_beginner_video.ipynb
+        - 11b_tutorial_classification.ipynb
+        - 11c_tutorial_regression.ipynb
+        - 11d_tutorial_binary_segmentation.ipynb
+        - 11e_tutorial_multiclass_segmentation.ipynb
+        - 11f_tutorial_inference.ipynb
