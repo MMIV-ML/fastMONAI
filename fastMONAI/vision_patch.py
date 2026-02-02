@@ -21,6 +21,7 @@ from tqdm.auto import tqdm
 from fastai.data.all import *
 from .vision_core import MedImage, MedMask, MedBase, med_img_reader
 from .vision_inference import _to_original_orientation, _do_resize
+from .dataset_info import MedDataset, suggest_patch_size
 
 if TYPE_CHECKING:
     from fastMONAI.dataset_info import MedDataset
@@ -323,7 +324,7 @@ class PatchConfig:
 
         return cls(**config_kwargs)
 
-# %% ../nbs/10_vision_patch.ipynb 11
+# %% ../nbs/10_vision_patch.ipynb 10
 def med_to_subject(
     img: Path | str,
     mask: Path | str = None,
