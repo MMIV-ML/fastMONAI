@@ -170,3 +170,15 @@ _proc/
 
 # MLflow
 mlruns/
+
+# Reports
+reports/
+
+# Medical imaging files (DICOM and NIfTI)
+*.dcm
+*.nii
+*.nii.gz
+DICOM/
+dicom/
+# Exception: keep test image used in vision_core
+!images/IXI002-Guys-0828-T1.nii.gz
