@@ -15,12 +15,15 @@ import numpy as np
 import warnings
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, TYPE_CHECKING
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from fastai.data.all import *
 from .vision_core import MedImage, MedMask, MedBase, med_img_reader
 from .vision_inference import _to_original_orientation, _do_resize
+
+if TYPE_CHECKING:
+    from fastMONAI.dataset_info import MedDataset
 
 # %% ../nbs/10_vision_patch.ipynb 3
 def _get_default_device() -> torch.device:
