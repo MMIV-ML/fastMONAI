@@ -16,6 +16,8 @@ import glob
 import matplotlib.pyplot as plt
 
 # %% ../nbs/08_dataset_info.ipynb 3
+import warnings
+
 class MedDataset:
     """A class to extract and present information about the dataset."""
 
@@ -92,14 +94,26 @@ class MedDataset:
             example_path=('path', 'min'), total=('path', 'size')
         ).sort_values('total', ascending=False)
 
-    def get_suggestion(self):
+    def get_suggestion(self, include_patch_size: bool = False):
         """Returns suggested preprocessing parameters as a dictionary.
+
+        Args:
+            include_patch_size: If True, includes suggested patch_size for
+                patch-based training. Requires vision_patch module.
 
         Returns:
             dict: {'target_spacing': [voxel_0, voxel_1, voxel_2], 'apply_reorder': bool}
+                  If include_patch_size=True, also includes 'patch_size': [dim_0, dim_1, dim_2]
         """
         target_spacing = [float(self.df.voxel_0.mode()[0]), float(self.df.voxel_1.mode()[0]), float(self.df.voxel_2.mode()[0])]
-        return {'target_spacing': target_spacing, 'apply_reorder': self.apply_reorder}
+        result = {'target_spacing': target_spacing, 'apply_reorder': self.apply_reorder}
+
+        if include_patch_size:
+            # Import here to avoid circular dependency
+            from fastMONAI.vision_patch import suggest_patch_size
+            result['patch_size'] = suggest_patch_size(self)
+
+        return result
 
     def _get_data_info(self, fn: str):
         """Private method to collect information about an image file."""
@@ -133,6 +147,10 @@ class MedDataset:
     def calculate_target_size(self, target_spacing: list = None) -> list:
         """Calculate the target image size for the dataset.
 
+        .. deprecated::
+            Use `get_size_statistics(target_spacing)['max']` instead for consistency
+            with other size statistics methods.
+
         Args:
             target_spacing: If provided, calculates size after resampling to this spacing.
                            If None, returns original dimensions.
@@ -140,6 +158,12 @@ class MedDataset:
         Returns:
             list: [dim_0, dim_1, dim_2] largest dimensions in dataset.
         """
+        warnings.warn(
+            "calculate_target_size() is deprecated. "
+            "Use get_size_statistics(target_spacing)['max'] instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         if target_spacing is not None:
             org_voxels = self.df[["voxel_0", "voxel_1", 'voxel_2']].values
             org_dims = self.df[["dim_0", "dim_1", 'dim_2']].values
@@ -152,6 +176,38 @@ class MedDataset:
             dims = [float(self.df.dim_0.max()), float(self.df.dim_1.max()), float(self.df.dim_2.max())]
 
         return dims
+
+    def get_size_statistics(self, target_spacing: list = None) -> dict:
+        """Calculate comprehensive size statistics for the dataset.
+
+        Args:
+            target_spacing: If provided, calculates statistics after
+                           simulating resampling to this spacing.
+
+        Returns:
+            dict with keys: 'median', 'min', 'max', 'std', 'percentile_10', 'percentile_90'
+                  Each value is a list [dim_0, dim_1, dim_2].
+        """
+        if len(self.df) == 0:
+            raise ValueError("Dataset is empty - cannot calculate statistics")
+
+        if target_spacing is not None:
+            # Simulate resampled dimensions
+            org_voxels = self.df[["voxel_0", "voxel_1", "voxel_2"]].values
+            org_dims = self.df[["dim_0", "dim_1", "dim_2"]].values
+            ratio = org_voxels / np.array(target_spacing)
+            dims = np.floor(org_dims * ratio)
+        else:
+            dims = self.df[["dim_0", "dim_1", "dim_2"]].values
+
+        return {
+            'median': [float(np.median(dims[:, i])) for i in range(3)],
+            'min': [float(np.min(dims[:, i])) for i in range(3)],
+            'max': [float(np.max(dims[:, i])) for i in range(3)],
+            'std': [float(np.std(dims[:, i])) for i in range(3)],
+            'percentile_10': [float(np.percentile(dims[:, i], 10)) for i in range(3)],
+            'percentile_90': [float(np.percentile(dims[:, i], 90)) for i in range(3)],
+        }
 
     def get_volume_summary(self):
         """Returns DataFrame with volume statistics for each label.

@@ -1,0 +1,17 @@
+{
+  "model": "sonnet",
+  "cleanupPeriodDays": 365,
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "terminal-notifier -title 'Claude Code' -subtitle 'Session Complete' -message \"Finished working in $(basename \"$PWD\")\" -sound default -timeout 10"
+          }
+        ]
+      }
+    ]
+  }
+}
