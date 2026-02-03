@@ -2,7 +2,7 @@
 
 # %% auto 0
 __all__ = ['store_variables', 'load_variables', 'store_patch_variables', 'load_patch_variables', 'print_colab_gpu_info',
-           'ModelTrackingCallback', 'MLflowUIManager']
+           'ModelTrackingCallback', 'create_mlflow_callback', 'MLflowUIManager']
 
 # %% ../nbs/07_utils.ipynb 1
 import pickle
@@ -13,6 +13,7 @@ import mlflow.pytorch
 import os
 import tempfile
 import json
+from datetime import datetime
 from fastai.callback.core import Callback
 from fastcore.foundation import L
 from typing import Any
@@ -136,12 +137,147 @@ def print_colab_gpu_info():
     else: print(colab_gpu_msg)
 
 # %% ../nbs/07_utils.ipynb 9
+def _detect_patch_workflow(dls) -> bool:
+    """Detect if DataLoaders are patch-based (MedPatchDataLoaders).
+    
+    Args:
+        dls: DataLoaders instance
+        
+    Returns:
+        True if dls is a MedPatchDataLoaders instance
+    """
+    return hasattr(dls, 'patch_config') or hasattr(dls, '_patch_config')
+
+
+def _extract_size_from_transforms(tfms) -> list | None:
+    """Extract target size from PadOrCrop transform if present.
+    
+    Args:
+        tfms: List of transforms
+        
+    Returns:
+        Target size as list, or None if not found
+    """
+    if tfms is None:
+        return None
+    for tfm in tfms:
+        if hasattr(tfm, 'pad_or_crop') and hasattr(tfm.pad_or_crop, 'target_shape'):
+            return list(tfm.pad_or_crop.target_shape)
+    return None
+
+
+def _extract_standard_config(learn) -> dict:
+    """Extract config from standard MedDataBlock workflow.
+    
+    Args:
+        learn: fastai Learner instance
+        
+    Returns:
+        Dictionary with extracted configuration
+    """
+    from fastMONAI.vision_core import MedBase
+    dls = learn.dls
+
+    # Get preprocessing from MedBase class attributes
+    apply_reorder = MedBase.apply_reorder
+    target_spacing = MedBase.target_spacing
+
+    # Extract item_tfms from DataLoaders pipeline
+    item_tfms = []
+    if hasattr(dls, 'after_item') and dls.after_item:
+        item_tfms = list(dls.after_item.fs)
+
+    # Extract size from PadOrCrop transform
+    size = _extract_size_from_transforms(item_tfms)
+
+    return {
+        'apply_reorder': apply_reorder,
+        'target_spacing': target_spacing,
+        'size': size,
+        'item_tfms': item_tfms,
+        'batch_size': dls.bs,
+        'patch_config': None,
+    }
+
+
+def _extract_patch_config(learn) -> dict:
+    """Extract config from MedPatchDataLoaders workflow.
+    
+    Args:
+        learn: fastai Learner instance
+        
+    Returns:
+        Dictionary with extracted configuration including patch-specific params
+    """
+    dls = learn.dls
+    patch_config = getattr(dls, '_patch_config', None) or getattr(dls, 'patch_config', None)
+
+    config = {
+        'apply_reorder': getattr(dls, '_apply_reorder', patch_config.apply_reorder if patch_config else False),
+        'target_spacing': getattr(dls, '_target_spacing', patch_config.target_spacing if patch_config else None),
+        'size': patch_config.patch_size if patch_config else None,
+        'item_tfms': getattr(dls, '_pre_patch_tfms', []) or [],
+        'batch_size': dls.bs,
+    }
+
+    # Add patch-specific params for logging
+    if patch_config:
+        config['patch_config'] = {
+            'patch_size': patch_config.patch_size,
+            'patch_overlap': patch_config.patch_overlap,
+            'samples_per_volume': patch_config.samples_per_volume,
+            'sampler_type': patch_config.sampler_type,
+            'label_probabilities': str(patch_config.label_probabilities) if patch_config.label_probabilities else None,
+            'queue_length': patch_config.queue_length,
+            'aggregation_mode': patch_config.aggregation_mode,
+            'padding_mode': patch_config.padding_mode,
+            'keep_largest_component': patch_config.keep_largest_component,
+        }
+    else:
+        config['patch_config'] = None
+
+    return config
+
+
+def _extract_loss_name(learn) -> str:
+    """Extract loss function name from Learner.
+    
+    Args:
+        learn: fastai Learner instance
+        
+    Returns:
+        Name of the loss function
+    """
+    loss_func = learn.loss_func
+    # Handle CustomLoss wrapper
+    if hasattr(loss_func, 'loss_func'):
+        inner = loss_func.loss_func
+        return inner._get_name() if hasattr(inner, '_get_name') else inner.__class__.__name__
+    return loss_func._get_name() if hasattr(loss_func, '_get_name') else loss_func.__class__.__name__
+
+
+def _extract_model_name(learn) -> str:
+    """Extract model architecture name from Learner.
+    
+    Args:
+        learn: fastai Learner instance
+        
+    Returns:
+        Name of the model architecture
+    """
+    model = learn.model
+    return model._get_name() if hasattr(model, '_get_name') else model.__class__.__name__
+
+# %% ../nbs/07_utils.ipynb 10
 class ModelTrackingCallback(Callback):
     """
     A FastAI callback for comprehensive MLflow experiment tracking.
     
     This callback automatically logs hyperparameters, metrics, model artifacts,
-    and configuration to MLflow during training.
+    and configuration to MLflow during training. If a SaveModelCallback is present,
+    the best model checkpoint will also be logged as an artifact.
+    
+    Supports auto-managed runs when created via `create_mlflow_callback()`.
     """
     
     def __init__(
@@ -151,7 +287,13 @@ class ModelTrackingCallback(Callback):
         item_tfms: list[Any],
         size: list[int], 
         target_spacing: list[float], 
-        apply_reorder: bool
+        apply_reorder: bool,
+        experiment_name: str = None,
+        run_name: str = None,
+        auto_start: bool = False,
+        patch_config: dict = None,
+        extra_params: dict = None,
+        extra_tags: dict = None
     ):
         """
         Initialize the MLflow tracking callback.
@@ -159,9 +301,16 @@ class ModelTrackingCallback(Callback):
         Args:
             model_name: Name of the model architecture for registration
             loss_function: Name of the loss function being used
+            item_tfms: List of item transforms
             size: Model input dimensions
             target_spacing: Resampling dimensions
             apply_reorder: Whether reordering augmentation is applied
+            experiment_name: MLflow experiment name (used with auto_start)
+            run_name: MLflow run name (auto-generated if None)
+            auto_start: If True, auto-starts/stops MLflow run
+            patch_config: Patch configuration dict for logging (from MedPatchDataLoaders)
+            extra_params: Additional parameters to log
+            extra_tags: MLflow tags to set on the run
         """
         self.model_name = model_name
         self.loss_function = loss_function
@@ -169,6 +318,15 @@ class ModelTrackingCallback(Callback):
         self.size = size
         self.target_spacing = target_spacing
         self.apply_reorder = apply_reorder
+        
+        # New auto-management fields
+        self.experiment_name = experiment_name
+        self.run_name = run_name
+        self.auto_start = auto_start
+        self.patch_config = patch_config
+        self.extra_params = extra_params or {}
+        self.extra_tags = extra_tags or {}
+        self._auto_started = False
         
         self.config = self._build_config()
         
@@ -235,6 +393,12 @@ class ModelTrackingCallback(Callback):
             separators=(',', ': ')
         )
         
+        # Add patch-specific params if present
+        if self.patch_config:
+            for key, value in self.patch_config.items():
+                if value is not None:
+                    params[f"patch_{key}"] = value if isinstance(value, (int, float, str, bool)) else str(value)
+        
         return params
     
     def _extract_epoch_metrics(self) -> dict[str, float]:
@@ -284,6 +448,23 @@ class ModelTrackingCallback(Callback):
         if os.path.exists(weights_file):
             mlflow.log_artifact(weights_file, "model")
         
+        # Auto-detect SaveModelCallback and log best model
+        from fastai.callback.tracker import SaveModelCallback
+        best_model_cb = None
+        for cb in self.learn.cbs:
+            if isinstance(cb, SaveModelCallback):
+                best_model_path = self.learn.path/self.learn.model_dir/f'{cb.fname}.pth'
+                if best_model_path.exists():
+                    mlflow.log_artifact(str(best_model_path), "model")
+                    print(f"Logged best model artifact: {cb.fname}.pth")
+                    best_model_cb = cb
+                break
+
+        # Load best model weights before export if SaveModelCallback was used
+        if best_model_cb is not None:
+            self.learn.load(best_model_cb.fname)
+            print(f"Loaded best model weights ({best_model_cb.fname}) for learner export")
+
         # Remove MLflow callbacks before exporting learner for inference
         # This prevents the callback from being triggered during inference
         original_cbs = self.learn.cbs.copy()  # Save original callbacks
@@ -312,8 +493,22 @@ class ModelTrackingCallback(Callback):
         )
     
     def before_fit(self) -> None:
-        """Log hyperparameters before training starts."""
+        """Log hyperparameters before training starts. Auto-start run if configured."""
+        # Auto-start run if requested
+        if self.auto_start:
+            if self.experiment_name:
+                mlflow.set_experiment(self.experiment_name)
+            self.run_name = self.run_name or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            mlflow.start_run(run_name=self.run_name)
+            self._auto_started = True
+        
+        # Set tags
+        if self.extra_tags:
+            mlflow.set_tags(self.extra_tags)
+        
+        # Log params
         params = self._extract_training_params()
+        params.update(self.extra_params)
         mlflow.log_params(params)
     
     def after_epoch(self) -> None:
@@ -332,10 +527,104 @@ class ModelTrackingCallback(Callback):
             self._save_model_artifacts(temp_path)
             
             self._register_pytorch_model()
-            
-        print(f"MLflow run completed. Run ID: {mlflow.active_run().info.run_id}")
+        
+        run_id = mlflow.active_run().info.run_id
+        print(f"MLflow run completed. Run ID: {run_id}")
+        
+        # End run if auto-started
+        if self._auto_started:
+            mlflow.end_run()
+            self._auto_started = False
 
-# %% ../nbs/07_utils.ipynb 10
+# %% ../nbs/07_utils.ipynb 11
+def create_mlflow_callback(
+    learn,
+    experiment_name: str = None,
+    run_name: str = None,
+    auto_start: bool = True,
+    model_name: str = None,
+    extra_params: dict = None,
+    extra_tags: dict = None,
+) -> ModelTrackingCallback:
+    """Create MLflow tracking callback with auto-extracted configuration.
+    
+    This factory function automatically extracts configuration from the Learner,
+    eliminating the need to manually specify parameters like size, transforms,
+    loss function, etc.
+    
+    Auto-extracts from Learner:
+    - Preprocessing: apply_reorder, target_spacing, size/patch_size
+    - Transforms: item_tfms or pre_patch_tfms
+    - Training: loss_func, model architecture
+    
+    Args:
+        learn: fastai Learner instance
+        experiment_name: MLflow experiment name. If None, uses model name.
+        run_name: MLflow run name. If None, auto-generates with timestamp.
+        auto_start: If True, auto-starts/stops MLflow run in before_fit/after_fit.
+        model_name: Override auto-extracted model name for registration.
+        extra_params: Additional parameters to log (e.g., {'dropout': 0.5}).
+        extra_tags: MLflow tags to set on the run.
+    
+    Returns:
+        ModelTrackingCallback ready to use with learn.fit()
+    
+    Example:
+        >>> # Instead of this (6 manual params):
+        >>> # mlflow_callback = ModelTrackingCallback(
+        >>> #     model_name=f"{task}_{model._get_name()}",
+        >>> #     loss_function=loss_func.loss_func._get_name(),
+        >>> #     item_tfms=item_tfms,
+        >>> #     size=size,
+        >>> #     target_spacing=target_spacing,
+        >>> #     apply_reorder=True,
+        >>> # )
+        >>> # with mlflow.start_run(run_name="training"):
+        >>> #     learn.fit_one_cycle(30, lr, cbs=[mlflow_callback])
+        >>> 
+        >>> # Do this (zero manual params):
+        >>> callback = create_mlflow_callback(learn, experiment_name="Task02_Heart")
+        >>> learn.fit_one_cycle(30, lr, cbs=[callback, save_best])
+    """
+    # Detect workflow and extract config
+    if _detect_patch_workflow(learn.dls):
+        config = _extract_patch_config(learn)
+    else:
+        config = _extract_standard_config(learn)
+    
+    # Extract model/loss info
+    _model_name = model_name or _extract_model_name(learn)
+    _loss_name = _extract_loss_name(learn)
+    
+    # Set experiment name
+    if experiment_name is None:
+        experiment_name = _model_name
+    
+    # Validate size was extracted
+    if config['size'] is None:
+        raise ValueError(
+            "Could not auto-extract 'size'. Either:\n"
+            "1. Add PadOrCrop to item_tfms, or\n"
+            "2. Use MedPatchDataLoaders with PatchConfig, or\n"
+            "3. Use ModelTrackingCallback directly with manual params"
+        )
+    
+    return ModelTrackingCallback(
+        model_name=_model_name,
+        loss_function=_loss_name,
+        item_tfms=config['item_tfms'],
+        size=config['size'],
+        target_spacing=config['target_spacing'],
+        apply_reorder=config['apply_reorder'],
+        experiment_name=experiment_name,
+        run_name=run_name,
+        auto_start=auto_start,
+        patch_config=config['patch_config'],
+        extra_params=extra_params,
+        extra_tags=extra_tags,
+    )
+
+# %% ../nbs/07_utils.ipynb 13
 import subprocess
 import threading
 import time

@@ -3,8 +3,8 @@
 # %% auto 0
 __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization', 'RescaleIntensity', 'NormalizeIntensity',
            'BraTSMaskConverter', 'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField',
-           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomElasticDeformation',
-           'RandomAffine', 'RandomFlip', 'OneOf']
+           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomCutout',
+           'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf']
 
 # %% ../nbs/03_vision_augment.ipynb 2
 from fastai.data.all import *
@@ -425,7 +425,139 @@ class RandomMotion(DisplayedTransform):
     def encodes(self, o: MedMask):
         return o
 
+# %% ../nbs/03_vision_augment.ipynb 22
+def _create_ellipsoid_mask(shape, center, radii):
+    """Create a 3D ellipsoid mask.
+
+    Args:
+        shape: (D, H, W) shape of the volume
+        center: (z, y, x) center of ellipsoid
+        radii: (rz, ry, rx) radii along each axis
+
+    Returns:
+        Boolean mask where True = inside ellipsoid
+    """
+    z, y, x = torch.meshgrid(
+        torch.arange(shape[0]),
+        torch.arange(shape[1]),
+        torch.arange(shape[2]),
+        indexing='ij'
+    )
+    dist = ((z - center[0]) / radii[0]) ** 2 + \
+           ((y - center[1]) / radii[1]) ** 2 + \
+           ((x - center[2]) / radii[2]) ** 2
+    return dist <= 1.0
+
 # %% ../nbs/03_vision_augment.ipynb 23
+class _TioRandomCutout(tio.IntensityTransform):
+    """TorchIO-compatible RandomCutout for patch-based workflows."""
+
+    def __init__(self, holes=1, spatial_size=8, fill_value=None,
+                 max_holes=None, max_spatial_size=None, p=0.2, **kwargs):
+        super().__init__(p=p, **kwargs)
+        self.holes = holes
+        self.spatial_size = spatial_size
+        self.fill_value = fill_value
+        self.max_holes = max_holes
+        self.max_spatial_size = max_spatial_size
+
+    def _apply_cutout(self, data, fill_val):
+        """Apply spherical cutout(s) to a tensor."""
+        result = data.clone()
+        n_holes = torch.randint(self.holes, (self.max_holes or self.holes) + 1, (1,)).item()
+
+        spatial_shape = data.shape[1:]  # (D, H, W)
+        min_size = self.spatial_size if isinstance(self.spatial_size, int) else self.spatial_size[0]
+        max_size = self.max_spatial_size or self.spatial_size
+        max_size = max_size if isinstance(max_size, int) else max_size[0]
+
+        for _ in range(n_holes):
+            # Random size for this hole
+            size = torch.randint(min_size, max_size + 1, (3,))
+            radii = size.float() / 2
+
+            # Random center (ensure hole fits in volume)
+            center = [
+                torch.randint(int(radii[i].item()),
+                              max(spatial_shape[i] - int(radii[i].item()), int(radii[i].item()) + 1),
+                              (1,)).item()
+                for i in range(3)
+            ]
+
+            mask = _create_ellipsoid_mask(spatial_shape, center, radii)
+            result[:, mask] = fill_val
+
+        return result
+
+    def apply_transform(self, subject):
+        for image in self.get_images(subject):
+            data = image.data
+            fill_val = self.fill_value if self.fill_value is not None else float(data.min())
+            result = self._apply_cutout(data, fill_val)
+            image.set_data(result)
+        return subject
+
+# %% ../nbs/03_vision_augment.ipynb 24
+class RandomCutout(DisplayedTransform):
+    """Randomly erase spherical regions in 3D medical images.
+
+    Simulates post-operative surgical cavities by filling random ellipsoid
+    volumes with specified values. Useful for training on pre-op images
+    to generalize to post-op scans.
+
+    Args:
+        holes: Minimum number of cutout regions. Default: 1.
+        max_holes: Maximum number of regions. Default: 3.
+        spatial_size: Minimum cutout diameter in voxels. Default: 8.
+        max_spatial_size: Maximum cutout diameter. Default: 16.
+        fill: Fill value - 'min', 'mean', 'random', or float. Default: 'min'.
+        p: Probability of applying transform. Default: 0.2.
+
+    Example:
+        >>> # Simulate post-op cavities with dark spherical voids
+        >>> tfm = RandomCutout(holes=1, max_holes=2, spatial_size=10,
+        ...                    max_spatial_size=25, fill='min', p=0.2)
+    """
+
+    split_idx, order = 0, 1
+
+    def __init__(self, holes=1, max_holes=3, spatial_size=8,
+                 max_spatial_size=16, fill='min', p=0.2):
+        self.holes = holes
+        self.max_holes = max_holes
+        self.spatial_size = spatial_size
+        self.max_spatial_size = max_spatial_size
+        self.fill = fill
+        self.p = p
+
+        self._tio_cutout = _TioRandomCutout(
+            holes=holes, spatial_size=spatial_size,
+            fill_value=None if isinstance(fill, str) else fill,
+            max_holes=max_holes, max_spatial_size=max_spatial_size, p=p
+        )
+
+    @property
+    def tio_transform(self):
+        """Return TorchIO-compatible transform for patch-based workflows."""
+        return self._tio_cutout
+
+    def _get_fill_value(self, tensor):
+        if self.fill == 'min': return float(tensor.min())
+        elif self.fill == 'mean': return float(tensor.mean())
+        elif self.fill == 'random':
+            return torch.empty(1).uniform_(float(tensor.min()), float(tensor.max())).item()
+        else: return self.fill
+
+    def encodes(self, o: MedImage):
+        if torch.rand(1).item() > self.p: return o
+        fill_val = self._get_fill_value(o)
+        result = self._tio_cutout._apply_cutout(o.clone(), fill_val)
+        return MedImage.create(result)
+
+    def encodes(self, o: MedMask):
+        return o
+
+# %% ../nbs/03_vision_augment.ipynb 26
 class RandomElasticDeformation(CustomDictTransform):
     """Apply TorchIO `RandomElasticDeformation`."""
 
@@ -438,7 +570,7 @@ class RandomElasticDeformation(CustomDictTransform):
             image_interpolation=image_interpolation,
             p=p))
 
-# %% ../nbs/03_vision_augment.ipynb 24
+# %% ../nbs/03_vision_augment.ipynb 27
 class RandomAffine(CustomDictTransform):
     """Apply TorchIO `RandomAffine`."""
 
@@ -454,14 +586,14 @@ class RandomAffine(CustomDictTransform):
             default_pad_value=default_pad_value,
             p=p))
 
-# %% ../nbs/03_vision_augment.ipynb 25
+# %% ../nbs/03_vision_augment.ipynb 28
 class RandomFlip(CustomDictTransform):
     """Apply TorchIO `RandomFlip`."""
 
     def __init__(self, axes='LR', p=0.5):
         super().__init__(tio.RandomFlip(axes=axes, flip_probability=p))
 
-# %% ../nbs/03_vision_augment.ipynb 26
+# %% ../nbs/03_vision_augment.ipynb 29
 class OneOf(CustomDictTransform):
     """Apply only one of the given transforms using TorchIO `OneOf`."""
 
