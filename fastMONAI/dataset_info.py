@@ -22,7 +22,7 @@ class MedDataset:
     """A class to extract and present information about the dataset."""
 
     def __init__(self, dataframe=None, image_col:str=None, mask_col:str="mask_path",
-                 path=None, img_list=None, postfix:str='', apply_reorder:bool=False,
+                 path=None, img_list=None, postfix:str='', apply_reorder:bool=True,
                  dtype:(MedImage, MedMask)=MedImage, max_workers:int=1):
         """Constructs MedDataset object.
 
@@ -97,16 +97,23 @@ class MedDataset:
     def get_suggestion(self, include_patch_size: bool = False):
         """Returns suggested preprocessing parameters as a dictionary.
 
+        The returned target_spacing is derived from the mode (most common value)
+        of voxel spacings in the dataset.
+
+        Note:
+            apply_reorder is NOT included in the return value because it is not
+            data-derived. Access dataset.apply_reorder directly if needed.
+
         Args:
             include_patch_size: If True, includes suggested patch_size for
                 patch-based training. Requires vision_patch module.
 
         Returns:
-            dict: {'target_spacing': [voxel_0, voxel_1, voxel_2], 'apply_reorder': bool}
+            dict: {'target_spacing': [voxel_0, voxel_1, voxel_2]}
                   If include_patch_size=True, also includes 'patch_size': [dim_0, dim_1, dim_2]
         """
         target_spacing = [float(self.df.voxel_0.mode()[0]), float(self.df.voxel_1.mode()[0]), float(self.df.voxel_2.mode()[0])]
-        result = {'target_spacing': target_spacing, 'apply_reorder': self.apply_reorder}
+        result = {'target_spacing': target_spacing}
 
         if include_patch_size:
             result['patch_size'] = suggest_patch_size(self)
@@ -239,7 +246,7 @@ class MedDataset:
         try:
             # Create MedImage and MedMask with current preprocessing settings
             suggestion = self.get_suggestion()
-            MedBase.item_preprocessing(target_spacing=suggestion['target_spacing'], apply_reorder=suggestion['apply_reorder'])
+            MedBase.item_preprocessing(target_spacing=suggestion['target_spacing'], apply_reorder=self.apply_reorder)
 
             img = MedImage.create(img_path)
             mask = MedMask.create(mask_path)
