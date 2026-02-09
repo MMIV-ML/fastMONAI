@@ -319,12 +319,17 @@ def suggest_patch_size(
     max_patch_size: list = None,
     divisor: int = 16
 ) -> list:
-    """Suggest optimal patch size based on median image dimensions.
+    """Suggest optimal patch size based on dataset dimensions.
+
+    Uses median shape as the starting point but clamps to the minimum
+    volume size per axis, ensuring the suggested patch fits ALL volumes
+    without requiring padding during training.
 
     Algorithm:
-    1. Use median shape for robustness to outliers
-    2. Round down to nearest multiple of divisor (16 for 4+ UNet pooling layers)
-    3. Clamp to [min_patch_size, max_patch_size]
+    1. Use min(median, min_volume) per axis for safety
+    2. Round down to nearest multiple of divisor (16 for UNet compatibility)
+    3. Clamp to [min_patch_size, max_patch_size] bounds
+    4. Validate: error if min_patch_size exceeds smallest volume
 
     Args:
         dataset: MedDataset instance with analyzed images.
@@ -359,30 +364,44 @@ def suggest_patch_size(
     # Get size statistics (resampled to target_spacing)
     stats = dataset.get_size_statistics(target_spacing)
     median_shape = stats['median']
+    min_shape = stats['min']
 
     # Handle single-image edge case
     if len(dataset.df) == 1:
         warnings.warn("Single image dataset - using image dimensions directly")
 
-    # Step 1: Round down to nearest divisor
     def round_to_divisor(val, div):
         """Round down to nearest multiple of divisor."""
         return max(div, int(val // div) * div)
 
-    patch_size = [round_to_divisor(dim, divisor) for dim in median_shape]
+    # Step 1: Clamp to min(median, min_volume) per axis — safety guarantee
+    effective_dims = [min(med, mn) for med, mn in zip(median_shape, min_shape)]
 
-    # Step 2: Clamp to bounds
+    # Step 2: Round down to nearest divisor
+    patch_size = [round_to_divisor(dim, divisor) for dim in effective_dims]
+
+    # Step 3: Clamp to [min_patch_size, max_patch_size] bounds
     patch_size = [
         max(min_p, min(max_p, p))
         for p, min_p, max_p in zip(patch_size, min_patch_size, max_patch_size)
     ]
 
-    # Edge case: image smaller than suggested patch
-    for i, (p, median_dim) in enumerate(zip(patch_size, median_shape)):
-        if median_dim < p:
+    # Step 4: Final safety check — error if bounds force patch > min volume
+    for i, (p, min_dim) in enumerate(zip(patch_size, min_shape)):
+        if p > min_dim:
+            raise ValueError(
+                f"Cannot suggest safe patch_size for dimension {i}: "
+                f"smallest volume is {min_dim:.0f} but min_patch_size={min_patch_size[i]}. "
+                f"Exclude small volumes or reduce min_patch_size."
+            )
+
+    # Warn when suggestion was reduced to fit smallest volume
+    for i, (med, mn, p) in enumerate(zip(median_shape, min_shape, patch_size)):
+        median_based = min(max_patch_size[i], round_to_divisor(med, divisor))
+        if p < median_based:
             warnings.warn(
-                f"Median dimension {i} ({median_dim:.0f}) smaller than suggested "
-                f"patch_size ({p}). Images will require padding."
+                f"Dim {i}: patch_size reduced from {median_based} to {p} "
+                f"to fit smallest volume (min={mn:.0f}, median={med:.0f})."
             )
 
     return patch_size
