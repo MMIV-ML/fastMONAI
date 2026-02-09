@@ -12,6 +12,7 @@ import torchio as tio
 import pandas as pd
 import numpy as np
 import warnings
+import matplotlib.pyplot as plt
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Callable
@@ -20,6 +21,7 @@ from tqdm.auto import tqdm
 from fastai.data.all import *
 from fastai.learner import Learner
 from .vision_core import MedImage, MedMask, MedBase, med_img_reader
+from .vision_plot import find_max_slice
 from .vision_inference import _to_original_orientation, _do_resize
 from .dataset_info import MedDataset, suggest_patch_size
 
@@ -825,6 +827,58 @@ class MedPatchDataLoaders:
     def cpu(self):
         """Move DataLoaders to CPU."""
         return self.to(torch.device('cpu'))
+
+    def show_batch(self, dl_idx=0, max_n=6, figsize=None, channel=0,
+                   slice_index=None, anatomical_plane=0, overlay=False, **kwargs):
+        """Show a batch of patch samples for visualization."""
+
+        dl = self[dl_idx]
+        x, y = dl.one_batch()
+        x = x.cpu()
+        if y is not None: y = y.cpu()
+
+        nrows = min(x.shape[0], max_n)
+        has_mask = y is not None
+
+        if overlay and has_mask:
+            ncols = x.shape[1]
+        else:
+            ncols = x.shape[1] + (1 if has_mask else 0)
+
+        if figsize is None:
+            figsize = (ncols * 3, nrows * 3)
+        fig, axs = plt.subplots(nrows, ncols, figsize=figsize, squeeze=False)
+        flat_axs = axs.flatten()
+
+        imgs, masks_for_overlay, slice_idxs = [], [], []
+        for i in range(nrows):
+            img = x[i]
+            im_channels = [MedImage(c_img[None]) for c_img in img]
+
+            if has_mask:
+                mask = y[i]
+                idx = find_max_slice(mask[0].numpy(), anatomical_plane) if slice_index is None else slice_index
+                if overlay:
+                    masks_for_overlay.extend([MedMask(mask)] * len(im_channels))
+                else:
+                    im_channels.append(MedMask(mask))
+            else:
+                idx = slice_index
+
+            imgs.extend(im_channels)
+            slice_idxs.extend([idx] * len(im_channels))
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='Voxel size not defined')
+            ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane)
+                    for im, ax, idx in zip(imgs, flat_axs, slice_idxs)]
+
+            if overlay and has_mask:
+                for mask, ax, idx in zip(masks_for_overlay, flat_axs, slice_idxs):
+                    mask.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane)
+
+        plt.tight_layout()
+        plt.show()
 
     def new_empty(self):
         """Create a new empty version of self for learner export.

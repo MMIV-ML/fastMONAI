@@ -1,5 +1,7 @@
 project:
   type: website
+  resources:
+    - CNAME
 
 format:
   html:

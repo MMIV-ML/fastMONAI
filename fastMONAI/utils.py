@@ -10,6 +10,7 @@ import torch
 from pathlib import Path
 import mlflow
 import mlflow.pytorch
+mlflow.set_tracking_uri("sqlite:///mlruns.db")
 import os
 import tempfile
 import json
@@ -327,6 +328,7 @@ class ModelTrackingCallback(Callback):
         self.extra_params = extra_params or {}
         self.extra_tags = extra_tags or {}
         self._auto_started = False
+        self.run_id = None
         
         self.config = self._build_config()
         
@@ -528,13 +530,35 @@ class ModelTrackingCallback(Callback):
             
             self._register_pytorch_model()
         
-        run_id = mlflow.active_run().info.run_id
-        print(f"MLflow run completed. Run ID: {run_id}")
+        self.run_id = mlflow.active_run().info.run_id
+        print(f"MLflow run completed. Run ID: {self.run_id}")
         
         # End run if auto-started
         if self._auto_started:
             mlflow.end_run()
             self._auto_started = False
+
+    def log_metrics(self, metrics: dict) -> None:
+        """Log additional metrics to the completed MLflow run.
+
+        Reopens the run to log metrics, then closes it. Useful for
+        post-training evaluation (e.g., validation set patch inference results).
+        NaN values are silently skipped (MLflow rejects them).
+
+        Args:
+            metrics: Dictionary of metric name -> value pairs to log.
+        """
+        if self.run_id is None:
+            raise RuntimeError("No MLflow run found. Train the model first.")
+
+        import math
+        valid = {k: v for k, v in metrics.items()
+                 if not (isinstance(v, float) and math.isnan(v))}
+
+        if valid:
+            with mlflow.start_run(run_id=self.run_id):
+                mlflow.log_metrics(valid)
+            print(f"Logged {len(valid)} metric(s) to MLflow run {self.run_id}")
 
 # %% ../nbs/07_utils.ipynb 11
 def create_mlflow_callback(
@@ -642,7 +666,7 @@ class MLflowUIManager:
         self.thread = None
         self.port = 5001
         self.host = '0.0.0.0'
-        self.backend_store_uri = './mlruns'
+        self.backend_store_uri = 'sqlite:///mlruns.db'
         
     def is_port_available(self, port):
         """Check if a port is available."""
