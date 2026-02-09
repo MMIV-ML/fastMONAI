@@ -1192,7 +1192,6 @@ def patch_inference(
         List of predicted tensors.
     
     Example:
-        >>> # DRY pattern: use same config for training and inference
         >>> config = PatchConfig(
         ...     patch_size=[96, 96, 96],
         ...     apply_reorder=True,
