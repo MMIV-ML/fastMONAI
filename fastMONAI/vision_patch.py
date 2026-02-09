@@ -22,7 +22,6 @@ from fastai.learner import Learner
 from .vision_core import MedImage, MedMask, MedBase, med_img_reader
 from .vision_inference import _to_original_orientation, _do_resize
 from .dataset_info import MedDataset, suggest_patch_size
-from .vision_augmentation import SpatialPad
 
 # %% ../nbs/10_vision_patch.ipynb 3
 def _get_default_device() -> torch.device:
@@ -552,12 +551,6 @@ class MedPatchDataLoaders:
     Memory-efficient: Volumes are loaded on-demand by Queue workers,
     keeping memory usage constant (~150 MB) regardless of dataset size.
 
-    **Automatic padding**: Images smaller than patch_size are **automatically padded**
-    using SpatialPad (zero padding, nnU-Net standard). Dimensions larger than patch_size
-    are preserved. A message is printed at DataLoader creation to inform you that
-    automatic padding is enabled. This ensures training matches inference behavior
-    where both pad small dimensions to minimum patch_size.
-
     Note: Validation uses the same sampling as training (pseudo Dice).
     For true validation metrics, use PatchInferenceEngine with GridSampler
     for full-volume sliding window inference.
@@ -706,16 +699,6 @@ class MedPatchDataLoaders:
         # Add user-provided transforms (normalize to raw TorchIO transforms)
         if pre_patch_tfms:
             all_pre_tfms.extend(normalize_patch_transforms(pre_patch_tfms))
-
-        # Add SpatialPad to ensure minimum patch_size
-        # Pads small dimensions to patch_size while preserving large dimensions.
-        # Uses zero padding (nnU-Net standard) to match inference behavior.
-        # Placed AFTER normalization ensures consistent intensity preprocessing.
-        spatial_pad = SpatialPad(spatial_size=patch_config.patch_size)
-        all_pre_tfms.append(spatial_pad.tio_transform)
-
-        # Inform user about automatic padding (transparency)
-        print(f"ℹ️  Automatic padding enabled: dimensions smaller than patch_size {patch_config.patch_size} will be padded (larger dimensions preserved)")
 
         # Create subjects datasets with lazy loading (paths only, ~0 MB)
         train_subjects = create_subjects_dataset(
