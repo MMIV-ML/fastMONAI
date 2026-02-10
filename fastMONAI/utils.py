@@ -10,10 +10,13 @@ import torch
 from pathlib import Path
 import mlflow
 import mlflow.pytorch
+import mlflow.data
 mlflow.set_tracking_uri("sqlite:///mlruns.db")
 import os
 import tempfile
 import json
+import warnings
+import pandas as pd
 from datetime import datetime
 from fastai.callback.core import Callback
 from fastcore.foundation import L
@@ -269,6 +272,73 @@ def _extract_model_name(learn) -> str:
     model = learn.model
     return model._get_name() if hasattr(model, '_get_name') else model.__class__.__name__
 
+
+def _extract_standard_dataset_dfs(dls):
+    """Extract train/valid DataFrames from standard MedImageDataLoaders.
+    
+    For standard DataLoaders created via MedImageDataLoaders.from_df(),
+    the items attribute contains the original DataFrame split by train/valid.
+    
+    Args:
+        dls: Standard fastai DataLoaders (MedImageDataLoaders)
+        
+    Returns:
+        Tuple of (train_df, valid_df). Either can be None if items
+        are not DataFrames (e.g., manually constructed DataLoaders).
+    """
+    train_df = None
+    valid_df = None
+    
+    train_items = getattr(getattr(dls, 'train_ds', None), 'items', None)
+    valid_items = getattr(getattr(dls, 'valid_ds', None), 'items', None)
+    
+    if isinstance(train_items, pd.DataFrame):
+        train_df = train_items
+    if isinstance(valid_items, pd.DataFrame):
+        valid_df = valid_items
+    
+    return train_df, valid_df
+
+
+def _extract_patch_dataset_dfs(dls):
+    """Extract train/valid DataFrames from MedPatchDataLoaders.
+    
+    Reconstructs DataFrames from TorchIO SubjectsDataset by extracting
+    file paths from each Subject's image and (optionally) mask.
+    Uses _subjects directly to avoid triggering data loading.
+    
+    Args:
+        dls: MedPatchDataLoaders instance
+        
+    Returns:
+        Tuple of (train_df, valid_df). Either can be None if extraction fails.
+    """
+    img_col = getattr(dls, '_img_col', 'image')
+    mask_col = getattr(dls, '_mask_col', None)
+    
+    def _subjects_to_df(subjects_dataset):
+        subjects = getattr(subjects_dataset, '_subjects', None)
+        if subjects is None:
+            return None
+        rows = []
+        for s in subjects:
+            row = {}
+            img = s.get('image')
+            if img is not None and getattr(img, 'path', None) is not None:
+                row[img_col] = str(img.path)
+            if mask_col is not None:
+                mask = s.get('mask')
+                if mask is not None and getattr(mask, 'path', None) is not None:
+                    row[mask_col] = str(mask.path)
+            if row:
+                rows.append(row)
+        return pd.DataFrame(rows) if rows else None
+    
+    train_df = _subjects_to_df(dls.train_ds)
+    valid_df = _subjects_to_df(dls.valid_ds)
+    
+    return train_df, valid_df
+
 # %% ../nbs/07_utils.ipynb #030876d2
 class ModelTrackingCallback(Callback):
     """
@@ -403,6 +473,42 @@ class ModelTrackingCallback(Callback):
         
         return params
     
+    def _log_datasets(self) -> None:
+        """Log train/valid datasets to MLflow's Datasets tab.
+        
+        Uses mlflow.data.from_pandas() and mlflow.log_input() to register
+        dataset metadata so they appear in the MLflow UI Datasets tab.
+        Failures are silently caught to never break training.
+        """
+        try:
+            dls = self.learn.dls
+            is_patch = _detect_patch_workflow(dls)
+            
+            if is_patch:
+                train_df, valid_df = _extract_patch_dataset_dfs(dls)
+            else:
+                train_df, valid_df = _extract_standard_dataset_dfs(dls)
+            
+            source = self.experiment_name or self.model_name or "fastMONAI"
+            
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                
+                if train_df is not None and not train_df.empty:
+                    train_dataset = mlflow.data.from_pandas(
+                        train_df, source=source, name="train"
+                    )
+                    mlflow.log_input(train_dataset, context="training")
+                
+                if valid_df is not None and not valid_df.empty:
+                    valid_dataset = mlflow.data.from_pandas(
+                        valid_df, source=source, name="validation"
+                    )
+                    mlflow.log_input(valid_dataset, context="validation")
+                    
+        except Exception:
+            pass  # Dataset logging must never break training
+    
     def _extract_epoch_metrics(self) -> dict[str, float]:
         """Extract metrics from the current epoch."""
         recorder = self.learn.recorder
@@ -512,6 +618,9 @@ class ModelTrackingCallback(Callback):
         params = self._extract_training_params()
         params.update(self.extra_params)
         mlflow.log_params(params)
+        
+        # Log datasets
+        self._log_datasets()
     
     def after_epoch(self) -> None:
         """Log metrics after each epoch."""
@@ -559,6 +668,91 @@ class ModelTrackingCallback(Callback):
             with mlflow.start_run(run_id=self.run_id):
                 mlflow.log_metrics(valid)
             print(f"Logged {len(valid)} metric(s) to MLflow run {self.run_id}")
+
+    def log_metrics_table(self, df, metrics=None, key='validation_metrics', display=False):
+        """Log a summary table of metrics as an image to the MLflow Images tab.
+
+        Creates a styled matplotlib table with Metric, Mean, and Std columns
+        from the given DataFrame and logs it via mlflow.log_image() so it
+        appears in the MLflow UI Images tab.
+
+        Args:
+            df: DataFrame containing per-sample metric values.
+            metrics: List of column names in df to summarize. If None,
+                all numeric columns are used automatically.
+            key: Image key for MLflow Images tab.
+            display: If True, display the table inline in the notebook.
+        """
+        import math
+        import io
+        import matplotlib.pyplot as plt
+        from PIL import Image
+
+        if self.run_id is None:
+            raise RuntimeError("No MLflow run found. Train the model first.")
+
+        if metrics is None:
+            metrics = df.select_dtypes(include='number').columns.tolist()
+
+        summary_data = []
+        for metric in metrics:
+            mean = df[metric].mean()
+            std = df[metric].std()
+            std_str = f'{std:.4f}' if not math.isnan(std) else 'N/A'
+            summary_data.append([metric, f'{mean:.4f}', std_str])
+
+        fig, ax = plt.subplots(figsize=(5, len(metrics) * 0.8 + 0.5))
+        ax.axis('off')
+
+        table = ax.table(
+            cellText=summary_data,
+            colLabels=['Metric', 'Mean', 'Std'],
+            cellLoc='center',
+            loc='center'
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(14)
+        table.scale(1.5, 2.2)
+
+        for col in range(3):
+            table[0, col].set_facecolor('#4472C4')
+            table[0, col].set_text_props(color='white', fontweight='bold')
+
+        fig.tight_layout()
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', dpi=250)
+        buf.seek(0)
+        pil_image = Image.open(buf)
+
+        with mlflow.start_run(run_id=self.run_id):
+            mlflow.log_image(pil_image, key=key)
+
+        buf.close()
+        if display: plt.show()
+        plt.close(fig)
+        print(f"Logged metrics table to MLflow run {self.run_id}")
+
+    def log_dataframe(self, df, artifact_name='validation_results.csv', artifact_path='results'):
+        """Log a DataFrame as a CSV artifact to the MLflow run.
+
+        Args:
+            df: DataFrame to save.
+            artifact_name: Filename for the CSV.
+            artifact_path: Artifact subdirectory in MLflow.
+        """
+        if self.run_id is None:
+            raise RuntimeError("No MLflow run found. Train the model first.")
+
+        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
+            df.to_csv(f, index=False)
+            temp_path = f.name
+
+        with mlflow.start_run(run_id=self.run_id):
+            mlflow.log_artifact(temp_path, artifact_path)
+
+        os.remove(temp_path)
+        print(f"Logged DataFrame ({len(df)} rows) to MLflow run {self.run_id}")
 
 # %% ../nbs/07_utils.ipynb #38avhd96apq
 def create_mlflow_callback(
@@ -667,6 +861,8 @@ class MLflowUIManager:
         self.port = 5001
         self.host = '0.0.0.0'
         self.backend_store_uri = 'sqlite:///mlruns.db'
+        self._owns_process = False
+        self._reusing_external = False
         
     def is_port_available(self, port):
         """Check if a port is available."""
@@ -684,6 +880,18 @@ class MLflowUIManager:
             return response.status_code == 200
         except (requests.RequestException, ConnectionError, OSError):
             return False
+    
+    def _find_running_mlflow(self):
+        """Find an existing MLflow UI in our port range. Returns port or None."""
+        for port in range(self.port, self.port + 10):
+            if not self.is_port_available(port):
+                try:
+                    response = requests.get(f'http://localhost:{port}', timeout=2)
+                    if response.status_code == 200 and 'mlflow' in response.text.lower():
+                        return port
+                except (requests.RequestException, ConnectionError, OSError):
+                    continue
+        return None
     
     def find_available_port(self, start_port=5001):
         """Find an available port starting from start_port."""
@@ -705,11 +913,41 @@ class MLflowUIManager:
                 display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">❌ MLflow not installed. Run: pip install mlflow</div>'))
             return False
         
+        # Check for existing MLflow UI before launching a new one
+        existing_port = self._find_running_mlflow()
+        if existing_port is not None:
+            self.port = existing_port
+            self._owns_process = False
+            self._reusing_external = True
+            if not quiet:
+                display(HTML(f'''
+                    <div style="background-color: #e3f2fd; border: 2px solid #1976d2; padding: 15px; border-radius: 8px; margin: 10px 0;">
+                        <div style="color: #0d47a1; font-weight: bold; font-size: 16px; margin-bottom: 10px;">
+                            Reusing existing MLflow UI on port {self.port}
+                        </div>
+                        <a href="http://localhost:{self.port}" target="_blank" 
+                           style="background-color: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block; margin: 5px 0;">
+                            Open MLflow UI
+                        </a>
+                        <div style="margin-top: 10px;">
+                            <div style="color: #424242; font-size: 13px;">URL: http://localhost:{self.port}</div>
+                        </div>
+                    </div>
+                '''))
+            else:
+                display(HTML(f'''
+                    <a href="http://localhost:{self.port}" target="_blank" 
+                       style="color: #1976d2; font-weight: bold; font-size: 16px; text-decoration: underline;">
+                       MLflow UI (Port {self.port}, reused)
+                    </a>
+                '''))
+            return True
+        
         # Find available port
         available_port = self.find_available_port(self.port)
         if available_port is None:
             if not quiet:
-                display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">❌ No available ports found (5001-5010)</div>'))
+                display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">No available ports found (5001-5010)</div>'))
             return False
         
         self.port = available_port
@@ -726,7 +964,7 @@ class MLflowUIManager:
                 self.process.wait()
             except Exception as e:
                 if not quiet:
-                    display(HTML(f'<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">❌ Error: {str(e)}</div>'))
+                    display(HTML(f'<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">Error: {str(e)}</div>'))
         
         self.thread = threading.Thread(target=run_mlflow, daemon=True)
         self.thread.start()
@@ -736,12 +974,14 @@ class MLflowUIManager:
         for i in range(max_wait):
             time.sleep(1)
             if self.is_mlflow_running():
+                self._owns_process = True
+                self._reusing_external = False
                 if quiet:
                     # Bright, visible link for quiet mode
                     display(HTML(f'''
                         <a href="http://localhost:{self.port}" target="_blank" 
                            style="color: #1976d2; font-weight: bold; font-size: 16px; text-decoration: underline;">
-                           🔗 MLflow UI (Port {self.port})
+                           MLflow UI (Port {self.port})
                         </a>
                     '''))
                 else:
@@ -749,11 +989,11 @@ class MLflowUIManager:
                     display(HTML(f'''
                         <div style="background-color: #c8e6c9; border: 2px solid #388e3c; padding: 15px; border-radius: 8px; margin: 10px 0;">
                             <div style="color: #1b5e20; font-weight: bold; font-size: 16px; margin-bottom: 10px;">
-                                ✅ MLflow UI is running successfully!
+                                MLflow UI is running successfully!
                             </div>
                             <a href="http://localhost:{self.port}" target="_blank" 
                                style="background-color: #1976d2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 14px; display: inline-block; margin: 5px 0;">
-                                🔗 Open MLflow UI
+                                Open MLflow UI
                             </a>
                             <div style="margin-top: 10px;">
                                 <div style="color: #424242; font-size: 13px;">URL: http://localhost:{self.port}</div>
@@ -764,23 +1004,31 @@ class MLflowUIManager:
         
         # If we get here, server didn't start properly
         if not quiet:
-            display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">❌ Failed to start MLflow UI</div>'))
+            display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">Failed to start MLflow UI</div>'))
         return False
     
     def stop(self):
         """Stop the MLflow UI server."""
-        if self.process:
+        if self.process and self._owns_process:
             self.process.terminate()
             self.process = None
+            self._owns_process = False
             display(HTML('''
                 <div style="background-color: #ffecb3; border: 2px solid #f57c00; padding: 10px; border-radius: 6px;">
-                    <span style="color: #e65100; font-weight: bold; font-size: 14px;">🛑 MLflow UI stopped</span>
+                    <span style="color: #e65100; font-weight: bold; font-size: 14px;">MLflow UI stopped</span>
+                </div>
+            '''))
+        elif self._reusing_external:
+            self._reusing_external = False
+            display(HTML('''
+                <div style="background-color: #e3f2fd; border: 2px solid #1976d2; padding: 10px; border-radius: 6px;">
+                    <span style="color: #0d47a1; font-weight: bold; font-size: 14px;">MLflow UI was started externally — not stopping it</span>
                 </div>
             '''))
         else:
             display(HTML('''
                 <div style="background-color: #f0f0f0; border: 2px solid #757575; padding: 10px; border-radius: 6px;">
-                    <span style="color: #424242; font-weight: bold; font-size: 14px;">ℹ️ MLflow UI is not currently running</span>
+                    <span style="color: #424242; font-weight: bold; font-size: 14px;">MLflow UI is not currently running</span>
                 </div>
             '''))
     
@@ -789,7 +1037,7 @@ class MLflowUIManager:
         if self.is_mlflow_running():
             display(HTML(f'''
                 <div style="background-color: #c8e6c9; border: 2px solid #388e3c; padding: 10px; border-radius: 6px;">
-                    <div style="color: #1b5e20; font-weight: bold; font-size: 14px;">✅ MLflow UI is running</div>
+                    <div style="color: #1b5e20; font-weight: bold; font-size: 14px;">MLflow UI is running</div>
                     <a href="http://localhost:{self.port}" target="_blank" 
                        style="color: #1976d2; font-weight: bold; text-decoration: underline;">
                        http://localhost:{self.port}
@@ -799,7 +1047,7 @@ class MLflowUIManager:
         else:
             display(HTML('''
                 <div style="background-color: #ffcdd2; border: 2px solid #d32f2f; padding: 10px; border-radius: 6px;">
-                    <div style="color: #b71c1c; font-weight: bold; font-size: 14px;">❌ MLflow UI is not running</div>
+                    <div style="color: #b71c1c; font-weight: bold; font-size: 14px;">MLflow UI is not running</div>
                     <div style="color: #424242; font-size: 13px; margin-top: 5px;">
                         Run <code style="background-color: #f5f5f5; padding: 2px 4px; border-radius: 3px;">mlflow_ui.start_ui()</code> to start it.
                     </div>
