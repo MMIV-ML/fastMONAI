@@ -209,7 +209,8 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
         cls.target_spacing = target_spacing
         cls.apply_reorder = apply_reorder
 
-    def show(self, ctx=None, channel: int = 0, slice_index: int = None, anatomical_plane: int = 0, **kwargs):
+    def show(self, ctx=None, channel: int = 0, slice_index: int = None,
+             anatomical_plane: int = 0, voxel_size=None, **kwargs):
         """
         Displays the Medimage using `merge(self._show_args, kwargs)`.
 
@@ -222,15 +223,19 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
                 Index of the images to be displayed. Defaults to None.
             anatomical_plane : int, optional
                 Anatomical plane of the image to be displayed. Defaults to 0.
+            voxel_size : list or None, optional
+                Voxel size for aspect ratio calculation. Overrides
+                class-level target_spacing when provided. Defaults to None.
             kwargs : dict, optional
                 Additional parameters for the show function.
 
         Returns:
             Shown image.
         """
+        _voxel_size = voxel_size if voxel_size is not None else self.target_spacing
         return show_med_img(
             self, ctx=ctx, channel=channel, slice_index=slice_index, 
-            anatomical_plane=anatomical_plane, voxel_size=self.target_spacing,  
+            anatomical_plane=anatomical_plane, voxel_size=_voxel_size,  
             **merge(self._show_args, kwargs)
         )
 
