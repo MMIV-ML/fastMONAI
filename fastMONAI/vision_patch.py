@@ -734,6 +734,8 @@ class MedPatchDataLoaders:
         instance._target_spacing = _target_spacing
         instance._ensure_affine_consistency = ensure_affine_consistency
         instance._patch_config = patch_config
+        instance._train_source_df = train_df
+        instance._valid_source_df = valid_df
         return instance
 
     @property
@@ -780,6 +782,13 @@ class MedPatchDataLoaders:
     def patch_config(self):
         """The PatchConfig used for this DataLoaders."""
         return getattr(self, '_patch_config', None)
+
+    @property
+    def split_df(self):
+        """DataFrame recording train/valid split for reproducibility logging."""
+        train = self._train_source_df.assign(is_valid=False)
+        valid = self._valid_source_df.assign(is_valid=True)
+        return pd.concat([train, valid], ignore_index=True)
 
     def to(self, device):
         """Move DataLoaders to device."""
@@ -868,14 +877,15 @@ class MedPatchDataLoaders:
             imgs.extend(im_channels)
             slice_idxs.extend([idx] * len(im_channels))
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', message='Voxel size not defined')
-            ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane)
-                    for im, ax, idx in zip(imgs, flat_axs, slice_idxs)]
+        voxel_size = self.target_spacing
+        ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane,
+                        voxel_size=voxel_size)
+                for im, ax, idx in zip(imgs, flat_axs, slice_idxs)]
 
-            if overlay and has_mask:
-                for mask, ax, idx in zip(masks_for_overlay, flat_axs, slice_idxs):
-                    mask.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane)
+        if overlay and has_mask:
+            for mask, ax, idx in zip(masks_for_overlay, flat_axs, slice_idxs):
+                mask.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane,
+                          voxel_size=voxel_size)
 
         plt.tight_layout()
         plt.show()
@@ -926,7 +936,6 @@ class MedPatchDataLoaders:
             self.close()
         except Exception:
             pass
-
 
 # %% ../nbs/10_vision_patch.ipynb #cell-17
 import numbers
@@ -1007,7 +1016,7 @@ class PatchInferenceEngine:
         
         >>> # Option 2: From raw PyTorch model (recommended for deployment)
         >>> model = UNet(spatial_dims=3, in_channels=1, out_channels=2, ...)
-        >>> model.load_state_dict(torch.load('weights.pth'))
+        >>> model.load_state_dict(torch.load('final_weights.pth'))
         >>> model.cuda().eval()
         >>> engine = PatchInferenceEngine(model, config, pre_inference_tfms=[ZNormalization()])
         >>> pred = engine.predict('image.nii.gz')

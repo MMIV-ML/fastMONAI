@@ -10,13 +10,14 @@ import torch
 from pathlib import Path
 import mlflow
 import mlflow.pytorch
-import mlflow.data
-mlflow.set_tracking_uri("sqlite:///mlruns.db")
+try:
+    _mlruns_db = Path(__file__).resolve().parent.parent / 'mlruns.db'
+except NameError:
+    _mlruns_db = Path('mlruns.db').resolve()
+mlflow.set_tracking_uri(f"sqlite:///{_mlruns_db}")
 import os
 import tempfile
 import json
-import warnings
-import pandas as pd
 from datetime import datetime
 from fastai.callback.core import Callback
 from fastcore.foundation import L
@@ -272,73 +273,6 @@ def _extract_model_name(learn) -> str:
     model = learn.model
     return model._get_name() if hasattr(model, '_get_name') else model.__class__.__name__
 
-
-def _extract_standard_dataset_dfs(dls):
-    """Extract train/valid DataFrames from standard MedImageDataLoaders.
-    
-    For standard DataLoaders created via MedImageDataLoaders.from_df(),
-    the items attribute contains the original DataFrame split by train/valid.
-    
-    Args:
-        dls: Standard fastai DataLoaders (MedImageDataLoaders)
-        
-    Returns:
-        Tuple of (train_df, valid_df). Either can be None if items
-        are not DataFrames (e.g., manually constructed DataLoaders).
-    """
-    train_df = None
-    valid_df = None
-    
-    train_items = getattr(getattr(dls, 'train_ds', None), 'items', None)
-    valid_items = getattr(getattr(dls, 'valid_ds', None), 'items', None)
-    
-    if isinstance(train_items, pd.DataFrame):
-        train_df = train_items
-    if isinstance(valid_items, pd.DataFrame):
-        valid_df = valid_items
-    
-    return train_df, valid_df
-
-
-def _extract_patch_dataset_dfs(dls):
-    """Extract train/valid DataFrames from MedPatchDataLoaders.
-    
-    Reconstructs DataFrames from TorchIO SubjectsDataset by extracting
-    file paths from each Subject's image and (optionally) mask.
-    Uses _subjects directly to avoid triggering data loading.
-    
-    Args:
-        dls: MedPatchDataLoaders instance
-        
-    Returns:
-        Tuple of (train_df, valid_df). Either can be None if extraction fails.
-    """
-    img_col = getattr(dls, '_img_col', 'image')
-    mask_col = getattr(dls, '_mask_col', None)
-    
-    def _subjects_to_df(subjects_dataset):
-        subjects = getattr(subjects_dataset, '_subjects', None)
-        if subjects is None:
-            return None
-        rows = []
-        for s in subjects:
-            row = {}
-            img = s.get('image')
-            if img is not None and getattr(img, 'path', None) is not None:
-                row[img_col] = str(img.path)
-            if mask_col is not None:
-                mask = s.get('mask')
-                if mask is not None and getattr(mask, 'path', None) is not None:
-                    row[mask_col] = str(mask.path)
-            if row:
-                rows.append(row)
-        return pd.DataFrame(rows) if rows else None
-    
-    train_df = _subjects_to_df(dls.train_ds)
-    valid_df = _subjects_to_df(dls.valid_ds)
-    
-    return train_df, valid_df
-
 # %% ../nbs/07_utils.ipynb #030876d2
 class ModelTrackingCallback(Callback):
     """
@@ -364,7 +298,9 @@ class ModelTrackingCallback(Callback):
         auto_start: bool = False,
         patch_config: dict = None,
         extra_params: dict = None,
-        extra_tags: dict = None
+        extra_tags: dict = None,
+        dataset_version: str = None,
+        log_split: bool = True
     ):
         """
         Initialize the MLflow tracking callback.
@@ -382,6 +318,8 @@ class ModelTrackingCallback(Callback):
             patch_config: Patch configuration dict for logging (from MedPatchDataLoaders)
             extra_params: Additional parameters to log
             extra_tags: MLflow tags to set on the run
+            dataset_version: Dataset version hash string for tracking
+            log_split: If True, auto-logs train/val split CSV when dls has split_df
         """
         self.model_name = model_name
         self.loss_function = loss_function
@@ -397,6 +335,8 @@ class ModelTrackingCallback(Callback):
         self.patch_config = patch_config
         self.extra_params = extra_params or {}
         self.extra_tags = extra_tags or {}
+        self.dataset_version = dataset_version
+        self.log_split = log_split
         self._auto_started = False
         self.run_id = None
         
@@ -473,42 +413,6 @@ class ModelTrackingCallback(Callback):
         
         return params
     
-    def _log_datasets(self) -> None:
-        """Log train/valid datasets to MLflow's Datasets tab.
-        
-        Uses mlflow.data.from_pandas() and mlflow.log_input() to register
-        dataset metadata so they appear in the MLflow UI Datasets tab.
-        Failures are silently caught to never break training.
-        """
-        try:
-            dls = self.learn.dls
-            is_patch = _detect_patch_workflow(dls)
-            
-            if is_patch:
-                train_df, valid_df = _extract_patch_dataset_dfs(dls)
-            else:
-                train_df, valid_df = _extract_standard_dataset_dfs(dls)
-            
-            source = self.experiment_name or self.model_name or "fastMONAI"
-            
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                
-                if train_df is not None and not train_df.empty:
-                    train_dataset = mlflow.data.from_pandas(
-                        train_df, source=source, name="train"
-                    )
-                    mlflow.log_input(train_dataset, context="training")
-                
-                if valid_df is not None and not valid_df.empty:
-                    valid_dataset = mlflow.data.from_pandas(
-                        valid_df, source=source, name="validation"
-                    )
-                    mlflow.log_input(valid_dataset, context="validation")
-                    
-        except Exception:
-            pass  # Dataset logging must never break training
-    
     def _extract_epoch_metrics(self) -> dict[str, float]:
         """Extract metrics from the current epoch."""
         recorder = self.learn.recorder
@@ -549,46 +453,55 @@ class ModelTrackingCallback(Callback):
     
     def _save_model_artifacts(self, temp_dir: Path) -> None:
         """Save model weights, learner, and configuration as artifacts."""
-        weights_path = temp_dir / "weights"
+        import shutil
+
+        # Save final epoch weights
+        weights_path = temp_dir / "final_weights"
         self.learn.save(str(weights_path))
-        
         weights_file = f"{weights_path}.pth"
         if os.path.exists(weights_file):
             mlflow.log_artifact(weights_file, "model")
-        
-        # Auto-detect SaveModelCallback and log best model
+
+        # Auto-detect SaveModelCallback and log best model weights
         from fastai.callback.tracker import SaveModelCallback
         best_model_cb = None
         for cb in self.learn.cbs:
             if isinstance(cb, SaveModelCallback):
-                best_model_path = self.learn.path/self.learn.model_dir/f'{cb.fname}.pth'
+                best_model_path = self.learn.path / self.learn.model_dir / f'{cb.fname}.pth'
                 if best_model_path.exists():
-                    mlflow.log_artifact(str(best_model_path), "model")
-                    print(f"Logged best model artifact: {cb.fname}.pth")
+                    best_weights_dest = temp_dir / "best_weights.pth"
+                    shutil.copy2(str(best_model_path), str(best_weights_dest))
+                    mlflow.log_artifact(str(best_weights_dest), "model")
+                    print(f"Logged best model weights: best_weights.pth")
                     best_model_cb = cb
                 break
 
-        # Load best model weights before export if SaveModelCallback was used
+        # Remove ModelTrackingCallback before exporting learners
+        original_cbs = self.learn.cbs.copy()
+        filtered_cbs = L([cb for cb in self.learn.cbs
+                          if not isinstance(cb, ModelTrackingCallback)])
+        self.learn.cbs = filtered_cbs
+
+        # Export final epoch learner (before loading best weights)
+        final_learner_path = temp_dir / "final_learner.pkl"
+        self.learn.export(str(final_learner_path))
+        mlflow.log_artifact(str(final_learner_path), "model")
+        print("Logged final epoch learner: final_learner.pkl")
+
+        # If best model exists, load best weights and export best learner
         if best_model_cb is not None:
             self.learn.load(best_model_cb.fname)
-            print(f"Loaded best model weights ({best_model_cb.fname}) for learner export")
+            print(f"Loaded best model weights ({best_model_cb.fname}) for best learner export")
 
-        # Remove MLflow callbacks before exporting learner for inference
-        # This prevents the callback from being triggered during inference
-        original_cbs = self.learn.cbs.copy()  # Save original callbacks
-        
-        # Remove ModelTrackingCallback instances from learner using proper collection type
-        filtered_cbs = L([cb for cb in self.learn.cbs if not isinstance(cb, ModelTrackingCallback)])
-        self.learn.cbs = filtered_cbs
-        
-        # Export clean learner without MLflow callbacks
-        learner_path = temp_dir / "learner.pkl"
-        self.learn.export(str(learner_path))
-        mlflow.log_artifact(str(learner_path), "model")
-        
-        # Restore original callbacks for current session
+            best_learner_path = temp_dir / "best_learner.pkl"
+            self.learn.export(str(best_learner_path))
+            mlflow.log_artifact(str(best_learner_path), "model")
+            print("Logged best epoch learner: best_learner.pkl")
+
+        # Restore original callbacks
         self.learn.cbs = original_cbs
-        
+
+        # Save inference config
         config_path = temp_dir / "inference_settings.pkl"
         store_variables(config_path, self.size, self.apply_reorder, self.target_spacing)
         mlflow.log_artifact(str(config_path), "config")
@@ -599,7 +512,29 @@ class ModelTrackingCallback(Callback):
             pytorch_model=self.learn.model,
             registered_model_name=self.model_name
         )
-    
+
+    def _log_split_df(self) -> None:
+        """Log train/validation split as CSV artifact if available."""
+        dls = self.learn.dls
+        if not hasattr(dls, 'split_df'):
+            return
+        try:
+            split_df = dls.split_df
+            cols = []
+            img_col = getattr(dls, '_img_col', None)
+            mask_col = getattr(dls, '_mask_col', None)
+            if img_col and img_col in split_df.columns:
+                cols.append(img_col)
+            if mask_col and mask_col in split_df.columns:
+                cols.append(mask_col)
+            cols.append('is_valid')
+            split_df = split_df[cols]
+
+            mlflow.log_text(split_df.to_csv(index=False), "data/train_val_split.csv")
+            print(f"Logged train/val split ({len(split_df)} rows) to MLflow artifacts")
+        except Exception as e:
+            print(f"Warning: Could not log train/val split: {e}")
+
     def before_fit(self) -> None:
         """Log hyperparameters before training starts. Auto-start run if configured."""
         # Auto-start run if requested
@@ -610,6 +545,10 @@ class ModelTrackingCallback(Callback):
             mlflow.start_run(run_name=self.run_name)
             self._auto_started = True
         
+        # Log dataset version tag if provided
+        if self.dataset_version is not None:
+            mlflow.set_tag("dataset_version", self.dataset_version)
+        
         # Set tags
         if self.extra_tags:
             mlflow.set_tags(self.extra_tags)
@@ -618,9 +557,10 @@ class ModelTrackingCallback(Callback):
         params = self._extract_training_params()
         params.update(self.extra_params)
         mlflow.log_params(params)
-        
-        # Log datasets
-        self._log_datasets()
+
+        # Log train/val split
+        if self.log_split:
+            self._log_split_df()
     
     def after_epoch(self) -> None:
         """Log metrics after each epoch."""
@@ -763,6 +703,8 @@ def create_mlflow_callback(
     model_name: str = None,
     extra_params: dict = None,
     extra_tags: dict = None,
+    dataset_version: str = None,
+    log_split: bool = True,
 ) -> ModelTrackingCallback:
     """Create MLflow tracking callback with auto-extracted configuration.
     
@@ -783,6 +725,8 @@ def create_mlflow_callback(
         model_name: Override auto-extracted model name for registration.
         extra_params: Additional parameters to log (e.g., {'dropout': 0.5}).
         extra_tags: MLflow tags to set on the run.
+        dataset_version: Dataset version hash string for tracking.
+        log_split: If True, auto-logs train/val split CSV when dls has split_df.
     
     Returns:
         ModelTrackingCallback ready to use with learn.fit()
@@ -840,6 +784,8 @@ def create_mlflow_callback(
         patch_config=config['patch_config'],
         extra_params=extra_params,
         extra_tags=extra_tags,
+        dataset_version=dataset_version,
+        log_split=log_split,
     )
 
 # %% ../nbs/07_utils.ipynb #a3d2d585
@@ -860,7 +806,7 @@ class MLflowUIManager:
         self.thread = None
         self.port = 5001
         self.host = '0.0.0.0'
-        self.backend_store_uri = 'sqlite:///mlruns.db'
+        self.backend_store_uri = f'sqlite:///{_mlruns_db}'
         self._owns_process = False
         self._reusing_external = False
         
