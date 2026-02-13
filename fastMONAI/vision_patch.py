@@ -990,6 +990,45 @@ def _normalize_patch_overlap(patch_overlap, patch_size):
     return tuple(result)
 
 
+# nnU-Net-style mirror TTA: all 2^3 = 8 flip combinations for 3D.
+# Batch tensor shape: [B, C, D, H, W], spatial dims are 2, 3, 4.
+_TTA_FLIP_AXES = (
+    (),         # original
+    (4,),       # flip LR (W)
+    (3,),       # flip AP (H)
+    (2,),       # flip IS (D)
+    (3, 4),     # flip LR+AP
+    (2, 4),     # flip LR+IS
+    (2, 3),     # flip AP+IS
+    (2, 3, 4),  # flip all
+)
+
+
+def _predict_patch_tta(model, patch_input):
+    """nnU-Net-style mirror TTA: average probabilities over 8 flip combinations.
+
+    Runs 8 forward passes with a running sum for memory efficiency (2x memory,
+    not 9x). Each pass: flip input -> forward -> activate -> flip back -> accumulate.
+
+    Args:
+        model: PyTorch model in eval mode (already on device).
+        patch_input: Batch tensor [B, C, D, H, W] already on device.
+
+    Returns:
+        Averaged probability tensor [B, C, D, H, W] on CPU.
+    """
+    summed_probs = None
+    for axes in _TTA_FLIP_AXES:
+        flipped = torch.flip(patch_input, list(axes)) if axes else patch_input
+        logits = model(flipped)
+        n_classes = logits.shape[1]
+        probs = torch.sigmoid(logits) if n_classes == 1 else torch.softmax(logits, dim=1)
+        if axes:
+            probs = torch.flip(probs, list(axes))
+        summed_probs = probs if summed_probs is None else summed_probs + probs
+    return (summed_probs / len(_TTA_FLIP_AXES)).cpu()
+
+
 class PatchInferenceEngine:
     """Patch-based inference with automatic volume reconstruction.
     
@@ -1067,7 +1106,8 @@ class PatchInferenceEngine:
         self,
         img_path: Path | str,
         return_probabilities: bool = False,
-        return_affine: bool = False
+        return_affine: bool = False,
+        tta: bool = False
     ) -> torch.Tensor | tuple[torch.Tensor, np.ndarray]:
         """Predict on a single volume using patch-based inference.
 
@@ -1075,6 +1115,10 @@ class PatchInferenceEngine:
             img_path: Path to input image.
             return_probabilities: If True, return probability map instead of argmax.
             return_affine: If True, return (prediction, affine) tuple instead of just prediction.
+            tta: If True, apply nnU-Net-style mirror test-time augmentation
+                (8 flip combinations, averaged probabilities). Requires ~8x inference
+                time but improves prediction quality. Works best when training used
+                RandomFlip(axes='LRAPIS', p=0.5). Defaults to False.
 
         Returns:
             Predicted segmentation mask tensor, or tuple (prediction, affine) if return_affine=True.
@@ -1141,20 +1185,25 @@ class PatchInferenceEngine:
                 patch_input = patches_batch['image'][tio.DATA].to(self._device)
                 locations = patches_batch[tio.LOCATION]
 
-                # Forward pass - get logits
-                logits = self.model(patch_input)
-
-                # Convert logits to probabilities BEFORE aggregation
-                # This is critical: softmax is non-linear, so we must aggregate
-                # probabilities, not logits, to get correct boundary handling
-                n_classes = logits.shape[1]
-                if n_classes == 1:
-                    probs = torch.sigmoid(logits)
+                if tta:
+                    probs = _predict_patch_tta(self.model, patch_input)
                 else:
-                    probs = torch.softmax(logits, dim=1)  # dim=1 for batch [B, C, H, W, D]
+                    # Forward pass - get logits
+                    logits = self.model(patch_input)
+
+                    # Convert logits to probabilities BEFORE aggregation
+                    # This is critical: softmax is non-linear, so we must aggregate
+                    # probabilities, not logits, to get correct boundary handling
+                    n_classes = logits.shape[1]
+                    if n_classes == 1:
+                        probs = torch.sigmoid(logits)
+                    else:
+                        probs = torch.softmax(logits, dim=1)  # dim=1 for batch [B, C, H, W, D]
+
+                    probs = probs.cpu()
 
                 # Add probabilities to aggregator
-                aggregator.add_batch(probs.cpu(), locations)
+                aggregator.add_batch(probs, locations)
 
         # Get reconstructed output (now contains probabilities, not logits)
         output = aggregator.get_output_tensor()
@@ -1233,7 +1282,8 @@ def patch_inference(
     return_probabilities: bool = False,
     progress: bool = True,
     save_dir: str = None,
-    pre_inference_tfms: list = None
+    pre_inference_tfms: list = None,
+    tta: bool = False
 ) -> list:
     """Batch patch-based inference on multiple volumes.
     
@@ -1250,6 +1300,7 @@ def patch_inference(
         save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.
         pre_inference_tfms: List of TorchIO transforms to apply before patch extraction.
             IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
+        tta: If True, apply nnU-Net-style mirror TTA (8 flip combinations).
     
     Returns:
         List of predicted tensors.
@@ -1282,14 +1333,15 @@ def patch_inference(
         save_path.mkdir(parents=True, exist_ok=True)
     
     predictions = []
-    iterator = tqdm(file_paths, desc='Patch inference') if progress else file_paths
+    desc = 'Patch inference (TTA)' if tta else 'Patch inference'
+    iterator = tqdm(file_paths, desc=desc) if progress else file_paths
     
     for path in iterator:
         # Get prediction and affine when saving is needed
         if save_dir is not None:
-            pred, affine = engine.predict(path, return_probabilities, return_affine=True)
+            pred, affine = engine.predict(path, return_probabilities, return_affine=True, tta=tta)
         else:
-            pred = engine.predict(path, return_probabilities)
+            pred = engine.predict(path, return_probabilities, tta=tta)
         predictions.append(pred)
         
         # Save prediction if save_dir specified

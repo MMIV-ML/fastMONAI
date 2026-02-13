@@ -3,8 +3,8 @@
 # %% auto #0
 __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization', 'RescaleIntensity', 'NormalizeIntensity',
            'BraTSMaskConverter', 'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField',
-           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomCutout',
-           'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf']
+           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomAnisotropy', 'RandomCutout',
+           'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf', 'suggest_patch_augmentations']
 
 # %% ../nbs/03_vision_augment.ipynb #2d6694aa
 from fastai.data.all import *
@@ -480,6 +480,30 @@ class RandomMotion(DisplayedTransform):
     def encodes(self, o: MedMask):
         return o
 
+# %% ../nbs/03_vision_augment.ipynb #cl3ei8hm3z9
+class RandomAnisotropy(DisplayedTransform):
+    '''Apply TorchIO `RandomAnisotropy`.'''
+
+    split_idx, order = 0, 1
+
+    def __init__(self, axes=(0, 1, 2), downsampling=(1.5, 5),
+                 image_interpolation='linear', scalars_only=True, p=0.5):
+        self.add_anisotropy = tio.RandomAnisotropy(
+            axes=axes, downsampling=downsampling,
+            image_interpolation=image_interpolation,
+            scalars_only=scalars_only, p=p)
+
+    @property
+    def tio_transform(self):
+        """Return the underlying TorchIO transform."""
+        return self.add_anisotropy
+
+    def encodes(self, o: MedImage):
+        return MedImage.create(self.add_anisotropy(o))
+
+    def encodes(self, o: MedMask):
+        return o
+
 # %% ../nbs/03_vision_augment.ipynb #e7ea6486
 def _create_ellipsoid_mask(shape, center, radii):
     """Create a 3D ellipsoid mask.
@@ -750,7 +774,7 @@ class RandomAffine(CustomDictTransform):
 class RandomFlip(CustomDictTransform):
     """Apply TorchIO `RandomFlip`."""
 
-    def __init__(self, axes='LR', p=0.5):
+    def __init__(self, axes='LRAPIS', p=0.5):
         super().__init__(tio.RandomFlip(axes=axes, flip_probability=p))
 
 # %% ../nbs/03_vision_augment.ipynb #ddd7b99b
@@ -759,3 +783,74 @@ class OneOf(CustomDictTransform):
 
     def __init__(self, transform_dict, p=1):
         super().__init__(tio.OneOf(transform_dict, p=p))
+
+# %% ../nbs/03_vision_augment.ipynb #t6hak044rc
+def suggest_patch_augmentations(patch_size, target_spacing,
+                                anisotropy_threshold=3.0,
+                                translation_fraction=0.15):
+    """Suggest patch-based augmentations with nnU-Net-inspired defaults.
+
+    Derives rotation degrees, translation, and RandomAnisotropy axes from
+    patch geometry and voxel spacing. Returns a list of fastMONAI transform
+    instances ready for the ``patch_tfms`` parameter in MedPatchDataLoaders.
+
+    Anisotropy detection: if max(spacing)/min(spacing) >= threshold, rotation
+    is restricted to 5 deg out-of-plane and 30 deg in-plane. Otherwise 30 deg
+    symmetric. Translation is patch_size * fraction per axis.
+
+    Args:
+        patch_size: List/tuple of 3 ints -- patch dimensions.
+        target_spacing: List/tuple of 3 floats -- voxel spacing.
+        anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0).
+        translation_fraction: Fraction of patch_size for translation (default 0.15).
+
+    Returns:
+        list: fastMONAI transform instances (7 normally, 6 if RandomAnisotropy omitted).
+
+    Example::
+
+        >>> patch_tfms = suggest_patch_augmentations([128, 128, 32], [0.5, 0.5, 1.5])
+        >>> dls = MedPatchDataLoaders.from_config(..., patch_tfms=patch_tfms)
+    """
+    if len(patch_size) != 3:
+        raise ValueError(f"patch_size must have 3 elements, got {len(patch_size)}")
+    if len(target_spacing) != 3:
+        raise ValueError(f"target_spacing must have 3 elements, got {len(target_spacing)}")
+
+    # Determine anisotropy
+    spacing = list(target_spacing)
+    ratio = max(spacing) / min(spacing)
+    is_aniso = ratio >= anisotropy_threshold
+    aniso_axis = spacing.index(max(spacing)) if is_aniso else None
+
+    # Rotation degrees
+    if is_aniso:
+        degrees = [5, 5, 5]
+        degrees[aniso_axis] = 30
+        degrees = tuple(degrees)
+    else:
+        degrees = 30
+
+    # Translation
+    translation = tuple(round(p * translation_fraction) for p in patch_size)
+
+    # RandomAnisotropy axes: all axes where patch_size > 1
+    aniso_axes = tuple(i for i in range(3) if patch_size[i] > 1)
+
+    transforms = [
+        RandomAffine(scales=(0.7, 1.4), degrees=degrees, translation=translation,
+                     default_pad_value=0., p=0.2),
+    ]
+
+    if len(aniso_axes) > 0:
+        transforms.append(RandomAnisotropy(axes=aniso_axes, downsampling=(1.5, 4), p=0.25))
+
+    transforms.extend([
+        RandomGamma(log_gamma=(-0.3, 0.3), p=0.3),
+        RandomIntensityScale(scale_range=(0.75, 1.25), p=0.1),
+        RandomNoise(std=0.1, p=0.1),
+        RandomBlur(std=(0.5, 1.0), p=0.2),
+        RandomFlip(p=0.5),
+    ])
+
+    return transforms
