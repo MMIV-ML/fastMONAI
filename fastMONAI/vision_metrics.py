@@ -5,7 +5,7 @@ __all__ = ['calculate_dsc', 'calculate_haus', 'binary_dice_score', 'multi_dice_s
            'multi_hausdorff_distance', 'calculate_confusion_metrics', 'binary_sensitivity', 'multi_sensitivity',
            'binary_precision', 'multi_precision', 'calculate_lesion_detection_rate', 'binary_lesion_detection_rate',
            'multi_lesion_detection_rate', 'calculate_signed_rve', 'binary_signed_rve', 'multi_signed_rve',
-           'AccumulatedDice', 'AccumulatedMultiDice']
+           'AccumulatedDice', 'AccumulatedMultiDice', 'EMACheckpoint']
 
 # %% ../nbs/05_vision_metrics.ipynb #8b6a83ac
 import torch
@@ -14,6 +14,7 @@ from monai.metrics import compute_hausdorff_distance, compute_dice, get_confusio
 from scipy.ndimage import label as scipy_label
 from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
 from fastai.learner import Metric
+from fastai.callback.tracker import TrackerCallback
 
 # %% ../nbs/05_vision_metrics.ipynb #5c16dc6c-e07a-44b5-85af-79bd6c4ce390
 def calculate_dsc(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
@@ -499,3 +500,67 @@ class AccumulatedMultiDice(AccumulatedDice):
     @property
     def name(self):
         return 'accumulated_multi_dice'
+
+# %% ../nbs/05_vision_metrics.ipynb #mwwwrlj5sm
+class EMACheckpoint(TrackerCallback):
+    """Save model checkpoint based on EMA of a monitored metric (nnU-Net style).
+
+    Instead of saving the best model based on a single (noisy) epoch metric,
+    this tracks the exponential moving average and saves when the EMA improves.
+    More robust for patch-based training where per-epoch metrics fluctuate.
+
+    Formula: ema = momentum * previous_ema + (1 - momentum) * current_value
+
+    Unlike SaveModelCallback, this does NOT auto-load the best model after
+    training. Load explicitly with ``learn.load(fname)``.
+
+    Args:
+        monitor: Metric name to track (default: 'accumulated_dice').
+        momentum: EMA momentum (default: 0.9, matching nnU-Net).
+            Higher momentum = more smoothing. Range: (0, 1).
+            nnU-Net uses 0.9 (keeps 90% of history, adds 10% of current epoch).
+        comp: Comparison function (default: np.greater for higher-is-better).
+        fname: Model save filename (default: 'best_model').
+        with_opt: Whether to save optimizer state (default: False).
+
+    Example:
+        ```python
+        save_best = EMACheckpoint(
+            monitor='accumulated_dice',
+            momentum=0.9,
+            fname='best_model'
+        )
+        learn.fit_one_cycle(30, lr, cbs=[save_best])
+
+        # Load best model after training:
+        learn.load('best_model')
+
+        # Access EMA history for plotting:
+        save_best.ema_history
+        ```
+    """
+    order = 60  # Same priority as SaveModelCallback
+
+    def __init__(self, monitor='accumulated_dice', momentum=0.9, comp=np.greater,
+                 fname='best_model', with_opt=False):
+        super().__init__(monitor=monitor, comp=comp)
+        self.fname = fname
+        self.with_opt = with_opt
+        self.momentum = momentum
+
+    def before_fit(self):
+        super().before_fit()  # Sets self.idx, self.best via TrackerCallback
+        self.ema_value = None
+        self.ema_history = []
+
+    def after_epoch(self):
+        val = self.recorder.values[-1][self.idx]
+        if isinstance(val, torch.Tensor): val = val.item()
+
+        self.ema_value = val if self.ema_value is None else (
+            self.momentum * self.ema_value + (1 - self.momentum) * val)
+        self.ema_history.append(self.ema_value)
+
+        if self.comp(self.ema_value, self.best):
+            self.best = self.ema_value
+            self.learn.save(self.fname, with_opt=self.with_opt)

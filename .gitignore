@@ -170,6 +170,7 @@ _proc/
 
 # MLflow
 mlruns/
+mlruns.db
 
 # Reports
 reports/
