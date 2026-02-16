@@ -91,6 +91,11 @@ class PadOrCrop(DisplayedTransform):
     def encodes(self, o: (MedImage, MedMask)):
         return type(o)(self.pad_or_crop(o))
 
+# %% ../nbs/03_vision_augment.ipynb #534509q2nn
+def _foreground_masking(tensor):
+    """Mask for non-zero voxels (nnU-Net-style foreground normalization)."""
+    return tensor > 0
+
 # %% ../nbs/03_vision_augment.ipynb #ca95a690
 class ZNormalization(DisplayedTransform):
     """Apply TorchIO `ZNormalization`."""
@@ -98,6 +103,8 @@ class ZNormalization(DisplayedTransform):
     order = 0
 
     def __init__(self, masking_method=None, channel_wise=True):
+        if masking_method == 'foreground':
+            masking_method = _foreground_masking
         self.z_normalization = tio.ZNormalization(masking_method=masking_method)
         self.channel_wise = channel_wise
 
