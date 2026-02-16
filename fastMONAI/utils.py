@@ -279,8 +279,9 @@ class ModelTrackingCallback(Callback):
     A FastAI callback for comprehensive MLflow experiment tracking.
     
     This callback automatically logs hyperparameters, metrics, model artifacts,
-    and configuration to MLflow during training. If a SaveModelCallback is present,
-    the best model checkpoint will also be logged as an artifact.
+    and configuration to MLflow during training. If a checkpoint callback
+    (SaveModelCallback, EMACheckpoint, or any TrackerCallback with fname) is
+    present, the best model checkpoint will also be logged as an artifact.
     
     Supports auto-managed runs when created via `create_mlflow_callback()`.
     """
@@ -455,18 +456,18 @@ class ModelTrackingCallback(Callback):
         """Save model weights, learner, and configuration as artifacts."""
         import shutil
 
-        # Save final epoch weights
+        # Save final epoch weights (without optimizer state to reduce file size)
         weights_path = temp_dir / "final_weights"
-        self.learn.save(str(weights_path))
+        self.learn.save(str(weights_path), with_opt=False)
         weights_file = f"{weights_path}.pth"
         if os.path.exists(weights_file):
             mlflow.log_artifact(weights_file, "model")
 
-        # Auto-detect SaveModelCallback and log best model weights
-        from fastai.callback.tracker import SaveModelCallback
+        # Auto-detect checkpoint callback (SaveModelCallback, EMACheckpoint, etc.)
+        from fastai.callback.tracker import TrackerCallback
         best_model_cb = None
         for cb in self.learn.cbs:
-            if isinstance(cb, SaveModelCallback):
+            if isinstance(cb, TrackerCallback) and hasattr(cb, 'fname'):
                 best_model_path = self.learn.path / self.learn.model_dir / f'{cb.fname}.pth'
                 if best_model_path.exists():
                     best_weights_dest = temp_dir / "best_weights.pth"

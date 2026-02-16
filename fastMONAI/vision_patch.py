@@ -179,6 +179,15 @@ class PatchConfig:
                         f"Overlap >= patch_size creates step_size <= 0 (infinite patches)."
                     )
 
+        # Warn if patch_size dimensions are not divisible by 16
+        non_div = [s for s in self.patch_size if s % 16 != 0]
+        if non_div:
+            warnings.warn(
+                f"patch_size {self.patch_size} has dimensions not divisible by 16. "
+                f"Most encoder-decoder architectures (e.g., U-Net) require patch sizes "
+                f"divisible by 16 (2^4 for 4 downsampling levels)."
+            )
+
     @classmethod
     def from_dataset(
         cls,
