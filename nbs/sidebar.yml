@@ -21,3 +21,5 @@ website:
         - 11d_tutorial_binary_segmentation.ipynb
         - 11e_tutorial_multiclass_segmentation.ipynb
         - 11f_tutorial_inference.ipynb
+        - 12a_tutorial_patch_training.ipynb
+        - 12b_tutorial_patch_inference.ipynb
