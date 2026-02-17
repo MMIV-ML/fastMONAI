@@ -4,11 +4,14 @@
 __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization', 'RescaleIntensity', 'NormalizeIntensity',
            'BraTSMaskConverter', 'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField',
            'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomAnisotropy', 'RandomCutout',
-           'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf', 'suggest_patch_augmentations']
+           'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf', 'GpuPatchAugmentation',
+           'gpu_patch_augmentations', 'suggest_patch_augmentations']
 
 # %% ../nbs/03_vision_augment.ipynb #2d6694aa
 from fastai.data.all import *
 from .vision_core import *
+import torch.nn.functional as F
+import math
 import torchio as tio
 from monai.transforms import NormalizeIntensity as MonaiNormalizeIntensity
 
@@ -791,6 +794,489 @@ class OneOf(CustomDictTransform):
     def __init__(self, transform_dict, p=1):
         super().__init__(tio.OneOf(transform_dict, p=p))
 
+# %% ../nbs/03_vision_augment.ipynb #lqet5pabzy
+def _compute_patch_aug_params(patch_size, target_spacing,
+                              anisotropy_threshold=3.0,
+                              translation_fraction=0.15):
+    """Compute geometry-aware augmentation parameters from patch/spacing metadata.
+
+    Shared logic used by both suggest_patch_augmentations (CPU/TorchIO) and
+    gpu_patch_augmentations (GPU-batched). Extracts rotation degrees, translation
+    offsets, and RandomAnisotropy axes from the spatial configuration.
+
+    Anisotropy detection: if max(spacing)/min(spacing) >= threshold, rotation
+    is restricted to 5 deg out-of-plane and 30 deg in-plane. Otherwise 30 deg
+    symmetric.
+
+    Args:
+        patch_size: List/tuple of 3 ints -- patch dimensions.
+        target_spacing: List/tuple of 3 floats -- voxel spacing.
+        anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0).
+        translation_fraction: Fraction of patch_size for translation (default 0.15).
+
+    Returns:
+        dict with keys:
+            'degrees': tuple of 3 ints (per-axis max rotation in degrees)
+            'translation': tuple of 3 ints (per-axis translation in voxels)
+            'aniso_axes': tuple of ints (axes where patch_size > 1)
+            'is_aniso': bool (whether spacing is anisotropic)
+    """
+    if len(patch_size) != 3:
+        raise ValueError(f"patch_size must have 3 elements, got {len(patch_size)}")
+    if len(target_spacing) != 3:
+        raise ValueError(f"target_spacing must have 3 elements, got {len(target_spacing)}")
+
+    spacing = list(target_spacing)
+    ratio = max(spacing) / min(spacing)
+    is_aniso = ratio >= anisotropy_threshold
+    aniso_axis = spacing.index(max(spacing)) if is_aniso else None
+
+    if is_aniso:
+        degrees = [5, 5, 5]
+        degrees[aniso_axis] = 30
+        degrees = tuple(degrees)
+    else:
+        degrees = (30, 30, 30)
+
+    translation = tuple(round(p * translation_fraction) for p in patch_size)
+    aniso_axes = tuple(i for i in range(3) if patch_size[i] > 1)
+
+    return {
+        'degrees': degrees,
+        'translation': translation,
+        'aniso_axes': aniso_axes,
+        'is_aniso': is_aniso,
+    }
+
+# %% ../nbs/03_vision_augment.ipynb #oef9rtzvbw
+def _build_rotation_matrix_3d(angles_rad):
+    """Build [N, 3, 3] rotation matrices from [N, 3] Euler angles (XYZ extrinsic).
+
+    Computes R = Rz @ Ry @ Rx for each sample in the batch.
+
+    Args:
+        angles_rad: Tensor of shape [N, 3] with rotation angles in radians
+                    for each axis (x, y, z).
+
+    Returns:
+        Tensor of shape [N, 3, 3] -- rotation matrices.
+    """
+    cos = torch.cos(angles_rad)
+    sin = torch.sin(angles_rad)
+    cx, cy, cz = cos[:, 0], cos[:, 1], cos[:, 2]
+    sx, sy, sz = sin[:, 0], sin[:, 1], sin[:, 2]
+
+    # R = Rz @ Ry @ Rx (combined formula)
+    r00 = cy * cz;          r01 = sx * sy * cz - cx * sz;  r02 = cx * sy * cz + sx * sz
+    r10 = cy * sz;          r11 = sx * sy * sz + cx * cz;  r12 = cx * sy * sz - sx * cz
+    r20 = -sy;              r21 = sx * cy;                  r22 = cx * cy
+
+    R = torch.stack([
+        torch.stack([r00, r01, r02], dim=-1),
+        torch.stack([r10, r11, r12], dim=-1),
+        torch.stack([r20, r21, r22], dim=-1),
+    ], dim=-2)
+    return R
+
+# %% ../nbs/03_vision_augment.ipynb #ts2kolv83z
+class GpuPatchAugmentation:
+    """GPU-batched augmentation for patch-based training.
+
+    Operates on [B, C, D, H, W] tensors already on GPU. All operations run
+    under torch.no_grad() since augmentation does not need gradient tracking.
+
+    Transform order: spatial (affine, anisotropy, flip) then intensity
+    (gamma, intensity_scale, noise, blur). Spatial transforms apply the
+    same parameters to both image and mask. Intensity transforms skip the mask.
+
+    Each transform is controlled by a parameter dict with at minimum a 'p' key
+    for per-sample probability. Pass None to disable a transform.
+
+    Args:
+        affine: dict with keys 'scales', 'degrees', 'translation',
+                'default_pad_value', 'p'. None to disable.
+        anisotropy: dict with keys 'axes', 'downsampling', 'p'. None to disable.
+        flip: dict with keys 'axes', 'p'. None to disable.
+        gamma: dict with keys 'log_gamma', 'p'. None to disable.
+        intensity_scale: dict with keys 'scale_range', 'p'. None to disable.
+        noise: dict with keys 'std', 'p'. None to disable.
+        blur: dict with keys 'std', 'p'. None to disable.
+
+    Example::
+
+        >>> gpu_aug = GpuPatchAugmentation(
+        ...     affine={'scales': (0.7, 1.4), 'degrees': (30, 30, 30),
+        ...             'translation': (25, 25, 10), 'default_pad_value': 0., 'p': 0.2},
+        ...     gamma={'log_gamma': (-0.3, 0.3), 'p': 0.3},
+        ...     flip={'axes': (0, 1, 2), 'p': 0.5},
+        ... )
+        >>> img_aug, mask_aug = gpu_aug(img_gpu, mask_gpu)
+    """
+
+    def __init__(self, affine=None, anisotropy=None, flip=None,
+                 gamma=None, intensity_scale=None, noise=None, blur=None):
+        self.affine = affine
+        self.anisotropy = anisotropy
+        self.flip = flip
+        self.gamma = gamma
+        self.intensity_scale = intensity_scale
+        self.noise = noise
+        self.blur = blur
+
+    def __call__(self, img, mask=None):
+        """Apply GPU augmentations to a batch.
+
+        Args:
+            img: Tensor [B, C, D, H, W] (float).
+            mask: Tensor [B, C, D, H, W] (float), or None.
+
+        Returns:
+            Tuple (img, mask). mask is None if input was None.
+        """
+        with torch.no_grad():
+            # Spatial transforms (same params for img and mask)
+            if self.affine is not None:
+                img, mask = self._apply_affine(img, mask)
+            if self.anisotropy is not None:
+                img, mask = self._apply_anisotropy(img, mask)
+            if self.flip is not None:
+                img, mask = self._apply_flip(img, mask)
+            # Intensity transforms (img only)
+            if self.gamma is not None:
+                img = self._apply_gamma(img)
+            if self.intensity_scale is not None:
+                img = self._apply_intensity_scale(img)
+            if self.noise is not None:
+                img = self._apply_noise(img)
+            if self.blur is not None:
+                img = self._apply_blur(img)
+        return img, mask
+
+    def _apply_affine(self, img, mask):
+        """Batched random affine via F.affine_grid + F.grid_sample."""
+        cfg = self.affine
+        B = img.shape[0]
+        device = img.device
+        dtype = img.dtype
+
+        # Per-sample probability
+        do_tfm = torch.rand(B, device=device) < cfg['p']
+        if not do_tfm.any():
+            return img, mask
+
+        # Start with identity theta [B, 3, 4]
+        theta = torch.zeros(B, 3, 4, device=device, dtype=dtype)
+        theta[:, 0, 0] = 1.0
+        theta[:, 1, 1] = 1.0
+        theta[:, 2, 2] = 1.0
+
+        idx = do_tfm.nonzero(as_tuple=True)[0]
+        n = idx.shape[0]
+
+        # Random scales per axis
+        s_lo, s_hi = cfg['scales']
+        scales = torch.empty(n, 3, device=device, dtype=dtype).uniform_(s_lo, s_hi)
+
+        # Random rotation angles (degrees -> radians)
+        degrees = cfg['degrees']
+        if not isinstance(degrees, (list, tuple)):
+            degrees = (degrees, degrees, degrees)
+        angles_deg = torch.stack([
+            torch.empty(n, device=device, dtype=dtype).uniform_(-degrees[0], degrees[0]),
+            torch.empty(n, device=device, dtype=dtype).uniform_(-degrees[1], degrees[1]),
+            torch.empty(n, device=device, dtype=dtype).uniform_(-degrees[2], degrees[2]),
+        ], dim=1)  # [n, 3]
+        angles_rad = angles_deg * (math.pi / 180.0)
+
+        # Build rotation matrices [n, 3, 3]
+        R = _build_rotation_matrix_3d(angles_rad)
+
+        # Scale matrix: S @ R -> [n, 3, 3]
+        S = torch.diag_embed(scales)  # [n, 3, 3]
+        SR = S @ R  # [n, 3, 3]
+
+        # Random translation (voxels -> normalized [-1, 1] coords)
+        translation = cfg['translation']
+        if not isinstance(translation, (list, tuple)):
+            translation = (translation, translation, translation)
+        spatial_size = img.shape[2:]  # (D, H, W)
+        t_norm = torch.stack([
+            torch.empty(n, device=device, dtype=dtype).uniform_(
+                -translation[i], translation[i]
+            ) * 2.0 / spatial_size[i]
+            for i in range(3)
+        ], dim=1)  # [n, 3]
+
+        # Assemble theta for active samples
+        theta[idx, :3, :3] = SR
+        theta[idx, :3, 3] = t_norm
+
+        # Apply grid_sample
+        grid = F.affine_grid(theta, img.shape, align_corners=False)
+        pad_val = cfg.get('default_pad_value', 0.)
+        # For non-zero padding, shift values, sample, shift back
+        if pad_val != 0.:
+            img = img - pad_val
+        img = F.grid_sample(img, grid, mode='bilinear',
+                            padding_mode='zeros', align_corners=False)
+        if pad_val != 0.:
+            img = img + pad_val
+
+        if mask is not None:
+            mask = F.grid_sample(mask.float(), grid, mode='nearest',
+                                 padding_mode='zeros', align_corners=False)
+        return img, mask
+
+    def _apply_anisotropy(self, img, mask):
+        """Per-sample anisotropy simulation via F.interpolate.
+
+        Downsample along a random axis with nearest interpolation,
+        then upsample back with trilinear (matches TorchIO behavior).
+        Only affects img, not mask (anisotropy is intensity degradation).
+        """
+        cfg = self.anisotropy
+        B = img.shape[0]
+        device = img.device
+        ds_lo, ds_hi = cfg['downsampling']
+        axes = cfg['axes']
+
+        for i in range(B):
+            if torch.rand(1, device=device).item() >= cfg['p']:
+                continue
+            # Pick random axis and downsampling factor
+            axis_idx = torch.randint(len(axes), (1,), device=device).item()
+            axis = axes[axis_idx]
+            factor = torch.empty(1, device=device).uniform_(ds_lo, ds_hi).item()
+
+            sample = img[i:i+1]  # [1, C, D, H, W]
+            orig_size = list(sample.shape[2:])
+            down_size = list(orig_size)
+            down_size[axis] = max(1, round(orig_size[axis] / factor))
+
+            # Downsample with nearest, upsample with trilinear
+            down = F.interpolate(sample, size=down_size, mode='nearest')
+            up = F.interpolate(down, size=orig_size, mode='trilinear',
+                               align_corners=False)
+            img[i:i+1] = up
+
+        return img, mask
+
+    def _apply_flip(self, img, mask):
+        """Per-sample random flip along configured axes."""
+        cfg = self.flip
+        B = img.shape[0]
+        device = img.device
+        axes = cfg['axes']
+        p = cfg['p']
+
+        for i in range(B):
+            # Each axis is independently flipped with probability p
+            flip_dims = []
+            for axis in axes:
+                if torch.rand(1, device=device).item() < p:
+                    # axis 0 -> dim 2 (D), axis 1 -> dim 3 (H), axis 2 -> dim 4 (W)
+                    # but img[i] is [C, D, H, W], so axis 0 -> dim 1, etc.
+                    flip_dims.append(axis + 2)  # +2 for batch and channel dims
+            if flip_dims:
+                img[i] = torch.flip(img[i], dims=[d - 1 for d in flip_dims])  # -1 since no batch dim
+                if mask is not None:
+                    mask[i] = torch.flip(mask[i], dims=[d - 1 for d in flip_dims])
+
+        return img, mask
+
+    def _apply_gamma(self, img):
+        """Batched gamma correction with per-sample random gamma."""
+        cfg = self.gamma
+        B = img.shape[0]
+        device = img.device
+        dtype = img.dtype
+        log_lo, log_hi = cfg['log_gamma']
+
+        active = torch.rand(B, device=device) < cfg['p']
+        if not active.any():
+            return img
+
+        # Only apply clamp + pow to active samples (clamp destroys negatives)
+        active_idx = active.nonzero(as_tuple=True)[0]
+        log_gamma = torch.empty(active_idx.shape[0], device=device, dtype=dtype).uniform_(log_lo, log_hi)
+        gamma = torch.exp(log_gamma).view(-1, 1, 1, 1, 1)
+        img[active_idx] = img[active_idx].clamp(min=0).pow(gamma)
+        return img
+
+    def _apply_intensity_scale(self, img):
+        """Batched intensity scaling with per-sample random factors."""
+        cfg = self.intensity_scale
+        B = img.shape[0]
+        device = img.device
+        dtype = img.dtype
+        s_lo, s_hi = cfg['scale_range']
+
+        # Per-sample scale (inactive get scale=1)
+        scale = torch.empty(B, device=device, dtype=dtype).uniform_(s_lo, s_hi)
+        active = torch.rand(B, device=device) < cfg['p']
+        scale = torch.where(active, scale, torch.ones_like(scale))
+
+        img = img * scale.view(B, 1, 1, 1, 1)
+        return img
+
+    def _apply_noise(self, img):
+        """Batched additive Gaussian noise with per-sample random std."""
+        cfg = self.noise
+        B = img.shape[0]
+        device = img.device
+        dtype = img.dtype
+
+        std_val = cfg['std']
+        if isinstance(std_val, (list, tuple)):
+            std_lo, std_hi = std_val
+            per_std = torch.empty(B, device=device, dtype=dtype).uniform_(std_lo, std_hi)
+        else:
+            per_std = torch.full((B,), std_val, device=device, dtype=dtype)
+
+        # Zero std for inactive samples
+        active = torch.rand(B, device=device) < cfg['p']
+        per_std = torch.where(active, per_std, torch.zeros_like(per_std))
+
+        noise = torch.randn_like(img) * per_std.view(B, 1, 1, 1, 1)
+        img = img + noise
+        return img
+
+    def _apply_blur(self, img):
+        """Batched separable 3D Gaussian blur via F.conv3d with groups trick."""
+        cfg = self.blur
+        B, C, D, H, W = img.shape
+        device = img.device
+        dtype = img.dtype
+
+        std_val = cfg['std']
+        if isinstance(std_val, (list, tuple)):
+            std_lo, std_hi = std_val
+        else:
+            std_lo, std_hi = 0.0, std_val
+
+        # Per-sample sigma
+        sigma = torch.empty(B, device=device, dtype=dtype).uniform_(std_lo, std_hi)
+        active = torch.rand(B, device=device) < cfg['p']
+        if not active.any():
+            return img
+
+        # Fixed kernel size from max sigma
+        max_sigma = max(std_hi, 0.01)
+        kernel_radius = int(math.ceil(3 * max_sigma))
+        kernel_size = 2 * kernel_radius + 1
+
+        # Build per-sample 1D Gaussian kernels [B, kernel_size]
+        x = torch.arange(-kernel_radius, kernel_radius + 1,
+                          device=device, dtype=dtype)
+        # Avoid division by zero for sigma=0
+        safe_sigma = torch.where(active, sigma, torch.ones_like(sigma))
+        kernels = torch.exp(-x.unsqueeze(0)**2 / (2 * safe_sigma.unsqueeze(1)**2))
+        kernels = kernels / kernels.sum(dim=1, keepdim=True)
+
+        # For inactive samples, use delta kernel
+        delta = torch.zeros(B, kernel_size, device=device, dtype=dtype)
+        delta[:, kernel_radius] = 1.0
+        kernels = torch.where(active.unsqueeze(1), kernels, delta)
+
+        # Expand kernels for all channels: [B*C, kernel_size]
+        kernels_bc = kernels.unsqueeze(1).expand(B, C, kernel_size).reshape(B * C, kernel_size)
+
+        # Reshape img for grouped convolution: [1, B*C, D, H, W]
+        img_grouped = img.reshape(1, B * C, D, H, W)
+
+        # Separable 3D convolution: D-axis, H-axis, W-axis
+        pad = kernel_radius
+
+        # D-axis: kernel shape [B*C, 1, K, 1, 1]
+        k_d = kernels_bc.reshape(B * C, 1, kernel_size, 1, 1)
+        img_grouped = F.pad(img_grouped, (0, 0, 0, 0, pad, pad), mode='replicate')
+        img_grouped = F.conv3d(img_grouped, k_d, groups=B * C)
+
+        # H-axis: kernel shape [B*C, 1, 1, K, 1]
+        k_h = kernels_bc.reshape(B * C, 1, 1, kernel_size, 1)
+        img_grouped = F.pad(img_grouped, (0, 0, pad, pad, 0, 0), mode='replicate')
+        img_grouped = F.conv3d(img_grouped, k_h, groups=B * C)
+
+        # W-axis: kernel shape [B*C, 1, 1, 1, K]
+        k_w = kernels_bc.reshape(B * C, 1, 1, 1, kernel_size)
+        img_grouped = F.pad(img_grouped, (pad, pad, 0, 0, 0, 0), mode='replicate')
+        img_grouped = F.conv3d(img_grouped, k_w, groups=B * C)
+
+        return img_grouped.reshape(B, C, D, H, W)
+
+    def __repr__(self):
+        parts = []
+        for name in ['affine', 'anisotropy', 'flip', 'gamma',
+                      'intensity_scale', 'noise', 'blur']:
+            cfg = getattr(self, name)
+            if cfg is not None:
+                parts.append(f"{name}(p={cfg['p']})")
+        return f"GpuPatchAugmentation({', '.join(parts)})"
+
+# %% ../nbs/03_vision_augment.ipynb #pdbh1nqo0j7
+def gpu_patch_augmentations(patch_size, target_spacing,
+                            anisotropy_threshold=3.0,
+                            translation_fraction=0.15,
+                            affine_p=0.2, anisotropy_p=0.25,
+                            gamma_p=0.3, intensity_scale_p=0.1,
+                            noise_p=0.1, blur_p=0.2, flip_p=0.5):
+    """Create GpuPatchAugmentation with nnU-Net-inspired defaults.
+
+    Factory function that mirrors suggest_patch_augmentations but returns
+    a GpuPatchAugmentation for GPU-batched operation. Uses the same shared
+    parameter logic via _compute_patch_aug_params.
+
+    Args:
+        patch_size: List/tuple of 3 ints -- patch dimensions.
+        target_spacing: List/tuple of 3 floats -- voxel spacing.
+        anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0).
+        translation_fraction: Fraction of patch_size for translation (default 0.15).
+        affine_p: Probability for RandomAffine (default 0.2).
+        anisotropy_p: Probability for RandomAnisotropy (default 0.25).
+        gamma_p: Probability for RandomGamma (default 0.3).
+        intensity_scale_p: Probability for RandomIntensityScale (default 0.1).
+        noise_p: Probability for RandomNoise (default 0.1).
+        blur_p: Probability for RandomBlur (default 0.2).
+        flip_p: Probability for RandomFlip per axis (default 0.5).
+
+    Returns:
+        GpuPatchAugmentation instance.
+
+    Example::
+
+        >>> gpu_aug = gpu_patch_augmentations([128, 128, 32], [0.5, 0.5, 1.5])
+        >>> dls = MedPatchDataLoaders.from_df(..., gpu_augmentation=gpu_aug)
+    """
+    params = _compute_patch_aug_params(
+        patch_size, target_spacing, anisotropy_threshold, translation_fraction
+    )
+
+    affine_cfg = {
+        'scales': (0.7, 1.4),
+        'degrees': params['degrees'],
+        'translation': params['translation'],
+        'default_pad_value': 0.,
+        'p': affine_p,
+    }
+
+    aniso_cfg = None
+    if len(params['aniso_axes']) > 0:
+        aniso_cfg = {
+            'axes': params['aniso_axes'],
+            'downsampling': (1.5, 4),
+            'p': anisotropy_p,
+        }
+
+    return GpuPatchAugmentation(
+        affine=affine_cfg,
+        anisotropy=aniso_cfg,
+        flip={'axes': (0, 1, 2), 'p': flip_p},
+        gamma={'log_gamma': (-0.3, 0.3), 'p': gamma_p},
+        intensity_scale={'scale_range': (0.75, 1.25), 'p': intensity_scale_p},
+        noise={'std': 0.1, 'p': noise_p},
+        blur={'std': (0.5, 1.0), 'p': blur_p},
+    )
+
 # %% ../nbs/03_vision_augment.ipynb #t6hak044rc
 def suggest_patch_augmentations(patch_size, target_spacing,
                                 anisotropy_threshold=3.0,
@@ -817,32 +1303,18 @@ def suggest_patch_augmentations(patch_size, target_spacing,
     Example::
 
         >>> patch_tfms = suggest_patch_augmentations([128, 128, 32], [0.5, 0.5, 1.5])
-        >>> dls = MedPatchDataLoaders.from_config(..., patch_tfms=patch_tfms)
+        >>> dls = MedPatchDataLoaders.from_df(..., patch_tfms=patch_tfms)
     """
-    if len(patch_size) != 3:
-        raise ValueError(f"patch_size must have 3 elements, got {len(patch_size)}")
-    if len(target_spacing) != 3:
-        raise ValueError(f"target_spacing must have 3 elements, got {len(target_spacing)}")
+    params = _compute_patch_aug_params(
+        patch_size, target_spacing, anisotropy_threshold, translation_fraction
+    )
+    degrees = params['degrees']
+    translation = params['translation']
+    aniso_axes = params['aniso_axes']
 
-    # Determine anisotropy
-    spacing = list(target_spacing)
-    ratio = max(spacing) / min(spacing)
-    is_aniso = ratio >= anisotropy_threshold
-    aniso_axis = spacing.index(max(spacing)) if is_aniso else None
-
-    # Rotation degrees
-    if is_aniso:
-        degrees = [5, 5, 5]
-        degrees[aniso_axis] = 30
-        degrees = tuple(degrees)
-    else:
+    # For TorchIO: pass scalar 30 when isotropic (TorchIO expands to symmetric)
+    if not params['is_aniso']:
         degrees = 30
-
-    # Translation
-    translation = tuple(round(p * translation_fraction) for p in patch_size)
-
-    # RandomAnisotropy axes: all axes where patch_size > 1
-    aniso_axes = tuple(i for i in range(3) if patch_size[i] > 1)
 
     transforms = [
         RandomAffine(scales=(0.7, 1.4), degrees=degrees, translation=translation,
