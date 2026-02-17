@@ -403,7 +403,10 @@ class MedPatchDataLoader:
         patch_tfms: Transforms to apply to extracted patches (training only).
             Accepts both fastMONAI wrappers (e.g., RandomAffine, RandomGamma) and
             raw TorchIO transforms. fastMONAI wrappers are automatically normalized
-            to raw TorchIO for internal use.
+            to raw TorchIO for internal use. Mutually exclusive with gpu_augmentation.
+        gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation.
+            Operates on [B,C,D,H,W] tensors already on GPU, avoiding per-sample CPU
+            overhead. Mutually exclusive with patch_tfms. Training only.
         shuffle: Whether to shuffle subjects and patches.
         drop_last: Whether to drop last incomplete batch.
     """
@@ -414,18 +417,20 @@ class MedPatchDataLoader:
         config: PatchConfig,
         batch_size: int = 4,
         patch_tfms: list = None,
+        gpu_augmentation=None,
         shuffle: bool = True,
         drop_last: bool = False
     ):
         if batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
-        
+
         self.subjects_dataset = subjects_dataset
         self.config = config
         self.bs = batch_size
         self.shuffle = shuffle
         self.drop_last = drop_last
         self._device = _get_default_device()
+        self.gpu_augmentation = gpu_augmentation
 
         # Create sampler
         self.sampler = create_patch_sampler(config)
@@ -464,14 +469,12 @@ class MedPatchDataLoader:
             img = batch['image'][tio.DATA]  # [B, C, H, W, D]
             has_mask = 'mask' in batch
 
-            # Apply patch transforms if provided
+            # Apply CPU patch transforms if provided (per-sample TorchIO loop)
             if self.patch_tfms is not None:
-                # Apply transforms to each sample in batch
                 transformed_imgs = []
                 transformed_masks = [] if has_mask else None
 
                 for i in range(img.shape[0]):
-                    # Build subject dict with image, and mask if available
                     subject_dict = {'image': tio.ScalarImage(tensor=batch['image'][tio.DATA][i])}
                     if has_mask:
                         subject_dict['mask'] = tio.LabelMap(tensor=batch['mask'][tio.DATA][i])
@@ -487,10 +490,19 @@ class MedPatchDataLoader:
             else:
                 mask = batch['mask'][tio.DATA] if has_mask else None
 
-            # Convert to MedImage/MedMask and move to device
-            img = MedImage(img).to(self._device)
+            # Move to device
+            img = img.to(self._device)
             if mask is not None:
-                mask = MedMask(mask).to(self._device)
+                mask = mask.to(self._device)
+
+            # Apply GPU augmentation if provided (batched, on-device)
+            if self.gpu_augmentation is not None:
+                img, mask = self.gpu_augmentation(img, mask)
+
+            # Wrap as MedImage/MedMask
+            img = MedImage(img)
+            if mask is not None:
+                mask = MedMask(mask)
 
             yield img, mask
 
@@ -613,6 +625,7 @@ class MedPatchDataLoaders:
         patch_config: PatchConfig = None,
         pre_patch_tfms: list = None,
         patch_tfms: list = None,
+        gpu_augmentation=None,
         apply_reorder: bool = None,
         target_spacing: list = None,
         bs: int = 4,
@@ -641,6 +654,9 @@ class MedPatchDataLoaders:
                            (after reorder/resample). Example: [tio.ZNormalization()].
                            Accepts both fastMONAI wrappers and raw TorchIO transforms.
             patch_tfms: TorchIO transforms applied to extracted patches (training only).
+                Mutually exclusive with gpu_augmentation.
+            gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation
+                (training only). Mutually exclusive with patch_tfms.
             apply_reorder: If True, reorder to RAS+ orientation. If None, uses
                 patch_config.apply_reorder. Explicit value overrides config.
             target_spacing: Target voxel spacing [x, y, z]. If None, uses
@@ -656,22 +672,32 @@ class MedPatchDataLoaders:
             MedPatchDataLoaders instance.
 
         Example:
-            >>> # New pattern: config contains preprocessing params
-            >>> config = PatchConfig(
-            ...     patch_size=[96, 96, 96],
-            ...     apply_reorder=True,
-            ...     target_spacing=[0.5, 0.5, 0.5],
-            ...     label_probabilities={0: 0.1, 1: 0.9}
-            ... )
+            >>> # CPU augmentation path (existing)
             >>> dls = MedPatchDataLoaders.from_df(
             ...     df, img_col='image', mask_col='label',
             ...     patch_config=config,
-            ...     pre_patch_tfms=[tio.ZNormalization()],
             ...     patch_tfms=[tio.RandomAffine(degrees=10), tio.RandomFlip()],
             ...     bs=4
             ... )
-            >>> # Memory: ~150 MB (queue buffer only)
+            >>>
+            >>> # GPU augmentation path (new, faster for long training runs)
+            >>> from fastMONAI.vision_augmentation import gpu_patch_augmentations
+            >>> gpu_aug = gpu_patch_augmentations(config.patch_size, config.target_spacing)
+            >>> dls = MedPatchDataLoaders.from_df(
+            ...     df, img_col='image', mask_col='label',
+            ...     patch_config=config,
+            ...     gpu_augmentation=gpu_aug,
+            ...     bs=4
+            ... )
         """
+        # Validate mutual exclusivity
+        if gpu_augmentation is not None and patch_tfms is not None:
+            raise ValueError(
+                "Cannot use both gpu_augmentation and patch_tfms. "
+                "gpu_augmentation operates on GPU tensors batch-wise, while "
+                "patch_tfms uses per-sample CPU TorchIO transforms. Choose one."
+            )
+
         if patch_config is None:
             patch_config = PatchConfig()
 
@@ -726,11 +752,14 @@ class MedPatchDataLoaders:
         # Create DataLoaders (both use same patch_config for consistent sampling)
         train_dl = MedPatchDataLoader(
             train_subjects, patch_config, bs,
-            patch_tfms=patch_tfms, shuffle=True, drop_last=True
+            patch_tfms=patch_tfms,
+            gpu_augmentation=gpu_augmentation,
+            shuffle=True, drop_last=True
         )
         valid_dl = MedPatchDataLoader(
             valid_subjects, patch_config, bs,
             patch_tfms=None,  # No augmentation for validation
+            gpu_augmentation=None,  # No augmentation for validation
             shuffle=False, drop_last=False
         )
 
@@ -847,7 +876,8 @@ class MedPatchDataLoaders:
         return self.to(torch.device('cpu'))
 
     def show_batch(self, dl_idx=0, max_n=6, figsize=None, channel=0,
-                   slice_index=None, anatomical_plane=0, overlay=False, **kwargs):
+                   slice_index=None, anatomical_plane=0, overlay=False,
+                   voxel_size=None, **kwargs):
         """Show a batch of patch samples for visualization."""
 
         dl = self[dl_idx]
@@ -886,15 +916,15 @@ class MedPatchDataLoaders:
             imgs.extend(im_channels)
             slice_idxs.extend([idx] * len(im_channels))
 
-        voxel_size = self.target_spacing
+        _voxel_size = voxel_size if voxel_size is not None else self.target_spacing
         ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane,
-                        voxel_size=voxel_size)
+                        voxel_size=_voxel_size)
                 for im, ax, idx in zip(imgs, flat_axs, slice_idxs)]
 
         if overlay and has_mask:
             for mask, ax, idx in zip(masks_for_overlay, flat_axs, slice_idxs):
                 mask.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane,
-                          voxel_size=voxel_size)
+                          voxel_size=_voxel_size)
 
         plt.tight_layout()
         plt.show()
