@@ -554,11 +554,11 @@ def suggest_patch_size(
 def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
                        target_spacing=None, apply_reorder=True, transforms=None,
                        max_workers=4, skip_existing=True):
-    """Preprocess dataset to disk and update DataFrame path columns in-place.
+    """Preprocess dataset to disk, creating new columns for preprocessed paths.
 
     Processes images (and optionally masks) through a transform pipeline,
-    saves to output_dir, then updates df[img_col] and df[mask_col] in-place
-    to point to the preprocessed files.
+    saves to output_dir, then creates new '{col}_preprocessed' columns in
+    the DataFrame. Original columns are preserved unchanged.
 
     Transform pipeline order:
         CopyAffine (if masks) -> ToCanonical (if apply_reorder)
@@ -678,10 +678,11 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
                     failed_cases.append(Path(item['img_path']).name)
                     warnings.warn(f"Failed to process {item['img_path']}: {e}")
 
-    # Update DataFrame in-place
-    df[img_col] = [str(img_dir / Path(p).name) for p in df[img_col]]
+    # Create new columns for preprocessed paths (preserve originals)
+    df[f'{img_col}_preprocessed'] = [str(img_dir / Path(p).name) for p in df[img_col]]
+
     if mask_col is not None:
-        df[mask_col] = [str(mask_dir / Path(p).name) for p in df[mask_col]]
+        df[f'{mask_col}_preprocessed'] = [str(mask_dir / Path(p).name) for p in df[mask_col]]
 
     print(f"Preprocessing complete: {processed} processed, {skipped} skipped, {failed} failed")
     if failed_cases:

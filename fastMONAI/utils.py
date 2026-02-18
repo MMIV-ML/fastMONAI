@@ -237,6 +237,7 @@ def _extract_patch_config(learn) -> dict:
             'aggregation_mode': patch_config.aggregation_mode,
             'padding_mode': patch_config.padding_mode,
             'keep_largest_component': patch_config.keep_largest_component,
+            'preprocessed': patch_config.preprocessed,
         }
     else:
         config['patch_config'] = None
