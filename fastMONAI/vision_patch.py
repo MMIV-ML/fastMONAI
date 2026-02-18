@@ -116,6 +116,11 @@ class PatchConfig:
             training and inference. Defaults to True (the common case).
         target_spacing: Target voxel spacing [x, y, z] for resampling. Must match between
             training and inference.
+        preprocessed: If True, data has been preprocessed externally (e.g., via
+            preprocess_dataset()). Training will skip reorder, resample, AND
+            pre_patch_tfms (e.g., normalization) since they were already applied.
+            Inference is unaffected and always applies pre_inference_tfms to raw
+            images. Defaults to False.
         padding_mode: Padding mode for CropOrPad when image < patch_size. Default is 0 (zero padding)
             to align with nnU-Net's approach. Can be int, float, or string (e.g., 'minimum', 'mean').
         keep_largest_component: If True, keep only the largest connected component
@@ -142,6 +147,7 @@ class PatchConfig:
     # Preprocessing parameters - must match between training and inference
     apply_reorder: bool = True  # Defaults to True (the common case)
     target_spacing: list = None
+    preprocessed: bool = False  # True = data already preprocessed, skip all preprocessing during training
     padding_mode: int | float | str = 0  # Zero padding (nnU-Net standard)
     # Post-processing (binary segmentation only)
     keep_largest_component: bool = False
@@ -653,6 +659,8 @@ class MedPatchDataLoaders:
             pre_patch_tfms: TorchIO transforms applied before patch extraction
                            (after reorder/resample). Example: [tio.ZNormalization()].
                            Accepts both fastMONAI wrappers and raw TorchIO transforms.
+                           Skipped when preprocessed=True (include in preprocess_dataset()
+                           transforms instead). Still needed for inference via pre_inference_tfms.
             patch_tfms: TorchIO transforms applied to extracted patches (training only).
                 Mutually exclusive with gpu_augmentation.
             gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation
@@ -725,17 +733,19 @@ class MedPatchDataLoaders:
         # Build preprocessing transforms
         all_pre_tfms = []
 
-        # Add reorder transform (reorder to RAS+ orientation)
-        if _apply_reorder:
-            all_pre_tfms.append(tio.ToCanonical())
+        # Skip all preprocessing if data was already preprocessed externally
+        if not patch_config.preprocessed:
+            # Add reorder transform (reorder to RAS+ orientation)
+            if _apply_reorder:
+                all_pre_tfms.append(tio.ToCanonical())
 
-        # Add resample transform
-        if _target_spacing is not None:
-            all_pre_tfms.append(tio.Resample(_target_spacing))
+            # Add resample transform
+            if _target_spacing is not None:
+                all_pre_tfms.append(tio.Resample(_target_spacing))
 
-        # Add user-provided transforms (normalize to raw TorchIO transforms)
-        if pre_patch_tfms:
-            all_pre_tfms.extend(normalize_patch_transforms(pre_patch_tfms))
+            # Add user-provided transforms (normalize to raw TorchIO transforms)
+            if pre_patch_tfms:
+                all_pre_tfms.extend(normalize_patch_transforms(pre_patch_tfms))
 
         # Create subjects datasets with lazy loading (paths only, ~0 MB)
         train_subjects = create_subjects_dataset(
