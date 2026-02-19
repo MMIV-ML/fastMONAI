@@ -1078,6 +1078,18 @@ def _predict_patch_tta(model, patch_input):
     return (summed_probs / len(_TTA_FLIP_AXES)).cpu()
 
 
+@dataclass
+class _PreparedSubject:
+    """Intermediate state from image preparation, used for pipelined inference."""
+    subject: tio.Subject
+    org_img: tio.Image
+    input_img: tio.Image
+    org_size: tuple
+    grid_sampler: tio.GridSampler
+    aggregator: tio.GridAggregator
+    patch_loader: DataLoader
+
+
 class PatchInferenceEngine:
     """Patch-based inference with automatic volume reconstruction.
     
@@ -1150,7 +1162,164 @@ class PatchInferenceEngine:
             self._device = next(self.model.parameters()).device
         except StopIteration:
             self._device = _get_default_device()
-    
+
+    def _prepare_subject(self, img_path: Path | str) -> _PreparedSubject:
+        """Load and preprocess image, create GridSampler/Aggregator/DataLoader.
+
+        Thread-safe: creates only new local objects, reads only immutable self config.
+
+        Args:
+            img_path: Path to input image.
+
+        Returns:
+            _PreparedSubject with all intermediate objects needed for inference.
+        """
+        # Load image - keep org_img and org_size for post-processing
+        org_img, input_img, org_size = med_img_reader(
+            img_path, apply_reorder=self.apply_reorder, target_spacing=self.target_spacing, only_tensor=False
+        )
+
+        # Create TorchIO Subject from preprocessed image
+        subject = tio.Subject(
+            image=tio.ScalarImage(tensor=input_img.data.float(), affine=input_img.affine)
+        )
+
+        # Apply pre-inference transforms (e.g., ZNormalization) to match training
+        if self.pre_inference_tfms is not None:
+            subject = self.pre_inference_tfms(subject)
+
+        # Pad dimensions smaller than patch_size, keep larger dimensions intact
+        img_shape = subject['image'].shape[1:]  # Exclude channel dim
+        target_size = [max(s, p) for s, p in zip(img_shape, self.config.patch_size)]
+
+        # Warn if volume needed padding
+        if any(s < p for s, p in zip(img_shape, self.config.patch_size)):
+            padded_dims = [f"dim{i}: {s}<{p}" for i, (s, p) in enumerate(zip(img_shape, self.config.patch_size)) if s < p]
+            warnings.warn(
+                f"Image size {list(img_shape)} smaller than patch_size {self.config.patch_size} "
+                f"in {padded_dims}. Padding with mode={self.config.padding_mode}. "
+                "Ensure training data covered similar sizes to avoid artifacts."
+            )
+
+        subject = tio.CropOrPad(target_size, padding_mode=self.config.padding_mode)(subject)
+
+        # Convert patch_overlap to integer pixel values for TorchIO compatibility
+        patch_overlap = _normalize_patch_overlap(self.config.patch_overlap, self.config.patch_size)
+
+        grid_sampler = tio.GridSampler(
+            subject, patch_size=self.config.patch_size, patch_overlap=patch_overlap
+        )
+        aggregator = tio.GridAggregator(
+            grid_sampler, overlap_mode=self.config.aggregation_mode
+        )
+        patch_loader = DataLoader(grid_sampler, batch_size=self.batch_size, num_workers=0)
+
+        return _PreparedSubject(
+            subject=subject, org_img=org_img, input_img=input_img,
+            org_size=org_size, grid_sampler=grid_sampler,
+            aggregator=aggregator, patch_loader=patch_loader
+        )
+
+    def _run_inference(self, prepared: _PreparedSubject, tta: bool = False) -> torch.Tensor:
+        """Run model inference on all patches and aggregate.
+
+        Must run on the main thread (model forward pass).
+
+        Args:
+            prepared: _PreparedSubject from _prepare_subject().
+            tta: If True, apply mirror test-time augmentation.
+
+        Returns:
+            Raw output tensor from aggregator (probabilities).
+        """
+        self.model.eval()
+        # inference_mode is slightly faster than no_grad (disables autograd tracking
+        # and view tracking). Safe here since we don't do in-place ops on outputs.
+        with torch.inference_mode():
+            for patches_batch in prepared.patch_loader:
+                patch_input = patches_batch['image'][tio.DATA].to(self._device)
+                locations = patches_batch[tio.LOCATION]
+
+                if tta:
+                    probs = _predict_patch_tta(self.model, patch_input)
+                else:
+                    logits = self.model(patch_input)
+                    n_classes = logits.shape[1]
+                    if n_classes == 1:
+                        probs = torch.sigmoid(logits)
+                    else:
+                        probs = torch.softmax(logits, dim=1)
+                    probs = probs.cpu()
+
+                prepared.aggregator.add_batch(probs, locations)
+
+        return prepared.aggregator.get_output_tensor()
+
+    def _postprocess(
+        self,
+        output: torch.Tensor,
+        prepared: _PreparedSubject,
+        return_probabilities: bool = False
+    ) -> tuple[torch.Tensor, np.ndarray]:
+        """Post-process aggregated output: threshold, resize, reorient.
+
+        Always returns (result, affine) tuple.
+
+        Args:
+            output: Raw output tensor from _run_inference().
+            prepared: _PreparedSubject with original image metadata.
+            return_probabilities: If True, keep probability map instead of argmax.
+
+        Returns:
+            Tuple of (prediction tensor, affine matrix).
+        """
+        # Convert to prediction mask (only if not returning probabilities)
+        if return_probabilities:
+            result = output
+        else:
+            n_classes = output.shape[0]
+            if n_classes == 1:
+                result = (output > 0.5).float()
+            else:
+                result = output.argmax(dim=0, keepdim=True).float()
+
+        # Apply keep_largest post-processing for binary segmentation
+        if not return_probabilities and self.config.keep_largest_component:
+            from fastMONAI.vision_inference import keep_largest
+            result = keep_largest(result.squeeze(0)).unsqueeze(0)
+
+        # Wrap result in TorchIO Image for resizing
+        if return_probabilities:
+            pred_img = tio.ScalarImage(tensor=result.float(), affine=prepared.input_img.affine)
+        else:
+            pred_img = tio.LabelMap(tensor=result.float(), affine=prepared.input_img.affine)
+
+        # Resize back to original size (before resampling)
+        pred_img = _do_resize(pred_img, prepared.org_size, image_interpolation='nearest')
+
+        # Reorient to original orientation (if reorder was applied)
+        if self.apply_reorder:
+            reoriented_array = _to_original_orientation(
+                pred_img.as_sitk(),
+                ('').join(prepared.org_img.orientation)
+            )
+            result = torch.from_numpy(reoriented_array).cpu()
+            if not return_probabilities:
+                result = result.long()
+        else:
+            result = pred_img.data.cpu()
+            if not return_probabilities:
+                result = result.long()
+
+        # Use original affine matrix for correct spatial alignment
+        if not (hasattr(prepared.org_img, 'affine') and prepared.org_img.affine is not None):
+            raise RuntimeError(
+                "org_img.affine not available. This should never happen - please report this bug."
+            )
+        affine = prepared.org_img.affine.copy()
+
+        return result, affine
+
     def predict(
         self,
         img_path: Path | str,
@@ -1172,143 +1341,9 @@ class PatchInferenceEngine:
         Returns:
             Predicted segmentation mask tensor, or tuple (prediction, affine) if return_affine=True.
         """
-        # Load image - keep org_img and org_size for post-processing
-        # Note: med_img_reader handles reorder/resample internally, no global state needed
-        org_img, input_img, org_size = med_img_reader(
-            img_path, apply_reorder=self.apply_reorder, target_spacing=self.target_spacing, only_tensor=False
-        )
-
-        # Create TorchIO Subject from preprocessed image
-        subject = tio.Subject(
-            image=tio.ScalarImage(tensor=input_img.data.float(), affine=input_img.affine)
-        )
-
-        # Apply pre-inference transforms (e.g., ZNormalization) to match training
-        if self.pre_inference_tfms is not None:
-            subject = self.pre_inference_tfms(subject)
-
-        # Pad dimensions smaller than patch_size, keep larger dimensions intact
-        # GridSampler handles large images via overlapping patches
-        img_shape = subject['image'].shape[1:]  # Exclude channel dim
-        target_size = [max(s, p) for s, p in zip(img_shape, self.config.patch_size)]
-        
-        # Warn if volume needed padding (may cause artifacts if training didn't cover similar sizes)
-        if any(s < p for s, p in zip(img_shape, self.config.patch_size)):
-            padded_dims = [f"dim{i}: {s}<{p}" for i, (s, p) in enumerate(zip(img_shape, self.config.patch_size)) if s < p]
-            warnings.warn(
-                f"Image size {list(img_shape)} smaller than patch_size {self.config.patch_size} "
-                f"in {padded_dims}. Padding with mode={self.config.padding_mode}. "
-                "Ensure training data covered similar sizes to avoid artifacts."
-            )
-        
-        # Use padding_mode from config (default: 0 for zero padding, nnU-Net standard)
-        subject = tio.CropOrPad(target_size, padding_mode=self.config.padding_mode)(subject)
-
-        # Convert patch_overlap to integer pixel values for TorchIO compatibility
-        patch_overlap = _normalize_patch_overlap(self.config.patch_overlap, self.config.patch_size)
-
-        # Create GridSampler
-        grid_sampler = tio.GridSampler(
-            subject,
-            patch_size=self.config.patch_size,
-            patch_overlap=patch_overlap
-        )
-
-        # Create GridAggregator
-        aggregator = tio.GridAggregator(
-            grid_sampler,
-            overlap_mode=self.config.aggregation_mode
-        )
-
-        # Create patch loader
-        patch_loader = DataLoader(
-            grid_sampler,
-            batch_size=self.batch_size,
-            num_workers=0
-        )
-
-        # Predict patches
-        self.model.eval()
-        with torch.no_grad():
-            for patches_batch in patch_loader:
-                patch_input = patches_batch['image'][tio.DATA].to(self._device)
-                locations = patches_batch[tio.LOCATION]
-
-                if tta:
-                    probs = _predict_patch_tta(self.model, patch_input)
-                else:
-                    # Forward pass - get logits
-                    logits = self.model(patch_input)
-
-                    # Convert logits to probabilities BEFORE aggregation
-                    # This is critical: softmax is non-linear, so we must aggregate
-                    # probabilities, not logits, to get correct boundary handling
-                    n_classes = logits.shape[1]
-                    if n_classes == 1:
-                        probs = torch.sigmoid(logits)
-                    else:
-                        probs = torch.softmax(logits, dim=1)  # dim=1 for batch [B, C, H, W, D]
-
-                    probs = probs.cpu()
-
-                # Add probabilities to aggregator
-                aggregator.add_batch(probs, locations)
-
-        # Get reconstructed output (now contains probabilities, not logits)
-        output = aggregator.get_output_tensor()
-
-        # Convert to prediction mask (only if not returning probabilities)
-        if return_probabilities:
-            result = output  # Keep as float probabilities
-        else:
-            n_classes = output.shape[0]
-            if n_classes == 1:
-                result = (output > 0.5).float()
-            else:
-                result = output.argmax(dim=0, keepdim=True).float()
-
-        # Apply keep_largest post-processing for binary segmentation
-        if not return_probabilities and self.config.keep_largest_component:
-            from fastMONAI.vision_inference import keep_largest
-            result = keep_largest(result.squeeze(0)).unsqueeze(0)
-
-        # Post-processing: resize back to original size and reorient
-        # This matches the workflow in vision_inference.py
-        
-        # Wrap result in TorchIO Image for resizing
-        # Use ScalarImage for probabilities, LabelMap for masks
-        if return_probabilities:
-            pred_img = tio.ScalarImage(tensor=result.float(), affine=input_img.affine)
-        else:
-            pred_img = tio.LabelMap(tensor=result.float(), affine=input_img.affine)
-        
-        # Resize back to original size (before resampling)
-        pred_img = _do_resize(pred_img, org_size, image_interpolation='nearest')
-        
-        # Reorient to original orientation (if reorder was applied)
-        # Use explicit .cpu() for consistent device handling
-        if self.apply_reorder:
-            reoriented_array = _to_original_orientation(
-                pred_img.as_sitk(),
-                ('').join(org_img.orientation)
-            )
-            result = torch.from_numpy(reoriented_array).cpu()
-            # Only convert to long for masks, not probabilities
-            if not return_probabilities:
-                result = result.long()
-        else:
-            result = pred_img.data.cpu()
-            # Only convert to long for masks, not probabilities
-            if not return_probabilities:
-                result = result.long()
-
-        # Use original affine matrix for correct spatial alignment
-        # org_img.affine is always available from med_img_reader
-        if not (hasattr(org_img, 'affine') and org_img.affine is not None):
-            raise RuntimeError(
-                "org_img.affine not available. This should never happen - please report this bug."
-            )
-        affine = org_img.affine.copy()
+        prepared = self._prepare_subject(img_path)
+        output = self._run_inference(prepared, tta=tta)
+        result, affine = self._postprocess(output, prepared, return_probabilities)
 
         if return_affine:
             return result, affine
@@ -1321,6 +1356,39 @@ class PatchInferenceEngine:
         return self
 
 # %% ../nbs/10_vision_patch.ipynb #cell-18
+from concurrent.futures import ThreadPoolExecutor
+
+
+def _save_prediction(pred, affine, input_path, save_path, return_probabilities):
+    """Save a single prediction as NIfTI file.
+
+    Module-level helper (no closure captures) for thread-safe background saving.
+
+    Args:
+        pred: Prediction tensor.
+        affine: Affine matrix for spatial alignment.
+        input_path: Original input file path (for deriving output filename).
+        save_path: Directory Path to save into.
+        return_probabilities: If True, save as ScalarImage; else LabelMap.
+    """
+    input_path = Path(input_path)
+    stem = input_path.stem
+    if input_path.suffix == '.gz' and stem.endswith('.nii'):
+        stem = stem[:-4]
+        out_name = f"{stem}_pred.nii.gz"
+    elif input_path.suffix == '.nii':
+        out_name = f"{stem}_pred.nii"
+    else:
+        out_name = f"{stem}_pred.nii.gz"
+    out_path = save_path / out_name
+
+    if return_probabilities:
+        pred_img = tio.ScalarImage(tensor=pred, affine=affine)
+    else:
+        pred_img = tio.LabelMap(tensor=pred, affine=affine)
+    pred_img.save(out_path)
+
+
 def patch_inference(
     learner,
     config: PatchConfig,
@@ -1332,10 +1400,17 @@ def patch_inference(
     progress: bool = True,
     save_dir: str = None,
     pre_inference_tfms: list = None,
-    tta: bool = False
+    tta: bool = False,
+    prefetch: bool = True
 ) -> list:
     """Batch patch-based inference on multiple volumes.
-    
+
+    When prefetch=True (default), overlaps I/O with compute: while the current
+    image is being inferred, the next image is loaded and preprocessed in a
+    background thread, and the previous result is saved in the background.
+    This eliminates most I/O idle time, especially on GPU where CPU prep and
+    GPU compute use different hardware.
+
     Args:
         learner: PyTorch model or fastai Learner.
         config: PatchConfig with inference settings. Preprocessing params (apply_reorder,
@@ -1350,10 +1425,14 @@ def patch_inference(
         pre_inference_tfms: List of TorchIO transforms to apply before patch extraction.
             IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
         tta: If True, apply nnU-Net-style mirror TTA (8 flip combinations).
-    
+        prefetch: If True (default), overlap I/O with compute using a background
+            thread for preparation and saving. Holds two subjects in memory
+            simultaneously (current + next). Set to False for memory-constrained
+            environments processing very large volumes.
+
     Returns:
         List of predicted tensors.
-    
+
     Example:
         >>> config = PatchConfig(
         ...     patch_size=[96, 96, 96],
@@ -1371,53 +1450,74 @@ def patch_inference(
     # Use config values if not explicitly provided
     _apply_reorder = apply_reorder if apply_reorder is not None else config.apply_reorder
     _target_spacing = target_spacing if target_spacing is not None else config.target_spacing
-    
+
     engine = PatchInferenceEngine(
         learner, config, _apply_reorder, _target_spacing, batch_size, pre_inference_tfms
     )
-    
+
     # Create save directory if specified
+    save_path = None
     if save_dir is not None:
         save_path = Path(save_dir)
         save_path.mkdir(parents=True, exist_ok=True)
-    
+
     predictions = []
     desc = 'Patch inference (TTA)' if tta else 'Patch inference'
-    iterator = tqdm(file_paths, desc=desc) if progress else file_paths
-    
-    for path in iterator:
-        # Get prediction and affine when saving is needed
-        if save_dir is not None:
-            pred, affine = engine.predict(path, return_probabilities, return_affine=True, tta=tta)
-        else:
-            pred = engine.predict(path, return_probabilities, tta=tta)
-        predictions.append(pred)
-        
-        # Save prediction if save_dir specified
-        if save_dir is not None:
-            input_path = Path(path)
-            # Create output filename based on input using suffix-based approach
-            # This handles .nii.gz correctly without corrupting filenames with .nii elsewhere
-            stem = input_path.stem
-            if input_path.suffix == '.gz' and stem.endswith('.nii'):
-                # Handle .nii.gz files: stem is "filename.nii", strip the .nii
-                stem = stem[:-4]
-                out_name = f"{stem}_pred.nii.gz"
-            elif input_path.suffix == '.nii':
-                # Handle .nii files
-                out_name = f"{stem}_pred.nii"
+    n_files = len(file_paths)
+
+    # Pipelined path: overlap I/O with compute
+    if prefetch and n_files > 1:
+        pbar = tqdm(total=n_files, desc=desc) if progress else None
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            # Kick off preparation of the first image
+            prefetch_future = pool.submit(engine._prepare_subject, file_paths[0])
+            save_future = None
+
+            for i in range(n_files):
+                # Wait for the prefetched subject
+                prepared = prefetch_future.result()
+
+                # Start prefetching the next image (if any)
+                if i + 1 < n_files:
+                    prefetch_future = pool.submit(engine._prepare_subject, file_paths[i + 1])
+
+                # Run inference on the main thread
+                output = engine._run_inference(prepared, tta=tta)
+                result, affine = engine._postprocess(output, prepared, return_probabilities)
+                predictions.append(result)
+
+                # Wait for previous save to complete before submitting a new one
+                if save_future is not None:
+                    save_future.result()
+
+                # Submit current save in background
+                if save_path is not None:
+                    save_future = pool.submit(
+                        _save_prediction, result, affine, file_paths[i],
+                        save_path, return_probabilities
+                    )
+
+                if pbar is not None:
+                    pbar.update(1)
+
+            # Wait for final save
+            if save_future is not None:
+                save_future.result()
+
+        if pbar is not None:
+            pbar.close()
+
+    # Sequential fallback: single image or prefetch disabled
+    else:
+        iterator = tqdm(file_paths, desc=desc) if progress else file_paths
+        for path in iterator:
+            if save_dir is not None:
+                pred, affine = engine.predict(path, return_probabilities, return_affine=True, tta=tta)
             else:
-                # Fallback for other formats
-                out_name = f"{stem}_pred.nii.gz"
-            out_path = save_path / out_name
-            
-            # affine is guaranteed to be valid from engine.predict() with return_affine=True
-            # Save as NIfTI using TorchIO with correct type
-            # Use ScalarImage for probabilities (float), LabelMap for masks (int)
-            if return_probabilities:
-                pred_img = tio.ScalarImage(tensor=pred, affine=affine)
-            else:
-                pred_img = tio.LabelMap(tensor=pred, affine=affine)
-            pred_img.save(out_path)
-    
+                pred = engine.predict(path, return_probabilities, tta=tta)
+            predictions.append(pred)
+
+            if save_dir is not None:
+                _save_prediction(pred, affine, path, save_path, return_probabilities)
+
     return predictions
