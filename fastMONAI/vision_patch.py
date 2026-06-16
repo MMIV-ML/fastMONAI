@@ -4,7 +4,8 @@
 
 # %% auto #0
 __all__ = ['normalize_patch_transforms', 'PatchConfig', 'med_to_subject', 'create_subjects_dataset', 'create_patch_sampler',
-           'MedPatchDataLoader', 'MedPatchDataLoaders', 'PatchInferenceEngine', 'patch_inference']
+           'MedPatchDataLoader', 'MedPatchDataLoaders', 'PatchInferenceEngine', 'OnnxModelWrapper', 'export_to_onnx',
+           'patch_inference']
 
 # %% ../nbs/10_vision_patch.ipynb #cell-2
 import torch
@@ -14,6 +15,7 @@ import numpy as np
 import warnings
 import matplotlib.pyplot as plt
 from pathlib import Path
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Callable
 from torch.utils.data import DataLoader
@@ -121,8 +123,8 @@ class PatchConfig:
             pre_patch_tfms (e.g., normalization) since they were already applied.
             Inference is unaffected and always applies pre_inference_tfms to raw
             images. Defaults to False.
-        padding_mode: Padding mode for CropOrPad when image < patch_size. Default is 0 (zero padding)
-            to align with nnU-Net's approach. Can be int, float, or string (e.g., 'minimum', 'mean').
+        padding_mode: Padding mode for CropOrPad when image < patch_size. Default is 0 (zero padding).
+          Can be int, float, or string (e.g., 'minimum', 'mean').
         keep_largest_component: If True, keep only the largest connected component
             in binary segmentation predictions. Only applies during inference when
             return_probabilities=False. Defaults to False.
@@ -145,10 +147,10 @@ class PatchConfig:
     queue_num_workers: int = 4
     aggregation_mode: str = 'hann'
     # Preprocessing parameters - must match between training and inference
-    apply_reorder: bool = True  # Defaults to True (the common case)
+    apply_reorder: bool = True
     target_spacing: list = None
     preprocessed: bool = False  # True = data already preprocessed, skip all preprocessing during training
-    padding_mode: int | float | str = 0  # Zero padding (nnU-Net standard)
+    padding_mode: int | float | str = 0
     # Post-processing (binary segmentation only)
     keep_largest_component: bool = False
     
@@ -555,7 +557,7 @@ class MedPatchDataLoader:
             if hasattr(self, 'queue') and hasattr(self.queue, '_subjects_iterable'):
                 self.queue._subjects_iterable = None
         except Exception:
-            pass  # Suppress cleanup errors
+            pass
 
     def __enter__(self):
         return self
@@ -768,8 +770,8 @@ class MedPatchDataLoaders:
         )
         valid_dl = MedPatchDataLoader(
             valid_subjects, patch_config, bs,
-            patch_tfms=None,  # No augmentation for validation
-            gpu_augmentation=None,  # No augmentation for validation
+            patch_tfms=None,
+            gpu_augmentation=None,
             shuffle=False, drop_last=False
         )
 
@@ -960,6 +962,9 @@ class MedPatchDataLoaders:
             def cpu(self):
                 """Move to CPU. Required for load_learner compatibility."""
                 return self.to(torch.device('cpu'))
+            def new_empty(self):
+                """Return self since already empty."""
+                return self
 
         return EmptyMedPatchDataLoaders(self._device)
 
@@ -1039,7 +1044,6 @@ def _normalize_patch_overlap(patch_overlap, patch_size):
     return tuple(result)
 
 
-# nnU-Net-style mirror TTA: all 2^3 = 8 flip combinations for 3D.
 # Batch tensor shape: [B, C, D, H, W], spatial dims are 2, 3, 4.
 _TTA_FLIP_AXES = (
     (),         # original
@@ -1053,8 +1057,8 @@ _TTA_FLIP_AXES = (
 )
 
 
-def _predict_patch_tta(model, patch_input):
-    """nnU-Net-style mirror TTA: average probabilities over 8 flip combinations.
+def _predict_patch_tta(model, patch_input, amp_context=None):
+    """Mirror TTA: average probabilities over 8 flip combinations.
 
     Runs 8 forward passes with a running sum for memory efficiency (2x memory,
     not 9x). Each pass: flip input -> forward -> activate -> flip back -> accumulate.
@@ -1062,16 +1066,20 @@ def _predict_patch_tta(model, patch_input):
     Args:
         model: PyTorch model in eval mode (already on device).
         patch_input: Batch tensor [B, C, D, H, W] already on device.
+        amp_context: Optional autocast context manager for mixed precision.
+            If None, no autocast is applied.
 
     Returns:
         Averaged probability tensor [B, C, D, H, W] on CPU.
     """
+    if amp_context is None: amp_context = nullcontext()
     summed_probs = None
     for axes in _TTA_FLIP_AXES:
         flipped = torch.flip(patch_input, list(axes)) if axes else patch_input
-        logits = model(flipped)
+        with amp_context:
+            logits = model(flipped)
         n_classes = logits.shape[1]
-        probs = torch.sigmoid(logits) if n_classes == 1 else torch.softmax(logits, dim=1)
+        probs = torch.sigmoid(logits.float()) if n_classes == 1 else torch.softmax(logits.float(), dim=1)
         if axes:
             probs = torch.flip(probs, list(axes))
         summed_probs = probs if summed_probs is None else summed_probs + probs
@@ -1108,6 +1116,9 @@ class PatchInferenceEngine:
             IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
             This ensures preprocessing consistency between training and inference.
             Accepts both fastMONAI wrappers and raw TorchIO transforms.
+        amp: If True, use automatic mixed precision (float16) for the forward pass.
+            Only supported on CUDA devices; ignored with a warning on CPU/MPS.
+            Defaults to False.
     
     Example:
         >>> # Option 1: From fastai Learner
@@ -1120,6 +1131,10 @@ class PatchInferenceEngine:
         >>> model.cuda().eval()
         >>> engine = PatchInferenceEngine(model, config, pre_inference_tfms=[ZNormalization()])
         >>> pred = engine.predict('image.nii.gz')
+        
+        >>> # Option 3: With AMP for faster GPU inference
+        >>> engine = PatchInferenceEngine(learn, config, pre_inference_tfms=[ZNormalization()], amp=True)
+        >>> pred = engine.predict('image.nii.gz')
     """
     
     def __init__(
@@ -1129,7 +1144,8 @@ class PatchInferenceEngine:
         apply_reorder: bool = None,
         target_spacing: list = None,
         batch_size: int = 4,
-        pre_inference_tfms: list = None
+        pre_inference_tfms: list = None,
+        amp: bool = False
     ):
         if batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
@@ -1157,11 +1173,26 @@ class PatchInferenceEngine:
         _warn_config_override('apply_reorder', config.apply_reorder, apply_reorder)
         _warn_config_override('target_spacing', config.target_spacing, target_spacing)
         
-        # Get device from model parameters, with fallback for parameter-less models
-        try:
-            self._device = next(self.model.parameters()).device
-        except StopIteration:
-            self._device = _get_default_device()
+        # Get device from model: check explicit .device property first (ONNX wrappers),
+        # then fall back to parameter inspection (nn.Module)
+        if hasattr(self.model, 'device'):
+            self._device = torch.device(self.model.device)
+        else:
+            try:
+                self._device = next(self.model.parameters()).device
+            except StopIteration:
+                self._device = _get_default_device()
+
+        # Set eval mode once at construction (this class is inference-only)
+        self.model.eval()
+
+        # AMP: CUDA-only, matching nnU-Net pattern
+        if amp and self._device.type == 'cuda':
+            self._amp_context = torch.amp.autocast('cuda', dtype=torch.float16)
+        else:
+            if amp and self._device.type != 'cuda':
+                warnings.warn("AMP is only supported on CUDA devices. Ignoring amp=True.")
+            self._amp_context = nullcontext()
 
     def _prepare_subject(self, img_path: Path | str) -> _PreparedSubject:
         """Load and preprocess image, create GridSampler/Aggregator/DataLoader.
@@ -1232,7 +1263,6 @@ class PatchInferenceEngine:
         Returns:
             Raw output tensor from aggregator (probabilities).
         """
-        self.model.eval()
         # inference_mode is slightly faster than no_grad (disables autograd tracking
         # and view tracking). Safe here since we don't do in-place ops on outputs.
         with torch.inference_mode():
@@ -1241,14 +1271,15 @@ class PatchInferenceEngine:
                 locations = patches_batch[tio.LOCATION]
 
                 if tta:
-                    probs = _predict_patch_tta(self.model, patch_input)
+                    probs = _predict_patch_tta(self.model, patch_input, self._amp_context)
                 else:
-                    logits = self.model(patch_input)
+                    with self._amp_context:
+                        logits = self.model(patch_input)
                     n_classes = logits.shape[1]
                     if n_classes == 1:
-                        probs = torch.sigmoid(logits)
+                        probs = torch.sigmoid(logits.float())
                     else:
-                        probs = torch.softmax(logits, dim=1)
+                        probs = torch.softmax(logits.float(), dim=1)
                     probs = probs.cpu()
 
                 prepared.aggregator.add_batch(probs, locations)
@@ -1299,17 +1330,12 @@ class PatchInferenceEngine:
 
         # Reorient to original orientation (if reorder was applied)
         if self.apply_reorder:
-            reoriented_array = _to_original_orientation(
-                pred_img.as_sitk(),
-                ('').join(prepared.org_img.orientation)
-            )
-            result = torch.from_numpy(reoriented_array).cpu()
-            if not return_probabilities:
-                result = result.long()
-        else:
-            result = pred_img.data.cpu()
-            if not return_probabilities:
-                result = result.long()
+            target_orientation = ''.join(prepared.org_img.orientation)
+            pred_img = tio.ToOrientation(target_orientation)(pred_img)
+
+        result = pred_img.data.cpu()
+        if not return_probabilities:
+            result = result.long()
 
         # Use original affine matrix for correct spatial alignment
         if not (hasattr(prepared.org_img, 'affine') and prepared.org_img.affine is not None):
@@ -1333,7 +1359,7 @@ class PatchInferenceEngine:
             img_path: Path to input image.
             return_probabilities: If True, return probability map instead of argmax.
             return_affine: If True, return (prediction, affine) tuple instead of just prediction.
-            tta: If True, apply nnU-Net-style mirror test-time augmentation
+            tta: If True, apply mirror test-time augmentation
                 (8 flip combinations, averaged probabilities). Requires ~8x inference
                 time but improves prediction quality. Works best when training used
                 RandomFlip(axes='LRAPIS', p=0.5). Defaults to False.
@@ -1354,6 +1380,163 @@ class PatchInferenceEngine:
         self._device = device
         self.model.to(device)
         return self
+
+# %% ../nbs/10_vision_patch.ipynb #onnx_export_cell
+class OnnxModelWrapper:
+    """Wraps an ONNX Runtime InferenceSession for CPU inference with PatchInferenceEngine.
+
+    ONNX Runtime provides 1.5-3x faster CPU inference via graph optimizations
+    compared to PyTorch. This wrapper provides the interface that
+    PatchInferenceEngine expects, enabling transparent drop-in usage.
+
+    Note: ONNX inference is CPU-only. For GPU inference, use PyTorch models directly.
+
+    Args:
+        onnx_path: Path to exported ONNX model file.
+        session_options: Optional onnxruntime.SessionOptions for tuning
+            (thread count, optimization level, etc.).
+
+    Example:
+        >>> model = OnnxModelWrapper('model.onnx')
+        >>> engine = PatchInferenceEngine(model, config, pre_inference_tfms=[ZNormalization()])
+        >>> pred = engine.predict('image.nii.gz')
+    """
+
+    def __init__(self, onnx_path, session_options=None):
+        try:
+            import onnxruntime as ort
+        except ImportError:
+            raise ImportError(
+                "onnxruntime is required for ONNX inference. "
+                "Install with: pip install onnxruntime"
+            )
+        opts = session_options or ort.SessionOptions()
+        self._session = ort.InferenceSession(
+            str(onnx_path), opts, providers=['CPUExecutionProvider']
+        )
+        self._input_name = self._session.get_inputs()[0].name
+
+    @property
+    def device(self):
+        """Always returns CPU device. ONNX inference is CPU-only."""
+        return torch.device('cpu')
+
+    def __call__(self, tensor):
+        """Run ONNX inference on a batch of patches.
+
+        Handles the torch.Tensor -> numpy -> ONNX -> numpy -> torch.Tensor
+        conversion chain transparently.
+
+        Args:
+            tensor: Input tensor [B, C, D, H, W] on CPU.
+
+        Returns:
+            Output tensor [B, C_out, D, H, W] as torch.Tensor.
+        """
+        np_input = tensor.numpy()
+        outputs = self._session.run(None, {self._input_name: np_input})
+        return torch.from_numpy(outputs[0])
+
+    def eval(self):
+        """No-op for interface compatibility. ONNX models are always in eval mode."""
+        return self
+
+    def to(self, device):
+        """Validate device is CPU. Raises ValueError for non-CPU devices."""
+        if torch.device(device).type != 'cpu':
+            raise ValueError(
+                "OnnxModelWrapper only supports CPU inference. "
+                "Use a PyTorch model for GPU inference."
+            )
+        return self
+
+
+def export_to_onnx(
+    learner,
+    onnx_path,
+    in_channels,
+    config: PatchConfig,
+    opset_version: int = 17,
+    dynamic_batch: bool = True,
+    verify: bool = True
+):
+    """Export a trained model to ONNX format for CPU inference.
+
+    Accepts a fastai Learner or raw PyTorch nn.Module and exports it to ONNX.
+    The exported model can be loaded with OnnxModelWrapper for use with
+    PatchInferenceEngine.
+
+    Args:
+        learner: fastai Learner or PyTorch nn.Module.
+        onnx_path: Output path for the ONNX file.
+        in_channels: Number of input channels (e.g., 1 for single-modal MRI).
+        config: PatchConfig (used for patch_size to create dummy input).
+        opset_version: ONNX opset version. Default 17.
+        dynamic_batch: If True, allow variable batch sizes (required for
+            patch-based inference where the last batch may be smaller).
+        verify: If True, verify exported model produces matching outputs
+            (requires onnxruntime). Set False to export without verification.
+
+    Returns:
+        Path to the exported ONNX file.
+
+    Example:
+        >>> # Export from Learner
+        >>> onnx_path = export_to_onnx(learn, 'model.onnx', in_channels=1, config=patch_config)
+        >>>
+        >>> # Export from raw model
+        >>> onnx_path = export_to_onnx(model, 'model.onnx', in_channels=1, config=patch_config)
+    """
+    import torch.onnx
+
+    # Extract model from Learner if needed
+    if isinstance(learner, Learner):
+        model = learner.model
+    else:
+        model = learner
+
+    # Unwrap torch.compile if present
+    if hasattr(model, '_orig_mod'):
+        model = model._orig_mod
+
+    model = model.cpu().eval()
+    onnx_path = Path(onnx_path)
+
+    # Create dummy input matching patch dimensions
+    dummy_input = torch.randn(1, in_channels, *config.patch_size)
+
+    # Configure dynamic axes for variable batch size
+    dynamic_axes = None
+    if dynamic_batch:
+        dynamic_axes = {'input': {0: 'batch'}, 'output': {0: 'batch'}}
+
+    # Export
+    with torch.no_grad():
+        torch.onnx.export(
+            model,
+            dummy_input,
+            str(onnx_path),
+            opset_version=opset_version,
+            input_names=['input'],
+            output_names=['output'],
+            dynamic_axes=dynamic_axes,
+        )
+
+    # Verify outputs match
+    if verify:
+        wrapper = OnnxModelWrapper(onnx_path)
+        with torch.no_grad():
+            pt_out = model(dummy_input)
+        onnx_out = wrapper(dummy_input)
+        if not torch.allclose(pt_out, onnx_out, atol=1e-3):
+            max_diff = (pt_out - onnx_out).abs().max().item()
+            warnings.warn(
+                f"ONNX verification: max absolute difference {max_diff:.6f} "
+                f"exceeds atol=1e-3. This may indicate export issues."
+            )
+
+    return onnx_path
+
 
 # %% ../nbs/10_vision_patch.ipynb #cell-18
 from concurrent.futures import ThreadPoolExecutor
@@ -1401,7 +1584,8 @@ def patch_inference(
     save_dir: str = None,
     pre_inference_tfms: list = None,
     tta: bool = False,
-    prefetch: bool = True
+    prefetch: bool = True,
+    amp: bool = False
 ) -> list:
     """Batch patch-based inference on multiple volumes.
 
@@ -1424,11 +1608,13 @@ def patch_inference(
         save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.
         pre_inference_tfms: List of TorchIO transforms to apply before patch extraction.
             IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
-        tta: If True, apply nnU-Net-style mirror TTA (8 flip combinations).
+        tta: If True, mirror TTA (8 flip combinations).
         prefetch: If True (default), overlap I/O with compute using a background
             thread for preparation and saving. Holds two subjects in memory
             simultaneously (current + next). Set to False for memory-constrained
             environments processing very large volumes.
+        amp: If True, use automatic mixed precision (float16) for the forward pass.
+            Only supported on CUDA devices; ignored with a warning on CPU/MPS.
 
     Returns:
         List of predicted tensors.
@@ -1444,7 +1630,8 @@ def patch_inference(
         ...     config=config,  # apply_reorder and target_spacing from config
         ...     file_paths=val_paths,
         ...     pre_inference_tfms=[tio.ZNormalization()],
-        ...     save_dir='predictions/patch_based'
+        ...     save_dir='predictions/patch_based',
+        ...     amp=True
         ... )
     """
     # Use config values if not explicitly provided
@@ -1452,7 +1639,8 @@ def patch_inference(
     _target_spacing = target_spacing if target_spacing is not None else config.target_spacing
 
     engine = PatchInferenceEngine(
-        learner, config, _apply_reorder, _target_spacing, batch_size, pre_inference_tfms
+        learner, config, _apply_reorder, _target_spacing, batch_size, pre_inference_tfms,
+        amp=amp
     )
 
     # Create save directory if specified

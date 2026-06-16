@@ -26,7 +26,8 @@ class CustomLoss:
         
         if isinstance(pred, MedBase):
             pred, targ = torch.Tensor(pred.cpu()), torch.Tensor(targ.cpu().float())
-            
+
+        targ = targ.float()
         return self.loss_func(pred, targ)
 
     def activation(self, x):
