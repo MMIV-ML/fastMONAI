@@ -4,8 +4,7 @@
 
 # %% auto #0
 __all__ = ['normalize_patch_transforms', 'PatchConfig', 'med_to_subject', 'create_subjects_dataset', 'create_patch_sampler',
-           'MedPatchDataLoader', 'MedPatchDataLoaders', 'PatchInferenceEngine', 'OnnxModelWrapper', 'export_to_onnx',
-           'patch_inference']
+           'MedPatchDataLoader', 'MedPatchDataLoaders', 'PatchInferenceEngine', 'patch_inference']
 
 # %% ../nbs/10_vision_patch.ipynb #cell-2
 import torch
@@ -1173,7 +1172,7 @@ class PatchInferenceEngine:
         _warn_config_override('apply_reorder', config.apply_reorder, apply_reorder)
         _warn_config_override('target_spacing', config.target_spacing, target_spacing)
         
-        # Get device from model: check explicit .device property first (ONNX wrappers),
+        # Get device from model: check explicit .device attribute first (custom wrappers),
         # then fall back to parameter inspection (nn.Module)
         if hasattr(self.model, 'device'):
             self._device = torch.device(self.model.device)
@@ -1380,163 +1379,6 @@ class PatchInferenceEngine:
         self._device = device
         self.model.to(device)
         return self
-
-# %% ../nbs/10_vision_patch.ipynb #onnx_export_cell
-class OnnxModelWrapper:
-    """Wraps an ONNX Runtime InferenceSession for CPU inference with PatchInferenceEngine.
-
-    ONNX Runtime provides 1.5-3x faster CPU inference via graph optimizations
-    compared to PyTorch. This wrapper provides the interface that
-    PatchInferenceEngine expects, enabling transparent drop-in usage.
-
-    Note: ONNX inference is CPU-only. For GPU inference, use PyTorch models directly.
-
-    Args:
-        onnx_path: Path to exported ONNX model file.
-        session_options: Optional onnxruntime.SessionOptions for tuning
-            (thread count, optimization level, etc.).
-
-    Example:
-        >>> model = OnnxModelWrapper('model.onnx')
-        >>> engine = PatchInferenceEngine(model, config, pre_inference_tfms=[ZNormalization()])
-        >>> pred = engine.predict('image.nii.gz')
-    """
-
-    def __init__(self, onnx_path, session_options=None):
-        try:
-            import onnxruntime as ort
-        except ImportError:
-            raise ImportError(
-                "onnxruntime is required for ONNX inference. "
-                "Install with: pip install onnxruntime"
-            )
-        opts = session_options or ort.SessionOptions()
-        self._session = ort.InferenceSession(
-            str(onnx_path), opts, providers=['CPUExecutionProvider']
-        )
-        self._input_name = self._session.get_inputs()[0].name
-
-    @property
-    def device(self):
-        """Always returns CPU device. ONNX inference is CPU-only."""
-        return torch.device('cpu')
-
-    def __call__(self, tensor):
-        """Run ONNX inference on a batch of patches.
-
-        Handles the torch.Tensor -> numpy -> ONNX -> numpy -> torch.Tensor
-        conversion chain transparently.
-
-        Args:
-            tensor: Input tensor [B, C, D, H, W] on CPU.
-
-        Returns:
-            Output tensor [B, C_out, D, H, W] as torch.Tensor.
-        """
-        np_input = tensor.numpy()
-        outputs = self._session.run(None, {self._input_name: np_input})
-        return torch.from_numpy(outputs[0])
-
-    def eval(self):
-        """No-op for interface compatibility. ONNX models are always in eval mode."""
-        return self
-
-    def to(self, device):
-        """Validate device is CPU. Raises ValueError for non-CPU devices."""
-        if torch.device(device).type != 'cpu':
-            raise ValueError(
-                "OnnxModelWrapper only supports CPU inference. "
-                "Use a PyTorch model for GPU inference."
-            )
-        return self
-
-
-def export_to_onnx(
-    learner,
-    onnx_path,
-    in_channels,
-    config: PatchConfig,
-    opset_version: int = 17,
-    dynamic_batch: bool = True,
-    verify: bool = True
-):
-    """Export a trained model to ONNX format for CPU inference.
-
-    Accepts a fastai Learner or raw PyTorch nn.Module and exports it to ONNX.
-    The exported model can be loaded with OnnxModelWrapper for use with
-    PatchInferenceEngine.
-
-    Args:
-        learner: fastai Learner or PyTorch nn.Module.
-        onnx_path: Output path for the ONNX file.
-        in_channels: Number of input channels (e.g., 1 for single-modal MRI).
-        config: PatchConfig (used for patch_size to create dummy input).
-        opset_version: ONNX opset version. Default 17.
-        dynamic_batch: If True, allow variable batch sizes (required for
-            patch-based inference where the last batch may be smaller).
-        verify: If True, verify exported model produces matching outputs
-            (requires onnxruntime). Set False to export without verification.
-
-    Returns:
-        Path to the exported ONNX file.
-
-    Example:
-        >>> # Export from Learner
-        >>> onnx_path = export_to_onnx(learn, 'model.onnx', in_channels=1, config=patch_config)
-        >>>
-        >>> # Export from raw model
-        >>> onnx_path = export_to_onnx(model, 'model.onnx', in_channels=1, config=patch_config)
-    """
-    import torch.onnx
-
-    # Extract model from Learner if needed
-    if isinstance(learner, Learner):
-        model = learner.model
-    else:
-        model = learner
-
-    # Unwrap torch.compile if present
-    if hasattr(model, '_orig_mod'):
-        model = model._orig_mod
-
-    model = model.cpu().eval()
-    onnx_path = Path(onnx_path)
-
-    # Create dummy input matching patch dimensions
-    dummy_input = torch.randn(1, in_channels, *config.patch_size)
-
-    # Configure dynamic axes for variable batch size
-    dynamic_axes = None
-    if dynamic_batch:
-        dynamic_axes = {'input': {0: 'batch'}, 'output': {0: 'batch'}}
-
-    # Export
-    with torch.no_grad():
-        torch.onnx.export(
-            model,
-            dummy_input,
-            str(onnx_path),
-            opset_version=opset_version,
-            input_names=['input'],
-            output_names=['output'],
-            dynamic_axes=dynamic_axes,
-        )
-
-    # Verify outputs match
-    if verify:
-        wrapper = OnnxModelWrapper(onnx_path)
-        with torch.no_grad():
-            pt_out = model(dummy_input)
-        onnx_out = wrapper(dummy_input)
-        if not torch.allclose(pt_out, onnx_out, atol=1e-3):
-            max_diff = (pt_out - onnx_out).abs().max().item()
-            warnings.warn(
-                f"ONNX verification: max absolute difference {max_diff:.6f} "
-                f"exceeds atol=1e-3. This may indicate export issues."
-            )
-
-    return onnx_path
-
 
 # %% ../nbs/10_vision_patch.ipynb #cell-18
 from concurrent.futures import ThreadPoolExecutor
