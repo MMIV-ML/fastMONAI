@@ -16,14 +16,13 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from contextlib import nullcontext
 from dataclasses import dataclass, field
-from typing import Callable
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from fastai.data.all import *
 from fastai.learner import Learner
-from .vision_core import MedImage, MedMask, MedBase, med_img_reader
+from .vision_core import MedImage, MedMask, med_img_reader
 from .vision_plot import find_max_slice
-from .vision_inference import _to_original_orientation, _do_resize
+from .vision_inference import _do_resize
 from .dataset_info import MedDataset, suggest_patch_size
 
 # %% ../nbs/10_vision_patch.ipynb #aw2pkvm2ibe
@@ -32,14 +31,8 @@ def _get_default_device() -> torch.device:
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def _warn_config_override(param_name: str, config_value, explicit_value):
-    """Warn when explicit argument overrides config value.
-
-    Args:
-        param_name: Name of the parameter (e.g., 'apply_reorder', 'target_spacing')
-        config_value: Value from PatchConfig
-        explicit_value: Explicitly provided value
-    """
+def _warn_config_override(param_name: str, config_value, explicit_value) -> None:
+    """Warn when an explicit argument overrides a (differing) config value."""
     if explicit_value is not None and config_value is not None:
         if explicit_value != config_value:
             warnings.warn(
@@ -49,54 +42,32 @@ def _warn_config_override(param_name: str, config_value, explicit_value):
 
 
 def _extract_tio_transform(tfm):
-    """Extract TorchIO transform from fastMONAI wrapper or return as-is.
-
-    This function enables using fastMONAI wrappers (e.g., RandomAffine, RandomGamma)
-    in patch-based workflows where raw TorchIO transforms are needed for tio.Compose().
-
-    Uses the explicit `.tio_transform` property when available on fastMONAI wrappers.
-    Falls back to returning the transform unchanged for raw TorchIO transforms.
-
-    Args:
-        tfm: fastMONAI wrapper (e.g., RandomAffine) or raw TorchIO transform
-
-    Returns:
-        The underlying TorchIO transform
-
-    Example:
-        >>> from fastMONAI.vision_augmentation import RandomAffine
-        >>> wrapped = RandomAffine(degrees=10)
-        >>> raw = _extract_tio_transform(wrapped)  # Returns tio.RandomAffine
-    """
+    """Return the underlying TorchIO transform from a fastMONAI wrapper (via .tio_transform), else the transform unchanged."""
     return getattr(tfm, 'tio_transform', tfm)
 
 
 def normalize_patch_transforms(tfms: list) -> list:
-    """Normalize transforms for patch-based workflow.
+    """Extract raw TorchIO transforms from a list of fastMONAI wrappers (raw TorchIO transforms pass through).
 
-    Extracts underlying TorchIO transforms from fastMONAI wrappers.
-    Also accepts raw TorchIO transforms for backward compatibility.
-
-    This enables using the same transform syntax in both standard and
-    patch-based workflows:
-
-        >>> from fastMONAI.vision_augmentation import RandomAffine, RandomGamma
-        >>>
-        >>> # Same syntax works in both contexts
-        >>> item_tfms = [RandomAffine(degrees=10), RandomGamma(p=0.5)]   # Standard
-        >>> patch_tfms = [RandomAffine(degrees=10), RandomGamma(p=0.5)]  # Patch-based
+    Lets the same transform syntax work in both standard and patch-based workflows.
 
     Args:
-        tfms: List of fastMONAI wrappers or raw TorchIO transforms
+        tfms: List of fastMONAI wrappers or raw TorchIO transforms.
 
     Returns:
-        List of raw TorchIO transforms suitable for tio.Compose()
+        List of raw TorchIO transforms suitable for tio.Compose().
+
+    Example:
+        >>> patch_tfms = normalize_patch_transforms([RandomAffine(degrees=10), RandomGamma(p=0.5)])
     """
     if tfms is None:
         return None
     return [_extract_tio_transform(t) for t in tfms]
 
 # %% ../nbs/10_vision_patch.ipynb #cell-5
+_UNET_DIVISOR = 16  # U-Net-style encoders require patch dims divisible by 2^4
+
+
 @dataclass
 class PatchConfig:
     """Configuration for patch-based training and inference.
@@ -127,6 +98,9 @@ class PatchConfig:
         keep_largest_component: If True, keep only the largest connected component
             in binary segmentation predictions. Only applies during inference when
             return_probabilities=False. Defaults to False.
+        binary_threshold: Decision boundary for single-channel (sigmoid) masks; a voxel is
+            foreground when probability >= binary_threshold (matches MONAI AsDiscrete). Only
+            applies when return_probabilities=False and n_classes == 1. Defaults to 0.5.
     
     Example:
         >>> config = PatchConfig(
@@ -152,6 +126,7 @@ class PatchConfig:
     padding_mode: int | float | str = 0
     # Post-processing (binary segmentation only)
     keep_largest_component: bool = False
+    binary_threshold: float = 0.5  # decision boundary for 1-channel sigmoid masks (>=)
     
     def __post_init__(self):
         """Validate configuration."""
@@ -163,8 +138,7 @@ class PatchConfig:
         if self.aggregation_mode not in valid_aggregation:
             raise ValueError(f"aggregation_mode must be one of {valid_aggregation}")
         
-        # Validate patch_overlap
-        # Negative overlap doesn't make sense
+        # Validate patch_overlap (negative is meaningless; pixel overlap must be < patch_size)
         if isinstance(self.patch_overlap, (int, float)):
             if self.patch_overlap < 0:
                 raise ValueError("patch_overlap cannot be negative")
@@ -186,14 +160,16 @@ class PatchConfig:
                         f"Overlap >= patch_size creates step_size <= 0 (infinite patches)."
                     )
 
-        # Warn if patch_size dimensions are not divisible by 16
-        non_div = [s for s in self.patch_size if s % 16 != 0]
+        non_div = [s for s in self.patch_size if s % _UNET_DIVISOR != 0]
         if non_div:
             warnings.warn(
-                f"patch_size {self.patch_size} has dimensions not divisible by 16. "
+                f"patch_size {self.patch_size} has dimensions not divisible by {_UNET_DIVISOR}. "
                 f"Most encoder-decoder architectures (e.g., U-Net) require patch sizes "
-                f"divisible by 16 (2^4 for 4 downsampling levels)."
+                f"divisible by {_UNET_DIVISOR} (2^4 for 4 downsampling levels)."
             )
+
+        if not 0.0 <= self.binary_threshold <= 1.0:
+            raise ValueError(f"binary_threshold must be in [0, 1], got {self.binary_threshold}")
 
     @classmethod
     def from_dataset(
@@ -202,13 +178,10 @@ class PatchConfig:
         target_spacing: list = None,
         min_patch_size: list = None,
         max_patch_size: list = None,
-        divisor: int = 16,
+        divisor: int = _UNET_DIVISOR,
         **kwargs
     ) -> 'PatchConfig':
         """Create PatchConfig with automatic patch_size from dataset analysis.
-
-        Combines dataset preprocessing suggestions with patch size calculation
-        for a complete, DRY configuration.
 
         Args:
             dataset: MedDataset instance with analyzed images.
@@ -224,26 +197,12 @@ class PatchConfig:
             PatchConfig with suggested patch_size, apply_reorder, target_spacing.
 
         Example:
-            >>> from fastMONAI.dataset_info import MedDataset
             >>> dataset = MedDataset(dataframe=df, mask_col='mask_path', dtype=MedMask)
-            >>> 
-            >>> # Use recommended spacing
             >>> config = PatchConfig.from_dataset(dataset, samples_per_volume=16)
-            >>> 
-            >>> # Use custom spacing
-            >>> config = PatchConfig.from_dataset(
-            ...     dataset,
-            ...     target_spacing=[1.0, 1.0, 2.0],
-            ...     samples_per_volume=16
-            ... )
         """
-        # Get preprocessing suggestion from dataset
         suggestion = dataset.get_suggestion()
-
-        # Use explicit spacing or dataset suggestion
         _target_spacing = target_spacing if target_spacing is not None else suggestion['target_spacing']
 
-        # Calculate patch size for the target spacing
         patch_size = suggest_patch_size(
             dataset,
             target_spacing=_target_spacing,
@@ -252,8 +211,7 @@ class PatchConfig:
             divisor=divisor
         )
 
-        # Merge with explicit kwargs (kwargs override defaults)
-        # Use dataset.apply_reorder directly (not from get_suggestion() since it's not data-derived)
+        # apply_reorder comes straight from the dataset, not get_suggestion() (it is not data-derived)
         config_kwargs = {
             'patch_size': patch_size,
             'apply_reorder': dataset.apply_reorder,
@@ -268,23 +226,21 @@ def med_to_subject(
     img: Path | str,
     mask: Path | str = None,
 ) -> tio.Subject:
-    """Create TorchIO Subject with LAZY loading (paths only, no tensor loading).
-    
-    This function stores file paths in the Subject, allowing TorchIO's Queue
-    workers to load volumes on-demand during training. This is memory-efficient
-    as volumes are not loaded into RAM until needed.
-    
+    """Create a TorchIO Subject with LAZY loading (stores paths only, no tensors).
+
+    Storing only paths lets TorchIO's Queue workers load volumes on-demand during
+    training, keeping RAM usage low.
+
     Args:
         img: Path to image file.
         mask: Path to mask file (optional).
-    
+
     Returns:
         TorchIO Subject with 'image' and optionally 'mask' keys (lazy loaded).
-    
+
     Example:
         >>> subject = med_to_subject('image.nii.gz', 'mask.nii.gz')
-        >>> # Volume NOT loaded yet - only path stored
-        >>> data = subject['image'].data  # NOW volume is loaded
+        >>> data = subject['image'].data  # volume loaded only now
     """
     subject_dict = {
         'image': tio.ScalarImage(path=str(img))  # Lazy - stores path only
@@ -303,11 +259,10 @@ def create_subjects_dataset(
     pre_tfms: list = None,
     ensure_affine_consistency: bool = True
 ) -> tio.SubjectsDataset:
-    """Build TorchIO SubjectsDataset with LAZY loading from DataFrame.
+    """Build a TorchIO SubjectsDataset with LAZY loading from a DataFrame.
 
-    This function creates a SubjectsDataset that stores only file paths,
-    not loaded tensors. Volumes are loaded on-demand by Queue workers,
-    keeping memory usage constant regardless of dataset size.
+    Stores only file paths (not tensors); volumes are loaded on-demand by Queue
+    workers, keeping memory usage constant regardless of dataset size.
 
     Args:
         df: DataFrame with image (and optionally mask) paths.
@@ -324,36 +279,22 @@ def create_subjects_dataset(
         TorchIO SubjectsDataset with lazy-loaded subjects.
 
     Example:
-        >>> # Preprocessing via transforms (applied by workers on-demand)
-        >>> pre_tfms = [
-        ...     tio.ToCanonical(),           # Reorder to RAS+
-        ...     tio.Resample([0.5, 0.5, 0.5]),  # Resample
-        ...     tio.ZNormalization(),        # Intensity normalization
-        ... ]
-        >>> dataset = create_subjects_dataset(
-        ...     df, img_col='image', mask_col='label',
-        ...     pre_tfms=pre_tfms
-        ... )
-        >>> # Memory: ~0 MB (only paths stored, not volumes)
+        >>> pre_tfms = [tio.ToCanonical(), tio.Resample([0.5, 0.5, 0.5]), tio.ZNormalization()]
+        >>> dataset = create_subjects_dataset(df, img_col='image', mask_col='label', pre_tfms=pre_tfms)
     """
     subjects = []
     for idx, row in df.iterrows():
         img_path = row[img_col]
         mask_path = row[mask_col] if mask_col else None
-
-        # Create subject with lazy loading (paths only)
         subject = med_to_subject(img=img_path, mask=mask_path)
         subjects.append(subject)
 
-    # Build transform pipeline
     all_transforms = []
 
-    # Add CopyAffine as FIRST transform when mask is present
-    # This ensures spatial metadata consistency before other transforms
+    # CopyAffine must run FIRST (mask present): aligns spatial metadata before other transforms
     if mask_col is not None and ensure_affine_consistency:
         all_transforms.append(tio.CopyAffine(target='image'))
 
-    # Add user-provided transforms
     if pre_tfms:
         all_transforms.extend(pre_tfms)
 
@@ -439,15 +380,12 @@ class MedPatchDataLoader:
         self._device = _get_default_device()
         self.gpu_augmentation = gpu_augmentation
 
-        # Create sampler
         self.sampler = create_patch_sampler(config)
 
-        # Create patch transforms
-        # Normalize transforms - accepts both fastMONAI wrappers and raw TorchIO
+        # Normalize accepts both fastMONAI wrappers and raw TorchIO transforms
         normalized_tfms = normalize_patch_transforms(patch_tfms)
         self.patch_tfms = tio.Compose(normalized_tfms) if normalized_tfms else None
 
-        # Create queue
         self.queue = tio.Queue(
             subjects_dataset,
             max_length=config.queue_length,
@@ -458,7 +396,6 @@ class MedPatchDataLoader:
             shuffle_patches=shuffle
         )
 
-        # Create torch DataLoader
         self._dl = DataLoader(
             self.queue,
             batch_size=batch_size,
@@ -466,38 +403,20 @@ class MedPatchDataLoader:
             drop_last=drop_last
         )
 
-        # Track cleanup state
         self._closed = False
 
     def __iter__(self):
         """Iterate over batches, yielding (image, mask) tuples."""
         for batch in self._dl:
-            # Extract image and mask tensors
             img = batch['image'][tio.DATA]  # [B, C, H, W, D]
             has_mask = 'mask' in batch
 
             # Apply CPU patch transforms if provided (per-sample TorchIO loop)
             if self.patch_tfms is not None:
-                transformed_imgs = []
-                transformed_masks = [] if has_mask else None
-
-                for i in range(img.shape[0]):
-                    subject_dict = {'image': tio.ScalarImage(tensor=batch['image'][tio.DATA][i])}
-                    if has_mask:
-                        subject_dict['mask'] = tio.LabelMap(tensor=batch['mask'][tio.DATA][i])
-
-                    subject = tio.Subject(subject_dict)
-                    transformed = self.patch_tfms(subject)
-                    transformed_imgs.append(transformed['image'].data)
-                    if has_mask:
-                        transformed_masks.append(transformed['mask'].data)
-
-                img = torch.stack(transformed_imgs)
-                mask = torch.stack(transformed_masks) if has_mask else None
+                img, mask = self._apply_patch_tfms(batch, has_mask)
             else:
                 mask = batch['mask'][tio.DATA] if has_mask else None
 
-            # Move to device
             img = img.to(self._device)
             if mask is not None:
                 mask = mask.to(self._device)
@@ -506,12 +425,28 @@ class MedPatchDataLoader:
             if self.gpu_augmentation is not None:
                 img, mask = self.gpu_augmentation(img, mask)
 
-            # Wrap as MedImage/MedMask
             img = MedImage(img)
             if mask is not None:
                 mask = MedMask(mask)
 
             yield img, mask
+
+    def _apply_patch_tfms(self, batch, has_mask):
+        """Apply per-sample CPU TorchIO patch transforms; returns stacked (img, mask|None)."""
+        transformed_imgs = []
+        transformed_masks = [] if has_mask else None
+        for i in range(batch['image'][tio.DATA].shape[0]):
+            subject_dict = {'image': tio.ScalarImage(tensor=batch['image'][tio.DATA][i])}
+            if has_mask:
+                subject_dict['mask'] = tio.LabelMap(tensor=batch['mask'][tio.DATA][i])
+            subject = tio.Subject(subject_dict)
+            transformed = self.patch_tfms(subject)
+            transformed_imgs.append(transformed['image'].data)
+            if has_mask:
+                transformed_masks.append(transformed['mask'].data)
+        img = torch.stack(transformed_imgs)
+        mask = torch.stack(transformed_masks) if has_mask else None
+        return img, mask
 
     def __len__(self):
         """Return number of batches per epoch."""
@@ -552,7 +487,7 @@ class MedPatchDataLoader:
             return
         self._closed = True
         try:
-            # Trigger cleanup of Queue's internal DataLoader iterator
+            # Drop the Queue's internal iterator so its worker DataLoader shuts down
             if hasattr(self, 'queue') and hasattr(self.queue, '_subjects_iterable'):
                 self.queue._subjects_iterable = None
         except Exception:
@@ -572,6 +507,59 @@ class MedPatchDataLoader:
             pass
 
 # %% ../nbs/10_vision_patch.ipynb #cell-15
+def _split_df(df, valid_pct, valid_col, seed):
+    """Split a DataFrame into (train_df, valid_df) by valid_col, else a random valid_pct split."""
+    if valid_col is not None:
+        train_df = df[df[valid_col] == False].reset_index(drop=True)
+        valid_df = df[df[valid_col] == True].reset_index(drop=True)
+    else:
+        if seed is not None:
+            np.random.seed(seed)
+        n = len(df)
+        valid_idx = np.random.choice(n, size=int(n * valid_pct), replace=False)
+        train_idx = np.setdiff1d(np.arange(n), valid_idx)
+        train_df = df.iloc[train_idx].reset_index(drop=True)
+        valid_df = df.iloc[valid_idx].reset_index(drop=True)
+    return train_df, valid_df
+
+
+def _build_pre_patch_tfms(patch_config, apply_reorder, target_spacing, pre_patch_tfms):
+    """Assemble the pre-patch TorchIO transform list (reorder/resample/user), honoring preprocessed.
+
+    Returns None when no transforms apply (matches passing pre_tfms=None to create_subjects_dataset).
+    """
+    if patch_config.preprocessed:
+        return None
+    all_pre_tfms = []
+    if apply_reorder:
+        all_pre_tfms.append(tio.ToCanonical())
+    if target_spacing is not None:
+        all_pre_tfms.append(tio.Resample(target_spacing))
+    if pre_patch_tfms:
+        all_pre_tfms.extend(normalize_patch_transforms(pre_patch_tfms))
+    return all_pre_tfms if all_pre_tfms else None
+
+
+def _stash_from_df_metadata(instance, img_col, mask_col, pre_patch_tfms, apply_reorder,
+                            target_spacing, ensure_affine_consistency, patch_config,
+                            train_df, valid_df):
+    """Record the de-facto metadata contract attributes consumed by research/vs_seg scripts.
+
+    Stores the RAW pre_patch_tfms (not the normalized list), matching how the train_final*.py
+    scripts set dls._pre_patch_tfms manually.
+    """
+    instance._img_col = img_col
+    instance._mask_col = mask_col
+    instance._pre_patch_tfms = pre_patch_tfms
+    instance._apply_reorder = apply_reorder
+    instance._target_spacing = target_spacing
+    instance._ensure_affine_consistency = ensure_affine_consistency
+    instance._patch_config = patch_config
+    instance._train_source_df = train_df
+    instance._valid_source_df = valid_df
+    return instance
+
+
 class MedPatchDataLoaders:
     """fastai-compatible DataLoaders for patch-based training with LAZY loading.
 
@@ -586,20 +574,10 @@ class MedPatchDataLoaders:
     for full-volume sliding window inference.
 
     Example:
-        >>> import torchio as tio
-        >>>
-        >>> # New pattern: preprocessing params in config (DRY)
-        >>> config = PatchConfig(
-        ...     patch_size=[96, 96, 96],
-        ...     apply_reorder=True,
-        ...     target_spacing=[0.5, 0.5, 0.5]
-        ... )
+        >>> config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.5, 0.5, 0.5])
         >>> dls = MedPatchDataLoaders.from_df(
-        ...     df, img_col='image', mask_col='label',
-        ...     valid_pct=0.2,
-        ...     patch_config=config,
-        ...     pre_patch_tfms=[tio.ZNormalization()],
-        ...     bs=4
+        ...     df, img_col='image', mask_col='label', valid_pct=0.2,
+        ...     patch_config=config, pre_patch_tfms=[tio.ZNormalization()], bs=4
         ... )
         >>> learn = Learner(dls, model, loss_func=DiceLoss())
     """
@@ -614,11 +592,9 @@ class MedPatchDataLoaders:
         self._valid_dl = valid_dl
         self._device = device or _get_default_device()
 
-        # Move to device
         self._train_dl.to(self._device)
         self._valid_dl.to(self._device)
 
-        # Track cleanup state
         self._closed = False
 
     @classmethod
@@ -681,22 +657,11 @@ class MedPatchDataLoaders:
             MedPatchDataLoaders instance.
 
         Example:
-            >>> # CPU augmentation path (existing)
-            >>> dls = MedPatchDataLoaders.from_df(
-            ...     df, img_col='image', mask_col='label',
-            ...     patch_config=config,
-            ...     patch_tfms=[tio.RandomAffine(degrees=10), tio.RandomFlip()],
-            ...     bs=4
-            ... )
-            >>>
-            >>> # GPU augmentation path (new, faster for long training runs)
-            >>> from fastMONAI.vision_augmentation import gpu_patch_augmentations
+            >>> # GPU augmentation (use patch_tfms=... instead for CPU TorchIO augmentation)
             >>> gpu_aug = gpu_patch_augmentations(config.patch_size, config.target_spacing)
             >>> dls = MedPatchDataLoaders.from_df(
             ...     df, img_col='image', mask_col='label',
-            ...     patch_config=config,
-            ...     gpu_augmentation=gpu_aug,
-            ...     bs=4
+            ...     patch_config=config, gpu_augmentation=gpu_aug, bs=4
             ... )
         """
         # Validate mutual exclusivity
@@ -710,57 +675,31 @@ class MedPatchDataLoaders:
         if patch_config is None:
             patch_config = PatchConfig()
 
-        # Use config values, allow explicit overrides for backward compatibility
+        # Explicit args override config (backward compatibility)
         _apply_reorder = apply_reorder if apply_reorder is not None else patch_config.apply_reorder
         _target_spacing = target_spacing if target_spacing is not None else patch_config.target_spacing
 
-        # Warn if both config and explicit args provided with different values
         _warn_config_override('apply_reorder', patch_config.apply_reorder, apply_reorder)
         _warn_config_override('target_spacing', patch_config.target_spacing, target_spacing)
 
-        # Split data
-        if valid_col is not None:
-            train_df = df[df[valid_col] == False].reset_index(drop=True)
-            valid_df = df[df[valid_col] == True].reset_index(drop=True)
-        else:
-            if seed is not None:
-                np.random.seed(seed)
-            n = len(df)
-            valid_idx = np.random.choice(n, size=int(n * valid_pct), replace=False)
-            train_idx = np.setdiff1d(np.arange(n), valid_idx)
-            train_df = df.iloc[train_idx].reset_index(drop=True)
-            valid_df = df.iloc[valid_idx].reset_index(drop=True)
+        train_df, valid_df = _split_df(df, valid_pct, valid_col, seed)
 
-        # Build preprocessing transforms
-        all_pre_tfms = []
+        # Skipped when patch_config.preprocessed
+        all_pre_tfms = _build_pre_patch_tfms(patch_config, _apply_reorder, _target_spacing, pre_patch_tfms)
 
-        # Skip all preprocessing if data was already preprocessed externally
-        if not patch_config.preprocessed:
-            # Add reorder transform (reorder to RAS+ orientation)
-            if _apply_reorder:
-                all_pre_tfms.append(tio.ToCanonical())
-
-            # Add resample transform
-            if _target_spacing is not None:
-                all_pre_tfms.append(tio.Resample(_target_spacing))
-
-            # Add user-provided transforms (normalize to raw TorchIO transforms)
-            if pre_patch_tfms:
-                all_pre_tfms.extend(normalize_patch_transforms(pre_patch_tfms))
-
-        # Create subjects datasets with lazy loading (paths only, ~0 MB)
+        # Lazy subjects datasets (paths only)
         train_subjects = create_subjects_dataset(
             train_df, img_col, mask_col,
-            pre_tfms=all_pre_tfms if all_pre_tfms else None,
+            pre_tfms=all_pre_tfms,
             ensure_affine_consistency=ensure_affine_consistency
         )
         valid_subjects = create_subjects_dataset(
             valid_df, img_col, mask_col,
-            pre_tfms=all_pre_tfms if all_pre_tfms else None,
+            pre_tfms=all_pre_tfms,
             ensure_affine_consistency=ensure_affine_consistency
         )
 
-        # Create DataLoaders (both use same patch_config for consistent sampling)
+        # Train and valid share patch_config for consistent sampling
         train_dl = MedPatchDataLoader(
             train_subjects, patch_config, bs,
             patch_tfms=patch_tfms,
@@ -774,18 +713,11 @@ class MedPatchDataLoaders:
             shuffle=False, drop_last=False
         )
 
-        # Create instance and store metadata
         instance = cls(train_dl, valid_dl, device)
-        instance._img_col = img_col
-        instance._mask_col = mask_col
-        instance._pre_patch_tfms = pre_patch_tfms
-        instance._apply_reorder = _apply_reorder
-        instance._target_spacing = _target_spacing
-        instance._ensure_affine_consistency = ensure_affine_consistency
-        instance._patch_config = patch_config
-        instance._train_source_df = train_df
-        instance._valid_source_df = valid_df
-        return instance
+        return _stash_from_df_metadata(
+            instance, img_col, mask_col, pre_patch_tfms, _apply_reorder, _target_spacing,
+            ensure_affine_consistency, patch_config, train_df, valid_df
+        )
 
     @property
     def train(self):
@@ -993,47 +925,29 @@ class MedPatchDataLoaders:
 # %% ../nbs/10_vision_patch.ipynb #cell-17
 import numbers
 
-def _normalize_patch_overlap(patch_overlap, patch_size):
-    """Convert patch_overlap to integer pixel values for TorchIO compatibility.
+def _normalize_patch_overlap(patch_overlap: 'int | float | list', patch_size: list) -> tuple:
+    """Convert patch_overlap (fraction 0-1, pixel int, numpy scalar, or sequence) to a tuple of even pixel ints for TorchIO's GridSampler.
 
-    TorchIO's GridSampler expects patch_overlap as a tuple of even integers.
-    This function handles:
-    - Fractional overlap (0-1): converted to pixel values based on patch_size
-    - Numpy scalar types: converted to native Python types
-    - Sequences: converted to tuple of integers
-
-    Note: Input validation (negative values, overlap >= patch_size) is handled
-    by PatchConfig.__post_init__(). This function focuses on format conversion.
-
-    Args:
-        patch_overlap: int, float (0-1 for fraction), or sequence
-        patch_size: list/tuple of patch dimensions [x, y, z]
-
-    Returns:
-        Tuple of even integers suitable for TorchIO GridSampler
+    Format conversion only; value validation (negatives, overlap >= patch_size) lives in PatchConfig.__post_init__().
     """
-    # Handle scalar fractional overlap (0 < x < 1)
-    # Note: excludes 1.0 as 100% overlap creates step_size=0 (infinite patches)
+    # Scalar fraction (0 < x < 1); excludes 1.0 since 100% overlap creates step_size=0 (infinite patches)
     if isinstance(patch_overlap, (int, float, numbers.Number)) and 0 < float(patch_overlap) < 1:
-        # Convert fraction to pixel values, ensure even
         result = []
         for ps in patch_size:
             pixels = int(int(ps) * float(patch_overlap))
-            # Ensure even (required by TorchIO)
-            if pixels % 2 != 0:
+            if pixels % 2 != 0:  # TorchIO requires even overlap
                 pixels = pixels - 1 if pixels > 0 else 0
             result.append(pixels)
         return tuple(result)
 
-    # Handle scalar integer (including numpy scalars) - values > 1 are pixel counts
+    # Scalar int (incl. numpy scalars): pixel count
     if isinstance(patch_overlap, (int, float, numbers.Number)):
         val = int(patch_overlap)
-        # Ensure even
         if val % 2 != 0:
             val = val - 1 if val > 0 else 0
         return tuple(val for _ in patch_size)
 
-    # Handle sequences (list, tuple, ndarray)
+    # Sequence (list, tuple, ndarray)
     result = []
     for val in patch_overlap:
         pixels = int(val)
@@ -1056,20 +970,20 @@ _TTA_FLIP_AXES = (
 )
 
 
-def _predict_patch_tta(model, patch_input, amp_context=None):
-    """Mirror TTA: average probabilities over 8 flip combinations.
+def _logits_to_probs(logits: torch.Tensor) -> torch.Tensor:
+    """Logits -> probabilities: sigmoid for 1 channel (binary), else softmax over the channel dim.
 
-    Runs 8 forward passes with a running sum for memory efficiency (2x memory,
-    not 9x). Each pass: flip input -> forward -> activate -> flip back -> accumulate.
+    Upcasts to float32 (logits may be float16 under AMP). Does NOT move to CPU -- callers decide
+    placement (TTA keeps tensors on-device to flip back; the non-TTA path moves to CPU immediately).
+    """
+    return torch.sigmoid(logits.float()) if logits.shape[1] == 1 else torch.softmax(logits.float(), dim=1)
 
-    Args:
-        model: PyTorch model in eval mode (already on device).
-        patch_input: Batch tensor [B, C, D, H, W] already on device.
-        amp_context: Optional autocast context manager for mixed precision.
-            If None, no autocast is applied.
 
-    Returns:
-        Averaged probability tensor [B, C, D, H, W] on CPU.
+def _predict_patch_tta(model, patch_input, amp_context=None) -> torch.Tensor:
+    """Mirror TTA: average probabilities over the 8 flip combinations.
+
+    Uses a running sum (2x memory, not 9x). Each pass: flip -> forward -> activate -> flip back -> accumulate.
+    Returns the averaged probability tensor [B, C, D, H, W] on CPU. amp_context, if given, wraps the forward pass.
     """
     if amp_context is None: amp_context = nullcontext()
     summed_probs = None
@@ -1077,8 +991,7 @@ def _predict_patch_tta(model, patch_input, amp_context=None):
         flipped = torch.flip(patch_input, list(axes)) if axes else patch_input
         with amp_context:
             logits = model(flipped)
-        n_classes = logits.shape[1]
-        probs = torch.sigmoid(logits.float()) if n_classes == 1 else torch.softmax(logits.float(), dim=1)
+        probs = _logits_to_probs(logits)
         if axes:
             probs = torch.flip(probs, list(axes))
         summed_probs = probs if summed_probs is None else summed_probs + probs
@@ -1120,19 +1033,8 @@ class PatchInferenceEngine:
             Defaults to False.
     
     Example:
-        >>> # Option 1: From fastai Learner
+        >>> # From a fastai Learner (or pass a raw nn.Module with weights already loaded); amp=True for faster GPU
         >>> engine = PatchInferenceEngine(learn, config, pre_inference_tfms=[ZNormalization()])
-        >>> pred = engine.predict('image.nii.gz')
-        
-        >>> # Option 2: From raw PyTorch model (recommended for deployment)
-        >>> model = UNet(spatial_dims=3, in_channels=1, out_channels=2, ...)
-        >>> model.load_state_dict(torch.load('final_weights.pth'))
-        >>> model.cuda().eval()
-        >>> engine = PatchInferenceEngine(model, config, pre_inference_tfms=[ZNormalization()])
-        >>> pred = engine.predict('image.nii.gz')
-        
-        >>> # Option 3: With AMP for faster GPU inference
-        >>> engine = PatchInferenceEngine(learn, config, pre_inference_tfms=[ZNormalization()], amp=True)
         >>> pred = engine.predict('image.nii.gz')
     """
     
@@ -1149,26 +1051,24 @@ class PatchInferenceEngine:
         if batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
         
-        # Extract model from Learner if needed (use isinstance for robust detection)
-        # Note: We check for Learner explicitly because some models (e.g., MONAI UNet)
-        # have a .model attribute that is NOT the full model but an internal Sequential.
+        # We check for Learner explicitly because some models (e.g., MONAI UNet) have a
+        # .model attribute that is NOT the full model but an internal Sequential.
         if isinstance(learner, Learner):
             self.model = learner.model
         else:
-            self.model = learner  # Assume it's already a PyTorch model
+            self.model = learner  # already a PyTorch model
         
         self.config = config
         self.batch_size = batch_size
         
-        # Normalize transforms to raw TorchIO (accepts both fastMONAI wrappers and raw TorchIO)
+        # Accepts both fastMONAI wrappers and raw TorchIO transforms
         normalized_tfms = normalize_patch_transforms(pre_inference_tfms)
         self.pre_inference_tfms = tio.Compose(normalized_tfms) if normalized_tfms else None
         
-        # Use config values, allow explicit overrides for backward compatibility
+        # Explicit args override config (backward compatibility)
         self.apply_reorder = apply_reorder if apply_reorder is not None else config.apply_reorder
         self.target_spacing = target_spacing if target_spacing is not None else config.target_spacing
         
-        # Warn if explicit args provided but differ from config (potential mistake)
         _warn_config_override('apply_reorder', config.apply_reorder, apply_reorder)
         _warn_config_override('target_spacing', config.target_spacing, target_spacing)
         
@@ -1194,27 +1094,20 @@ class PatchInferenceEngine:
             self._amp_context = nullcontext()
 
     def _prepare_subject(self, img_path: Path | str) -> _PreparedSubject:
-        """Load and preprocess image, create GridSampler/Aggregator/DataLoader.
+        """Load + preprocess the image and build its GridSampler/Aggregator/DataLoader.
 
-        Thread-safe: creates only new local objects, reads only immutable self config.
-
-        Args:
-            img_path: Path to input image.
-
-        Returns:
-            _PreparedSubject with all intermediate objects needed for inference.
+        Thread-safe: creates only new local objects and reads only immutable self config.
         """
-        # Load image - keep org_img and org_size for post-processing
+        # Keep org_img and org_size for post-processing
         org_img, input_img, org_size = med_img_reader(
             img_path, apply_reorder=self.apply_reorder, target_spacing=self.target_spacing, only_tensor=False
         )
 
-        # Create TorchIO Subject from preprocessed image
         subject = tio.Subject(
             image=tio.ScalarImage(tensor=input_img.data.float(), affine=input_img.affine)
         )
 
-        # Apply pre-inference transforms (e.g., ZNormalization) to match training
+        # Match training preprocessing (e.g., ZNormalization)
         if self.pre_inference_tfms is not None:
             subject = self.pre_inference_tfms(subject)
 
@@ -1222,7 +1115,6 @@ class PatchInferenceEngine:
         img_shape = subject['image'].shape[1:]  # Exclude channel dim
         target_size = [max(s, p) for s, p in zip(img_shape, self.config.patch_size)]
 
-        # Warn if volume needed padding
         if any(s < p for s, p in zip(img_shape, self.config.patch_size)):
             padded_dims = [f"dim{i}: {s}<{p}" for i, (s, p) in enumerate(zip(img_shape, self.config.patch_size)) if s < p]
             warnings.warn(
@@ -1233,7 +1125,6 @@ class PatchInferenceEngine:
 
         subject = tio.CropOrPad(target_size, padding_mode=self.config.padding_mode)(subject)
 
-        # Convert patch_overlap to integer pixel values for TorchIO compatibility
         patch_overlap = _normalize_patch_overlap(self.config.patch_overlap, self.config.patch_size)
 
         grid_sampler = tio.GridSampler(
@@ -1251,16 +1142,9 @@ class PatchInferenceEngine:
         )
 
     def _run_inference(self, prepared: _PreparedSubject, tta: bool = False) -> torch.Tensor:
-        """Run model inference on all patches and aggregate.
+        """Run the model over all patches and aggregate; returns the raw probability tensor.
 
-        Must run on the main thread (model forward pass).
-
-        Args:
-            prepared: _PreparedSubject from _prepare_subject().
-            tta: If True, apply mirror test-time augmentation.
-
-        Returns:
-            Raw output tensor from aggregator (probabilities).
+        Must run on the main thread (model forward pass). tta enables mirror test-time augmentation.
         """
         # inference_mode is slightly faster than no_grad (disables autograd tracking
         # and view tracking). Safe here since we don't do in-place ops on outputs.
@@ -1274,12 +1158,7 @@ class PatchInferenceEngine:
                 else:
                     with self._amp_context:
                         logits = self.model(patch_input)
-                    n_classes = logits.shape[1]
-                    if n_classes == 1:
-                        probs = torch.sigmoid(logits.float())
-                    else:
-                        probs = torch.softmax(logits.float(), dim=1)
-                    probs = probs.cpu()
+                    probs = _logits_to_probs(logits).cpu()
 
                 prepared.aggregator.add_batch(probs, locations)
 
@@ -1291,34 +1170,23 @@ class PatchInferenceEngine:
         prepared: _PreparedSubject,
         return_probabilities: bool = False
     ) -> tuple[torch.Tensor, np.ndarray]:
-        """Post-process aggregated output: threshold, resize, reorient.
+        """Post-process the aggregated output (threshold/argmax, resize, reorient); returns (result, affine).
 
-        Always returns (result, affine) tuple.
-
-        Args:
-            output: Raw output tensor from _run_inference().
-            prepared: _PreparedSubject with original image metadata.
-            return_probabilities: If True, keep probability map instead of argmax.
-
-        Returns:
-            Tuple of (prediction tensor, affine matrix).
+        return_probabilities keeps the probability map instead of taking argmax/threshold.
         """
-        # Convert to prediction mask (only if not returning probabilities)
         if return_probabilities:
             result = output
         else:
             n_classes = output.shape[0]
             if n_classes == 1:
-                result = (output > 0.5).float()
+                result = (output >= self.config.binary_threshold).float()
             else:
                 result = output.argmax(dim=0, keepdim=True).float()
 
-        # Apply keep_largest post-processing for binary segmentation
         if not return_probabilities and self.config.keep_largest_component:
             from fastMONAI.vision_inference import keep_largest
             result = keep_largest(result.squeeze(0)).unsqueeze(0)
 
-        # Wrap result in TorchIO Image for resizing
         if return_probabilities:
             pred_img = tio.ScalarImage(tensor=result.float(), affine=prepared.input_img.affine)
         else:
@@ -1358,10 +1226,8 @@ class PatchInferenceEngine:
             img_path: Path to input image.
             return_probabilities: If True, return probability map instead of argmax.
             return_affine: If True, return (prediction, affine) tuple instead of just prediction.
-            tta: If True, apply mirror test-time augmentation
-                (8 flip combinations, averaged probabilities). Requires ~8x inference
-                time but improves prediction quality. Works best when training used
-                RandomFlip(axes='LRAPIS', p=0.5). Defaults to False.
+            tta: If True, apply mirror test-time augmentation (8 flip combinations, averaged
+                probabilities; ~8x slower). Works best when training used RandomFlip. Defaults to False.
 
         Returns:
             Predicted segmentation mask tensor, or tuple (prediction, affine) if return_affine=True.
@@ -1385,16 +1251,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def _save_prediction(pred, affine, input_path, save_path, return_probabilities):
-    """Save a single prediction as NIfTI file.
+    """Save a single prediction as a NIfTI file (`<stem>_pred.nii[.gz]` in save_path).
 
-    Module-level helper (no closure captures) for thread-safe background saving.
-
-    Args:
-        pred: Prediction tensor.
-        affine: Affine matrix for spatial alignment.
-        input_path: Original input file path (for deriving output filename).
-        save_path: Directory Path to save into.
-        return_probabilities: If True, save as ScalarImage; else LabelMap.
+    Module-level (no closure captures) so it is safe to run in a background save thread.
+    return_probabilities saves a ScalarImage, otherwise a LabelMap.
     """
     input_path = Path(input_path)
     stem = input_path.stem
@@ -1412,6 +1272,15 @@ def _save_prediction(pred, affine, input_path, save_path, return_probabilities):
     else:
         pred_img = tio.LabelMap(tensor=pred, affine=affine)
     pred_img.save(out_path)
+
+
+def _predict_one(engine, prepared, return_probabilities, tta):
+    """Inference + postprocess on a prepared subject (no I/O); returns (result, affine).
+
+    Shared by both patch_inference paths to keep them in lockstep; save scheduling stays at each call site.
+    """
+    output = engine._run_inference(prepared, tta=tta)
+    return engine._postprocess(output, prepared, return_probabilities)
 
 
 def patch_inference(
@@ -1462,21 +1331,12 @@ def patch_inference(
         List of predicted tensors.
 
     Example:
-        >>> config = PatchConfig(
-        ...     patch_size=[96, 96, 96],
-        ...     apply_reorder=True,
-        ...     target_spacing=[0.4102, 0.4102, 1.5]
-        ... )
+        >>> config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.4102, 0.4102, 1.5])
         >>> predictions = patch_inference(
-        ...     learner=learn,
-        ...     config=config,  # apply_reorder and target_spacing from config
-        ...     file_paths=val_paths,
-        ...     pre_inference_tfms=[tio.ZNormalization()],
-        ...     save_dir='predictions/patch_based',
-        ...     amp=True
+        ...     learner=learn, config=config, file_paths=val_paths,
+        ...     pre_inference_tfms=[tio.ZNormalization()], save_dir='predictions/patch_based', amp=True
         ... )
     """
-    # Use config values if not explicitly provided
     _apply_reorder = apply_reorder if apply_reorder is not None else config.apply_reorder
     _target_spacing = target_spacing if target_spacing is not None else config.target_spacing
 
@@ -1485,7 +1345,6 @@ def patch_inference(
         amp=amp
     )
 
-    # Create save directory if specified
     save_path = None
     if save_dir is not None:
         save_path = Path(save_dir)
@@ -1504,7 +1363,6 @@ def patch_inference(
             save_future = None
 
             for i in range(n_files):
-                # Wait for the prefetched subject
                 prepared = prefetch_future.result()
 
                 # Start prefetching the next image (if any)
@@ -1512,15 +1370,13 @@ def patch_inference(
                     prefetch_future = pool.submit(engine._prepare_subject, file_paths[i + 1])
 
                 # Run inference on the main thread
-                output = engine._run_inference(prepared, tta=tta)
-                result, affine = engine._postprocess(output, prepared, return_probabilities)
+                result, affine = _predict_one(engine, prepared, return_probabilities, tta)
                 predictions.append(result)
 
                 # Wait for previous save to complete before submitting a new one
                 if save_future is not None:
                     save_future.result()
 
-                # Submit current save in background
                 if save_path is not None:
                     save_future = pool.submit(
                         _save_prediction, result, affine, file_paths[i],
@@ -1541,13 +1397,10 @@ def patch_inference(
     else:
         iterator = tqdm(file_paths, desc=desc) if progress else file_paths
         for path in iterator:
-            if save_dir is not None:
-                pred, affine = engine.predict(path, return_probabilities, return_affine=True, tta=tta)
-            else:
-                pred = engine.predict(path, return_probabilities, tta=tta)
+            prepared = engine._prepare_subject(path)
+            pred, affine = _predict_one(engine, prepared, return_probabilities, tta)
             predictions.append(pred)
-
-            if save_dir is not None:
+            if save_path is not None:
                 _save_prediction(pred, affine, path, save_path, return_probabilities)
 
     return predictions
