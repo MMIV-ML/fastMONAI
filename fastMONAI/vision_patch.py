@@ -14,6 +14,7 @@ import numpy as np
 import warnings
 import matplotlib.pyplot as plt
 from pathlib import Path
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from typing import Callable
 from torch.utils.data import DataLoader
@@ -121,8 +122,8 @@ class PatchConfig:
             pre_patch_tfms (e.g., normalization) since they were already applied.
             Inference is unaffected and always applies pre_inference_tfms to raw
             images. Defaults to False.
-        padding_mode: Padding mode for CropOrPad when image < patch_size. Default is 0 (zero padding)
-            to align with nnU-Net's approach. Can be int, float, or string (e.g., 'minimum', 'mean').
+        padding_mode: Padding mode for CropOrPad when image < patch_size. Default is 0 (zero padding).
+          Can be int, float, or string (e.g., 'minimum', 'mean').
         keep_largest_component: If True, keep only the largest connected component
             in binary segmentation predictions. Only applies during inference when
             return_probabilities=False. Defaults to False.
@@ -145,10 +146,10 @@ class PatchConfig:
     queue_num_workers: int = 4
     aggregation_mode: str = 'hann'
     # Preprocessing parameters - must match between training and inference
-    apply_reorder: bool = True  # Defaults to True (the common case)
+    apply_reorder: bool = True
     target_spacing: list = None
     preprocessed: bool = False  # True = data already preprocessed, skip all preprocessing during training
-    padding_mode: int | float | str = 0  # Zero padding (nnU-Net standard)
+    padding_mode: int | float | str = 0
     # Post-processing (binary segmentation only)
     keep_largest_component: bool = False
     
@@ -555,7 +556,7 @@ class MedPatchDataLoader:
             if hasattr(self, 'queue') and hasattr(self.queue, '_subjects_iterable'):
                 self.queue._subjects_iterable = None
         except Exception:
-            pass  # Suppress cleanup errors
+            pass
 
     def __enter__(self):
         return self
@@ -768,8 +769,8 @@ class MedPatchDataLoaders:
         )
         valid_dl = MedPatchDataLoader(
             valid_subjects, patch_config, bs,
-            patch_tfms=None,  # No augmentation for validation
-            gpu_augmentation=None,  # No augmentation for validation
+            patch_tfms=None,
+            gpu_augmentation=None,
             shuffle=False, drop_last=False
         )
 
@@ -960,6 +961,9 @@ class MedPatchDataLoaders:
             def cpu(self):
                 """Move to CPU. Required for load_learner compatibility."""
                 return self.to(torch.device('cpu'))
+            def new_empty(self):
+                """Return self since already empty."""
+                return self
 
         return EmptyMedPatchDataLoaders(self._device)
 
@@ -1039,7 +1043,6 @@ def _normalize_patch_overlap(patch_overlap, patch_size):
     return tuple(result)
 
 
-# nnU-Net-style mirror TTA: all 2^3 = 8 flip combinations for 3D.
 # Batch tensor shape: [B, C, D, H, W], spatial dims are 2, 3, 4.
 _TTA_FLIP_AXES = (
     (),         # original
@@ -1053,8 +1056,8 @@ _TTA_FLIP_AXES = (
 )
 
 
-def _predict_patch_tta(model, patch_input):
-    """nnU-Net-style mirror TTA: average probabilities over 8 flip combinations.
+def _predict_patch_tta(model, patch_input, amp_context=None):
+    """Mirror TTA: average probabilities over 8 flip combinations.
 
     Runs 8 forward passes with a running sum for memory efficiency (2x memory,
     not 9x). Each pass: flip input -> forward -> activate -> flip back -> accumulate.
@@ -1062,16 +1065,20 @@ def _predict_patch_tta(model, patch_input):
     Args:
         model: PyTorch model in eval mode (already on device).
         patch_input: Batch tensor [B, C, D, H, W] already on device.
+        amp_context: Optional autocast context manager for mixed precision.
+            If None, no autocast is applied.
 
     Returns:
         Averaged probability tensor [B, C, D, H, W] on CPU.
     """
+    if amp_context is None: amp_context = nullcontext()
     summed_probs = None
     for axes in _TTA_FLIP_AXES:
         flipped = torch.flip(patch_input, list(axes)) if axes else patch_input
-        logits = model(flipped)
+        with amp_context:
+            logits = model(flipped)
         n_classes = logits.shape[1]
-        probs = torch.sigmoid(logits) if n_classes == 1 else torch.softmax(logits, dim=1)
+        probs = torch.sigmoid(logits.float()) if n_classes == 1 else torch.softmax(logits.float(), dim=1)
         if axes:
             probs = torch.flip(probs, list(axes))
         summed_probs = probs if summed_probs is None else summed_probs + probs
@@ -1108,6 +1115,9 @@ class PatchInferenceEngine:
             IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
             This ensures preprocessing consistency between training and inference.
             Accepts both fastMONAI wrappers and raw TorchIO transforms.
+        amp: If True, use automatic mixed precision (float16) for the forward pass.
+            Only supported on CUDA devices; ignored with a warning on CPU/MPS.
+            Defaults to False.
     
     Example:
         >>> # Option 1: From fastai Learner
@@ -1120,6 +1130,10 @@ class PatchInferenceEngine:
         >>> model.cuda().eval()
         >>> engine = PatchInferenceEngine(model, config, pre_inference_tfms=[ZNormalization()])
         >>> pred = engine.predict('image.nii.gz')
+        
+        >>> # Option 3: With AMP for faster GPU inference
+        >>> engine = PatchInferenceEngine(learn, config, pre_inference_tfms=[ZNormalization()], amp=True)
+        >>> pred = engine.predict('image.nii.gz')
     """
     
     def __init__(
@@ -1129,7 +1143,8 @@ class PatchInferenceEngine:
         apply_reorder: bool = None,
         target_spacing: list = None,
         batch_size: int = 4,
-        pre_inference_tfms: list = None
+        pre_inference_tfms: list = None,
+        amp: bool = False
     ):
         if batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
@@ -1157,11 +1172,26 @@ class PatchInferenceEngine:
         _warn_config_override('apply_reorder', config.apply_reorder, apply_reorder)
         _warn_config_override('target_spacing', config.target_spacing, target_spacing)
         
-        # Get device from model parameters, with fallback for parameter-less models
-        try:
-            self._device = next(self.model.parameters()).device
-        except StopIteration:
-            self._device = _get_default_device()
+        # Get device from model: check explicit .device attribute first (custom wrappers),
+        # then fall back to parameter inspection (nn.Module)
+        if hasattr(self.model, 'device'):
+            self._device = torch.device(self.model.device)
+        else:
+            try:
+                self._device = next(self.model.parameters()).device
+            except StopIteration:
+                self._device = _get_default_device()
+
+        # Set eval mode once at construction (this class is inference-only)
+        self.model.eval()
+
+        # AMP: CUDA-only, matching nnU-Net pattern
+        if amp and self._device.type == 'cuda':
+            self._amp_context = torch.amp.autocast('cuda', dtype=torch.float16)
+        else:
+            if amp and self._device.type != 'cuda':
+                warnings.warn("AMP is only supported on CUDA devices. Ignoring amp=True.")
+            self._amp_context = nullcontext()
 
     def _prepare_subject(self, img_path: Path | str) -> _PreparedSubject:
         """Load and preprocess image, create GridSampler/Aggregator/DataLoader.
@@ -1232,7 +1262,6 @@ class PatchInferenceEngine:
         Returns:
             Raw output tensor from aggregator (probabilities).
         """
-        self.model.eval()
         # inference_mode is slightly faster than no_grad (disables autograd tracking
         # and view tracking). Safe here since we don't do in-place ops on outputs.
         with torch.inference_mode():
@@ -1241,14 +1270,15 @@ class PatchInferenceEngine:
                 locations = patches_batch[tio.LOCATION]
 
                 if tta:
-                    probs = _predict_patch_tta(self.model, patch_input)
+                    probs = _predict_patch_tta(self.model, patch_input, self._amp_context)
                 else:
-                    logits = self.model(patch_input)
+                    with self._amp_context:
+                        logits = self.model(patch_input)
                     n_classes = logits.shape[1]
                     if n_classes == 1:
-                        probs = torch.sigmoid(logits)
+                        probs = torch.sigmoid(logits.float())
                     else:
-                        probs = torch.softmax(logits, dim=1)
+                        probs = torch.softmax(logits.float(), dim=1)
                     probs = probs.cpu()
 
                 prepared.aggregator.add_batch(probs, locations)
@@ -1299,17 +1329,12 @@ class PatchInferenceEngine:
 
         # Reorient to original orientation (if reorder was applied)
         if self.apply_reorder:
-            reoriented_array = _to_original_orientation(
-                pred_img.as_sitk(),
-                ('').join(prepared.org_img.orientation)
-            )
-            result = torch.from_numpy(reoriented_array).cpu()
-            if not return_probabilities:
-                result = result.long()
-        else:
-            result = pred_img.data.cpu()
-            if not return_probabilities:
-                result = result.long()
+            target_orientation = ''.join(prepared.org_img.orientation)
+            pred_img = tio.ToOrientation(target_orientation)(pred_img)
+
+        result = pred_img.data.cpu()
+        if not return_probabilities:
+            result = result.long()
 
         # Use original affine matrix for correct spatial alignment
         if not (hasattr(prepared.org_img, 'affine') and prepared.org_img.affine is not None):
@@ -1333,7 +1358,7 @@ class PatchInferenceEngine:
             img_path: Path to input image.
             return_probabilities: If True, return probability map instead of argmax.
             return_affine: If True, return (prediction, affine) tuple instead of just prediction.
-            tta: If True, apply nnU-Net-style mirror test-time augmentation
+            tta: If True, apply mirror test-time augmentation
                 (8 flip combinations, averaged probabilities). Requires ~8x inference
                 time but improves prediction quality. Works best when training used
                 RandomFlip(axes='LRAPIS', p=0.5). Defaults to False.
@@ -1401,7 +1426,8 @@ def patch_inference(
     save_dir: str = None,
     pre_inference_tfms: list = None,
     tta: bool = False,
-    prefetch: bool = True
+    prefetch: bool = True,
+    amp: bool = False
 ) -> list:
     """Batch patch-based inference on multiple volumes.
 
@@ -1424,11 +1450,13 @@ def patch_inference(
         save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.
         pre_inference_tfms: List of TorchIO transforms to apply before patch extraction.
             IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
-        tta: If True, apply nnU-Net-style mirror TTA (8 flip combinations).
+        tta: If True, mirror TTA (8 flip combinations).
         prefetch: If True (default), overlap I/O with compute using a background
             thread for preparation and saving. Holds two subjects in memory
             simultaneously (current + next). Set to False for memory-constrained
             environments processing very large volumes.
+        amp: If True, use automatic mixed precision (float16) for the forward pass.
+            Only supported on CUDA devices; ignored with a warning on CPU/MPS.
 
     Returns:
         List of predicted tensors.
@@ -1444,7 +1472,8 @@ def patch_inference(
         ...     config=config,  # apply_reorder and target_spacing from config
         ...     file_paths=val_paths,
         ...     pre_inference_tfms=[tio.ZNormalization()],
-        ...     save_dir='predictions/patch_based'
+        ...     save_dir='predictions/patch_based',
+        ...     amp=True
         ... )
     """
     # Use config values if not explicitly provided
@@ -1452,7 +1481,8 @@ def patch_inference(
     _target_spacing = target_spacing if target_spacing is not None else config.target_spacing
 
     engine = PatchInferenceEngine(
-        learner, config, _apply_reorder, _target_spacing, batch_size, pre_inference_tfms
+        learner, config, _apply_reorder, _target_spacing, batch_size, pre_inference_tfms,
+        amp=amp
     )
 
     # Create save directory if specified
