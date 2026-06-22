@@ -387,6 +387,8 @@ class MedDataset:
 
     def _visualize_single_case(self, img_path, mask_path, case_id, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
         """Helper method to visualize a single case."""
+        # Snapshot global MedBase preprocessing state so visualization stays side-effect-free (ARCH-1)
+        _saved = (MedBase.target_spacing, MedBase.apply_reorder, MedBase.affine_matrix)
         try:
             # Create MedImage and MedMask with current preprocessing settings
             suggestion = self.get_suggestion()
@@ -419,6 +421,9 @@ class MedDataset:
 
         except Exception as e:
             print(f"Failed to visualize case {case_id}: {e}")
+        finally:
+            # Restore global state: visualize_cases() must not mutate training preprocessing config
+            MedBase.target_spacing, MedBase.apply_reorder, MedBase.affine_matrix = _saved
 
     def visualize_cases(self, n_cases=4, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
         """Visualize cases from the dataset.

@@ -24,26 +24,53 @@ from fastcore.foundation import L
 from typing import Any
 
 # %% ../nbs/07_utils.ipynb #5f954a64-c9df-4ee8-b70a-fce7f857eaf2
+def _to_jsonable(o):
+    "Recursively convert numpy/torch scalars and arrays (and tuples) to JSON-native types."
+    if isinstance(o, dict): return {k: _to_jsonable(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)): return [_to_jsonable(v) for v in o]
+    if hasattr(o, 'tolist') and not isinstance(o, (str, bytes)): return o.tolist()
+    return o
+
+
 def store_variables(pkl_fn: str | Path, size: list, apply_reorder: bool, target_spacing: int | list):
-    """Save variable values in a pickle file."""
-    
+    """Save inference variables as JSON (numpy values coerced to native types).
+
+    Written as JSON for safe, pickle-free sharing; `load_variables` reads JSON and
+    still falls back to legacy pickle files.
+    """
     var_vals = [size, apply_reorder, target_spacing]
-    
-    with open(pkl_fn, 'wb') as f:
-        pickle.dump(var_vals, f)
+    with open(pkl_fn, 'w') as f:
+        json.dump(_to_jsonable(var_vals), f)
 
 # %% ../nbs/07_utils.ipynb #c2db5512-171c-4dfd-a26e-561b773a6069
-def load_variables(pkl_fn: (str, Path)):
-    """Loads stored variable values from a pickle file.
+def load_variables(pkl_fn: str | Path):
+    """Load stored inference variables.
+
+    Tries JSON first. Falls back to legacy pickle ONLY for files named ``.pkl``
+    (so a non-JSON payload disguised as ``.json`` is refused rather than
+    unpickled, since pickle can execute arbitrary code). Existing ``.pkl``
+    artifacts still load.
 
     Args:
-        pkl_fn: File path of the pickle file to be loaded.
+        pkl_fn: File path to load.
 
     Returns:
-        The deserialized value of the pickled data.
+        The deserialized ``[size, apply_reorder, target_spacing]`` list.
     """
-    with open(pkl_fn, 'rb') as f:
-        return pickle.load(f)
+    try:
+        with open(pkl_fn, 'r') as f:
+            return json.load(f)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        if not str(pkl_fn).endswith('.pkl'):
+            raise ValueError(
+                f"{pkl_fn} is not valid JSON. Re-export it, or use a trusted legacy "
+                f"'.pkl' file (pickle can execute arbitrary code on load)."
+            )
+        import warnings
+        warnings.warn(f"Loading legacy pickle '{pkl_fn}'; pickle can execute arbitrary "
+                      f"code -- only load files you trust.")
+        with open(pkl_fn, 'rb') as f:
+            return pickle.load(f)
 
 # %% ../nbs/07_utils.ipynb #w143kixa46j
 def store_patch_variables(
@@ -60,10 +87,13 @@ def store_patch_variables(
     queue_num_workers: int = 4,
     keep_largest_component: bool = False
 ):
-    """Save patch-based training and inference configuration to a pickle file.
+    """Save patch-based training and inference configuration to a JSON file.
+
+    Written as JSON for safe, pickle-free sharing; `load_patch_variables` reads JSON
+    and still falls back to legacy pickle files.
 
     Args:
-        pkl_fn: Path to save the pickle file.
+        pkl_fn: Path to save the config file.
         patch_size: Size of patches [x, y, z].
         patch_overlap: Overlap for inference (int, float 0-1, or list).
         aggregation_mode: GridAggregator mode ('crop', 'average', 'hann').
@@ -79,7 +109,7 @@ def store_patch_variables(
 
     Example:
         >>> store_patch_variables(
-        ...     'patch_settings.pkl',
+        ...     'patch_settings.json',
         ...     patch_size=[96, 96, 96],
         ...     patch_overlap=0.5,
         ...     aggregation_mode='hann',
@@ -103,29 +133,53 @@ def store_patch_variables(
         'keep_largest_component': keep_largest_component
     }
 
-    with open(pkl_fn, 'wb') as f:
-        pickle.dump(config, f)
+    with open(pkl_fn, 'w') as f:
+        json.dump(_to_jsonable(config), f)
 
 # %% ../nbs/07_utils.ipynb #03xsquvh55db
 def load_patch_variables(pkl_fn: str | Path) -> dict:
-    """Load patch-based training and inference configuration from a pickle file.
+    """Load patch-based training and inference configuration.
+
+    Tries JSON first. Falls back to legacy pickle ONLY for files named ``.pkl``
+    (a non-JSON payload disguised as ``.json`` is refused rather than unpickled,
+    since pickle can execute arbitrary code). Because JSON stringifies dict keys,
+    integer ``label_probabilities`` keys are restored to ints after a JSON load.
 
     Args:
-        pkl_fn: Path to the pickle file.
+        pkl_fn: Path to the config file.
 
     Returns:
-        Dictionary with patch configuration including:
-        - patch_size, patch_overlap, aggregation_mode
-        - apply_reorder, target_spacing, sampler_type, label_probabilities
-        - samples_per_volume, queue_length, queue_num_workers
+        Dictionary with patch configuration (patch_size, patch_overlap,
+        aggregation_mode, apply_reorder, target_spacing, sampler_type,
+        label_probabilities, samples_per_volume, queue_length, queue_num_workers).
 
     Example:
-        >>> config = load_patch_variables('patch_settings.pkl')
+        >>> config = load_patch_variables('patch_settings.json')
         >>> from fastMONAI.vision_patch import PatchConfig
         >>> patch_config = PatchConfig(**config)
     """
-    with open(pkl_fn, 'rb') as f:
-        return pickle.load(f)
+    try:
+        with open(pkl_fn, 'r') as f:
+            config = json.load(f)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        if not str(pkl_fn).endswith('.pkl'):
+            raise ValueError(
+                f"{pkl_fn} is not valid JSON. Re-export it, or use a trusted legacy "
+                f"'.pkl' file (pickle can execute arbitrary code on load)."
+            )
+        import warnings
+        warnings.warn(f"Loading legacy pickle '{pkl_fn}'; pickle can execute arbitrary "
+                      f"code -- only load files you trust.")
+        with open(pkl_fn, 'rb') as f:
+            return pickle.load(f)
+    # JSON stringifies dict keys; restore int keys for label_probabilities.
+    lp = config.get('label_probabilities')
+    if isinstance(lp, dict):
+        config['label_probabilities'] = {
+            (int(k) if isinstance(k, str) and k.lstrip('-').isdigit() else k): v
+            for k, v in lp.items()
+        }
+    return config
 
 # %% ../nbs/07_utils.ipynb #14e1513a-25d6-497a-bec3-6adc008452d9
 def print_colab_gpu_info(): 
@@ -504,7 +558,7 @@ class ModelTrackingCallback(Callback):
         self.learn.cbs = original_cbs
 
         # Save inference config
-        config_path = temp_dir / "inference_settings.pkl"
+        config_path = temp_dir / "inference_settings.json"
         store_variables(config_path, self.size, self.apply_reorder, self.target_spacing)
         mlflow.log_artifact(str(config_path), "config")
     

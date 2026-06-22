@@ -125,7 +125,17 @@ class MetaResolver(type(torch.Tensor), metaclass=BypassNewMeta):
 # %% ../nbs/01_vision_core.ipynb #10916a66
 class MedBase(torch.Tensor, metaclass=MetaResolver):
     """A class that represents an image object.
-    Metaclass casts `x` to this class if it is of type `cls._bypass_type`."""
+    Metaclass casts `x` to this class if it is of type `cls._bypass_type`.
+
+    Design note -- `target_spacing`, `apply_reorder` and `affine_matrix` are CLASS
+    attributes (shared by `MedImage`/`MedMask`), set once via `item_preprocessing`
+    (from `MedDataBlock`); `affine_matrix` is latched from the first loaded image and
+    read by spatial augmentation. Intentional: assumes ONE dataset per process with
+    uniform reorder+resample before augmentation, so all samples share an affine.
+    Don't "fix" it as per-instance state for that usage -- only multiple datasets per
+    process, or heterogeneous non-resampled data through the standard (non-patch)
+    pipeline, would be mishandled. The patch workflow bypasses it via instance attrs.
+    """
     
     _bypass_type = torch.Tensor
     _show_args = {'cmap':'gray'}
