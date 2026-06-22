@@ -149,7 +149,8 @@ def store_patch_variables(
     samples_per_volume: int = 8,
     queue_length: int = 300,
     queue_num_workers: int = 4,
-    keep_largest_component: bool = False
+    keep_largest_component: bool = False,
+    normalization: list = None
 ):
     """Save patch-based training and inference configuration to a JSON file.
 
@@ -170,6 +171,8 @@ def store_patch_variables(
         queue_num_workers: Number of workers for parallel patch extraction.
         keep_largest_component: If True, keep only the largest connected component
             in binary segmentation predictions during inference.
+        normalization: List of normalization specs (from PatchConfig.normalization) to persist,
+            so inference can reconstruct the same pre-inference normalization.
 
     Example:
         >>> store_patch_variables(
@@ -194,7 +197,8 @@ def store_patch_variables(
         'samples_per_volume': samples_per_volume,
         'queue_length': queue_length,
         'queue_num_workers': queue_num_workers,
-        'keep_largest_component': keep_largest_component
+        'keep_largest_component': keep_largest_component,
+        'normalization': normalization
     }
 
     with open(pkl_fn, 'w') as f:
@@ -215,7 +219,8 @@ def load_patch_variables(pkl_fn: str | Path) -> dict:
     Returns:
         Dictionary with patch configuration (patch_size, patch_overlap,
         aggregation_mode, apply_reorder, target_spacing, sampler_type,
-        label_probabilities, samples_per_volume, queue_length, queue_num_workers).
+        label_probabilities, samples_per_volume, queue_length, queue_num_workers,
+        normalization).
 
     Example:
         >>> config = load_patch_variables('patch_settings.json')
