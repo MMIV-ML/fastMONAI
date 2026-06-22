@@ -24,6 +24,7 @@ from .vision_core import MedImage, MedMask, med_img_reader
 from .vision_plot import find_max_slice
 from .vision_inference import _do_resize
 from .dataset_info import MedDataset, suggest_patch_size
+from .vision_augmentation import transforms_to_specs, transforms_from_specs
 
 # %% ../nbs/10_vision_patch.ipynb #aw2pkvm2ibe
 def _get_default_device() -> torch.device:
@@ -101,6 +102,12 @@ class PatchConfig:
         binary_threshold: Decision boundary for single-channel (sigmoid) masks; a voxel is
             foreground when probability >= binary_threshold (matches MONAI AsDiscrete). Only
             applies when return_probabilities=False and n_classes == 1. Defaults to 0.5.
+        normalization: Single source of truth for pre-patch / pre-inference intensity
+            normalization. A list of fastMONAI transforms (e.g.
+            [ZNormalization(masking_method='foreground')]) or JSON spec dicts; coerced to specs
+            and persisted with the config. Read by both MedPatchDataLoaders.from_df (training)
+            and PatchInferenceEngine (inference). The manual pre_patch_tfms / pre_inference_tfms
+            args override this when provided.
     
     Example:
         >>> config = PatchConfig(
@@ -127,6 +134,10 @@ class PatchConfig:
     # Post-processing (binary segmentation only)
     keep_largest_component: bool = False
     binary_threshold: float = 0.5  # decision boundary for 1-channel sigmoid masks (>=)
+    # Normalization: single source of truth for pre-patch / pre-inference intensity
+    # normalization. Accepts live fastMONAI transforms or JSON spec dicts; coerced to
+    # specs in __post_init__ so the config stays JSON-serializable.
+    normalization: list = None
     
     def __post_init__(self):
         """Validate configuration."""
@@ -170,6 +181,11 @@ class PatchConfig:
         if not 0.0 <= self.binary_threshold <= 1.0:
             raise ValueError(f"binary_threshold must be in [0, 1], got {self.binary_threshold}")
 
+        # Coerce normalization (live transforms or specs) to JSON-serializable specs so the
+        # config can round-trip through store_patch_variables/load_patch_variables.
+        if self.normalization is not None:
+            self.normalization = transforms_to_specs(self.normalization)
+
     @classmethod
     def from_dataset(
         cls,
@@ -177,6 +193,7 @@ class PatchConfig:
         target_spacing: list = None,
         min_patch_size: list = None,
         max_patch_size: list = None,
+        normalization: list = None,
         divisor: int = _UNET_DIVISOR,
         **kwargs
     ) -> 'PatchConfig':
@@ -188,6 +205,8 @@ class PatchConfig:
                 dataset.get_suggestion()['target_spacing'].
             min_patch_size: Minimum per dimension [32, 32, 32].
             max_patch_size: Maximum per dimension [256, 256, 256].
+            normalization: Optional list of normalization transforms (or specs) stored on the
+                config as the single source of truth (e.g. [ZNormalization(masking_method='foreground')]).
             divisor: Divisibility constraint (default 16 for UNet compatibility).
             **kwargs: Additional PatchConfig parameters (samples_per_volume,
                 sampler_type, label_probabilities, etc.).
@@ -215,6 +234,7 @@ class PatchConfig:
             'patch_size': patch_size,
             'apply_reorder': dataset.apply_reorder,
             'target_spacing': _target_spacing,
+            'normalization': normalization,
         }
         config_kwargs.update(kwargs)
 
@@ -632,11 +652,13 @@ class MedPatchDataLoaders:
             valid_col: Column name for train/valid split (if pre-defined).
             patch_config: PatchConfig instance. Preprocessing params (apply_reorder,
                 target_spacing) can be set here for DRY usage with PatchInferenceEngine.
-            pre_patch_tfms: TorchIO transforms applied before patch extraction
-                           (after reorder/resample). Example: [tio.ZNormalization()].
-                           Accepts both fastMONAI wrappers and raw TorchIO transforms.
-                           Skipped when preprocessed=True (include in preprocess_dataset()
-                           transforms instead). Still needed for inference via pre_inference_tfms.
+            pre_patch_tfms: Optional override for patch_config.normalization. TorchIO transforms
+                applied before patch extraction (after reorder/resample), e.g.
+                [ZNormalization(masking_method='foreground')]. Accepts fastMONAI wrappers and raw
+                TorchIO transforms. When given, it is recorded into patch_config.normalization
+                (best-effort) so it persists for inference. Prefer setting normalization on the
+                PatchConfig. Skipped when preprocessed=True (include in preprocess_dataset()
+                transforms instead).
             patch_tfms: TorchIO transforms applied to extracted patches (training only).
                 Mutually exclusive with gpu_augmentation.
             gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation
@@ -683,8 +705,24 @@ class MedPatchDataLoaders:
 
         train_df, valid_df = _split_df(df, valid_pct, valid_col, seed)
 
+        # Normalization: patch_config.normalization is the source of truth. An explicit
+        # pre_patch_tfms overrides it and is recorded into the config (best-effort) so it
+        # persists for inference; non-serializable transforms are applied but not recorded.
+        if pre_patch_tfms is not None:
+            _norm_tfms = pre_patch_tfms
+            try:
+                _specs = transforms_to_specs(pre_patch_tfms)
+            except TypeError as e:
+                warnings.warn(f"pre_patch_tfms not recorded in patch_config.normalization: {e}")
+            else:
+                if patch_config.normalization and patch_config.normalization != _specs:
+                    warnings.warn("pre_patch_tfms overrides patch_config.normalization.")
+                patch_config.normalization = _specs
+        else:
+            _norm_tfms = transforms_from_specs(patch_config.normalization)
+
         # Skipped when patch_config.preprocessed
-        all_pre_tfms = _build_pre_patch_tfms(patch_config, _apply_reorder, _target_spacing, pre_patch_tfms)
+        all_pre_tfms = _build_pre_patch_tfms(patch_config, _apply_reorder, _target_spacing, _norm_tfms)
 
         # Lazy subjects datasets (paths only)
         train_subjects = create_subjects_dataset(
@@ -714,7 +752,7 @@ class MedPatchDataLoaders:
 
         instance = cls(train_dl, valid_dl, device)
         return _stash_from_df_metadata(
-            instance, img_col, mask_col, pre_patch_tfms, _apply_reorder, _target_spacing,
+            instance, img_col, mask_col, _norm_tfms, _apply_reorder, _target_spacing,
             ensure_affine_consistency, patch_config, train_df, valid_df
         )
 
@@ -1023,17 +1061,18 @@ class PatchInferenceEngine:
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
         target_spacing: Target voxel spacing. If None, uses config value.
         batch_size: Number of patches to predict at once. Must be positive.
-        pre_inference_tfms: List of TorchIO transforms to apply before patch extraction.
-            IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
-            This ensures preprocessing consistency between training and inference.
+        pre_inference_tfms: Optional override for config.normalization. If None, normalization is
+            read from config.normalization (the default source of truth, set at training time).
+            Provide this only to override the config (e.g. for non-serializable transforms).
             Accepts both fastMONAI wrappers and raw TorchIO transforms.
         amp: If True, use automatic mixed precision (float16) for the forward pass.
             Only supported on CUDA devices; ignored with a warning on CPU/MPS.
             Defaults to False.
     
     Example:
-        >>> # From a fastai Learner (or pass a raw nn.Module with weights already loaded); amp=True for faster GPU
-        >>> engine = PatchInferenceEngine(learn, config, pre_inference_tfms=[ZNormalization()])
+        >>> # normalization is read from config.normalization; amp=True for faster GPU
+        >>> config = PatchConfig(patch_size=[96, 96, 96], normalization=[ZNormalization(masking_method='foreground')])
+        >>> engine = PatchInferenceEngine(learn, config)
         >>> pred = engine.predict('image.nii.gz')
     """
     
@@ -1060,8 +1099,11 @@ class PatchInferenceEngine:
         self.config = config
         self.batch_size = batch_size
         
-        # Accepts both fastMONAI wrappers and raw TorchIO transforms
-        normalized_tfms = normalize_patch_transforms(pre_inference_tfms)
+        # Normalization: explicit pre_inference_tfms overrides config.normalization (the
+        # default source of truth). Accepts fastMONAI wrappers and raw TorchIO transforms.
+        _tfms = (pre_inference_tfms if pre_inference_tfms is not None
+                 else transforms_from_specs(getattr(config, 'normalization', None)))
+        normalized_tfms = normalize_patch_transforms(_tfms)
         self.pre_inference_tfms = tio.Compose(normalized_tfms) if normalized_tfms else None
         
         # Explicit args override config (backward compatibility)
@@ -1316,8 +1358,9 @@ def patch_inference(
         return_probabilities: Return probability maps.
         progress: Show progress bar.
         save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.
-        pre_inference_tfms: List of TorchIO transforms to apply before patch extraction.
-            IMPORTANT: Should match the pre_patch_tfms used during training (e.g., [tio.ZNormalization()]).
+        pre_inference_tfms: Optional override for config.normalization. If None, normalization is
+            read from config.normalization (the source of truth set at training time). Provide this
+            only to override the config (e.g. for non-serializable transforms).
         tta: If True, mirror TTA (8 flip combinations).
         prefetch: If True (default), overlap I/O with compute using a background
             thread for preparation and saving. Holds two subjects in memory
@@ -1330,10 +1373,11 @@ def patch_inference(
         List of predicted tensors.
 
     Example:
-        >>> config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.4102, 0.4102, 1.5])
-        >>> predictions = patch_inference(
+        >>> config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.4102, 0.4102, 1.5],
+        ...                      normalization=[ZNormalization(masking_method='foreground')])
+        >>> predictions = patch_inference(  # normalization auto-applied from config
         ...     learner=learn, config=config, file_paths=val_paths,
-        ...     pre_inference_tfms=[tio.ZNormalization()], save_dir='predictions/patch_based', amp=True
+        ...     save_dir='predictions/patch_based', amp=True
         ... )
     """
     _apply_reorder = apply_reorder if apply_reorder is not None else config.apply_reorder

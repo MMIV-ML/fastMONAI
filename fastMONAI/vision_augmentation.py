@@ -2,8 +2,9 @@
 
 # %% auto #0
 __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization', 'RescaleIntensity', 'NormalizeIntensity',
-           'BraTSMaskConverter', 'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField',
-           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomAnisotropy', 'RandomCutout',
+           'build_transform_from_spec', 'transforms_to_specs', 'transforms_from_specs', 'BraTSMaskConverter',
+           'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField', 'RandomBlur',
+           'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomAnisotropy', 'RandomCutout',
            'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf', 'GpuPatchAugmentation',
            'gpu_patch_augmentations', 'suggest_patch_augmentations']
 
@@ -106,10 +107,23 @@ class ZNormalization(DisplayedTransform):
     order = 0
 
     def __init__(self, masking_method=None, channel_wise=True):
+        # Capture the original (serializable) masking_method before it is converted
+        # to a callable, so the transform can round-trip via to_spec().
+        self._masking_method_arg = masking_method
         if masking_method == 'foreground':
             masking_method = _foreground_masking
         self.z_normalization = tio.ZNormalization(masking_method=masking_method)
         self.channel_wise = channel_wise
+
+    def to_spec(self):
+        """Return a JSON-serializable spec dict (for PatchConfig.normalization)."""
+        mm = self._masking_method_arg
+        if not isinstance(mm, (str, type(None))):
+            raise TypeError(
+                "ZNormalization with a callable masking_method is not config-serializable; "
+                "pass it via the pre_inference_tfms/pre_patch_tfms override instead."
+            )
+        return {'name': 'ZNormalization', 'masking_method': mm, 'channel_wise': self.channel_wise}
 
     @property
     def tio_transform(self):
@@ -162,7 +176,15 @@ class RescaleIntensity(DisplayedTransform):
     order = 0
     
     def __init__(self, out_min_max: tuple[float, float], in_min_max: tuple[float, float]):
+        self.out_min_max = out_min_max
+        self.in_min_max = in_min_max
         self.rescale = tio.RescaleIntensity(out_min_max=out_min_max, in_min_max=in_min_max)
+
+    def to_spec(self):
+        """Return a JSON-serializable spec dict (for PatchConfig.normalization)."""
+        return {'name': 'RescaleIntensity',
+                'out_min_max': list(self.out_min_max),
+                'in_min_max': list(self.in_min_max)}
 
     @property
     def tio_transform(self):
@@ -237,6 +259,12 @@ class NormalizeIntensity(DisplayedTransform):
             divisor=divisor
         )
 
+    def to_spec(self):
+        """Return a JSON-serializable spec dict (for PatchConfig.normalization)."""
+        return {'name': 'NormalizeIntensity', 'nonzero': self.nonzero,
+                'channel_wise': self.channel_wise, 'subtrahend': self.subtrahend,
+                'divisor': self.divisor}
+
     @property
     def tio_transform(self):
         """Return TorchIO-compatible transform for patch-based workflows."""
@@ -252,6 +280,65 @@ class NormalizeIntensity(DisplayedTransform):
     
     def encodes(self, o: MedMask):
         return o
+
+# %% ../nbs/03_vision_augment.ipynb #norm-spec-registry
+# Registry + (de)serialization helpers for normalization transforms.
+# Lets PatchConfig.normalization persist as JSON specs (name + scalar kwargs)
+# and reconstruct the live transforms for training/inference.
+_NORM_TFM_REGISTRY = {
+    'ZNormalization': ZNormalization,
+    'RescaleIntensity': RescaleIntensity,
+    'NormalizeIntensity': NormalizeIntensity,
+}
+
+
+def build_transform_from_spec(spec):
+    """Reconstruct a normalization transform from a JSON spec dict.
+
+    `spec` must contain a `name` key naming a registered transform
+    (see `_NORM_TFM_REGISTRY`); remaining keys are passed as constructor kwargs.
+    """
+    spec = dict(spec)
+    name = spec.pop('name', None)
+    cls = _NORM_TFM_REGISTRY.get(name)
+    if cls is None:
+        raise ValueError(f"Unknown transform spec name {name!r}. Known: {sorted(_NORM_TFM_REGISTRY)}.")
+    return cls(**spec)
+
+
+def transforms_to_specs(tfms):
+    """Convert transforms (or specs) to JSON-serializable spec dicts.
+
+    Accepts fastMONAI transform wrappers (via `.to_spec()`), pass-through spec
+    dicts, and None. Raises TypeError if a transform cannot be serialized (e.g. a
+    custom callable) -- pass such transforms via the pre_inference_tfms /
+    pre_patch_tfms override instead of the config.
+    """
+    if tfms is None:
+        return None
+    specs = []
+    for t in tfms:
+        if isinstance(t, dict):
+            specs.append(t)
+        elif hasattr(t, 'to_spec'):
+            specs.append(t.to_spec())
+        else:
+            raise TypeError(
+                f"{type(t).__name__} is not config-serializable (no to_spec). "
+                "Pass it via the pre_inference_tfms/pre_patch_tfms override instead."
+            )
+    return specs
+
+
+def transforms_from_specs(specs):
+    """Reconstruct live transforms from JSON spec dicts.
+
+    Accepts spec dicts (rebuilt via `build_transform_from_spec`), pass-through
+    live transforms, and None.
+    """
+    if specs is None:
+        return None
+    return [build_transform_from_spec(s) if isinstance(s, dict) else s for s in specs]
 
 # %% ../nbs/03_vision_augment.ipynb #be431cc2
 class BraTSMaskConverter(DisplayedTransform):
