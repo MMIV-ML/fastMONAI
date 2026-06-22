@@ -94,12 +94,10 @@ def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
     reoriented_array = _to_original_orientation(input_img.as_sitk(), 
                                                 ('').join(org_img.orientation))
     
-    # Create new TorchIO image with proper affine matrix
     # Spatial properties (spacing, origin, direction) are automatically derived from affine
     from torchio import ScalarImage
     import numpy as np
     
-    # Ensure we have a valid affine matrix
     if hasattr(org_img, 'affine') and org_img.affine is not None:
         affine_matrix = org_img.affine.copy()
     elif MedBase.affine_matrix is not None:

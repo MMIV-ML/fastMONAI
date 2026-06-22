@@ -142,7 +142,6 @@ class PatchConfig:
         if isinstance(self.patch_overlap, (int, float)):
             if self.patch_overlap < 0:
                 raise ValueError("patch_overlap cannot be negative")
-            # Check if overlap as pixels would exceed patch_size (causes step_size=0)
             if self.patch_overlap >= 1:  # Pixel value, not fraction
                 for ps in self.patch_size:
                     if self.patch_overlap >= ps:

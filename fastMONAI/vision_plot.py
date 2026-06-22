@@ -79,7 +79,7 @@ def show_med_img(im, ctx, channel: int, slice_index: int, anatomical_plane: int,
                      
     validate_anatomical_plane(anatomical_plane)
                      
-    if hasattrs(im, ('data', 'cpu', 'permute')): # Check if `im` has the necessary attributes
+    if hasattrs(im, ('data', 'cpu', 'permute')):
         im = im.data.cpu()
         im, aspect = _get_slice(
             im, 
@@ -161,30 +161,24 @@ def show_segmentation_comparison(
     """
     validate_anatomical_plane(anatomical_plane)
     
-    # Ensure we have tensor data
     img_data = image.data if hasattr(image, 'data') else image
     gt_data = ground_truth.data if hasattr(ground_truth, 'data') else ground_truth
     pred_data = prediction.data if hasattr(prediction, 'data') else prediction
     
-    # Move to CPU if needed
     if hasattr(img_data, 'cpu'): img_data = img_data.cpu()
     if hasattr(gt_data, 'cpu'): gt_data = gt_data.cpu()
     if hasattr(pred_data, 'cpu'): pred_data = pred_data.cpu()
     
-    # Find optimal slice if not provided
     if slice_index is None:
         gt_np = gt_data[channel].numpy()
         slice_index = find_max_slice(gt_np, anatomical_plane)
     
-    # Create figure
     fig, axes = plt.subplots(1, 3, figsize=figsize)
     
-    # Get slices with proper aspect ratio using existing _get_slice helper
     img_slice, img_aspect = _get_slice(img_data, channel, slice_index, anatomical_plane, voxel_size)
     gt_slice, gt_aspect = _get_slice(gt_data, channel, slice_index, anatomical_plane, voxel_size)
     pred_slice, pred_aspect = _get_slice(pred_data, channel, slice_index, anatomical_plane, voxel_size)
     
-    # Plot panels
     axes[0].imshow(img_slice, cmap=cmap_img, aspect=img_aspect)
     axes[0].set_title('Input Image')
     axes[0].axis('off')
@@ -193,7 +187,6 @@ def show_segmentation_comparison(
     axes[1].set_title('Ground Truth')
     axes[1].axis('off')
     
-    # Build prediction title
     pred_title = 'Prediction'
     if metric_value is not None:
         pred_title = f'Prediction ({metric_name}: {metric_value:.4f})'

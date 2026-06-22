@@ -127,14 +127,11 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     """A class that represents an image object.
     Metaclass casts `x` to this class if it is of type `cls._bypass_type`.
 
-    Design note -- `target_spacing`, `apply_reorder` and `affine_matrix` are CLASS
+    `target_spacing`, `apply_reorder` and `affine_matrix` are CLASS
     attributes (shared by `MedImage`/`MedMask`), set once via `item_preprocessing`
     (from `MedDataBlock`); `affine_matrix` is latched from the first loaded image and
-    read by spatial augmentation. Intentional: assumes ONE dataset per process with
+    read by spatial augmentation. One dataset per process with
     uniform reorder+resample before augmentation, so all samples share an affine.
-    Don't "fix" it as per-instance state for that usage -- only multiple datasets per
-    process, or heterogeneous non-resampled data through the standard (non-patch)
-    pipeline, would be mishandled. The patch workflow bypasses it via instance attrs.
     """
     
     _bypass_type = torch.Tensor
@@ -165,40 +162,32 @@ class MedBase(torch.Tensor, metaclass=MetaResolver):
     def __new__(cls, x, **kwargs):
         """Creates a new instance of MedBase from a tensor."""
         if isinstance(x, torch.Tensor):
-            # Create tensor of the same type and copy data
             res = torch.Tensor._make_subclass(cls, x.data, x.requires_grad)
-            # Copy any additional attributes
             if hasattr(x, 'affine_matrix'):
                 res.affine_matrix = x.affine_matrix
             return res
         else:
-            # Handle other types by converting to tensor first
             tensor = torch.as_tensor(x, **kwargs)
             return cls.__new__(cls, tensor)
 
     def new_empty(self, size, **kwargs):
         """Create a new empty tensor of the same type."""
-        # Create new tensor with same type and device/dtype
         kwargs.setdefault('dtype', self.dtype)
         kwargs.setdefault('device', self.device)
         new_tensor = torch.empty(size, **kwargs)
-        # Use __new__ to create proper subclass instance
         return self.__class__.__new__(self.__class__, new_tensor)
 
     def __copy__(self):
         """Shallow copy implementation."""
         copied = self.__class__.__new__(self.__class__, self.clone())
-        # Copy class attributes
         if hasattr(self, 'affine_matrix'):
             copied.affine_matrix = self.affine_matrix
         return copied
 
     def __deepcopy__(self, memo):
         """Deep copy implementation."""
-        # Create a deep copy of the tensor data
         copied_data = self.clone()
         copied = self.__class__.__new__(self.__class__, copied_data)
-        # Deep copy class attributes
         if hasattr(self, 'affine_matrix') and self.affine_matrix is not None:
             copied.affine_matrix = copy.deepcopy(self.affine_matrix, memo)
         else:

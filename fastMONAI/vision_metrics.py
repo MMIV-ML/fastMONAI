@@ -32,7 +32,6 @@ def calculate_dsc(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     Returns:
         Dice score(s). Single value for 3D/4D input, tensor of values for 5D batch.
     """
-    # Normalize to 5D: [B, C, D, H, W]
     if pred.ndim == 3:  # [D, H, W] -> [1, 1, D, H, W]
         pred = pred.unsqueeze(0).unsqueeze(0)
         targ = targ.unsqueeze(0).unsqueeze(0)
@@ -61,7 +60,6 @@ def calculate_haus(pred: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     Returns:
         HD95 value(s). Single value for 3D/4D input, tensor of values for 5D batch.
     """
-    # Normalize to 5D: [B, C, D, H, W]
     if pred.ndim == 3:  # [D, H, W] -> [1, 1, D, H, W]
         pred = pred.unsqueeze(0).unsqueeze(0)
         targ = targ.unsqueeze(0).unsqueeze(0)
@@ -80,12 +78,12 @@ def binary_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         targ: Target masks with dimensions [B, C, W, H, D].
 
     Returns:
-        Mean Dice score.
+        Mean Dice score (empty-target samples are ignored).
     """
     pred = pred_to_binary_mask(act)
     dsc = calculate_dsc(pred.cpu(), targ.cpu())
 
-    return torch.mean(dsc)
+    return torch.nanmean(dsc)
 
 # %% ../nbs/05_vision_metrics.ipynb #48ba4382-eeb0-46d7-8f84-515313c7c27c
 def multi_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
@@ -118,11 +116,11 @@ def binary_hausdorff_distance(act: torch.Tensor, targ: torch.Tensor) -> torch.Te
         targ: Target masks with dimensions [B, C, W, H, D].
 
     Returns:
-        Mean HD95.
+        Mean HD95 (empty-target samples are ignored).
     """
     pred = pred_to_binary_mask(act)
     haus = calculate_haus(pred.cpu(), targ.cpu())
-    return torch.mean(haus)
+    return torch.nanmean(haus)
 
 # %% ../nbs/05_vision_metrics.ipynb #ea94dea5
 def multi_hausdorff_distance(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
@@ -265,7 +263,6 @@ def calculate_lesion_detection_rate(pred: torch.Tensor, targ: torch.Tensor, thre
         p_np = p.squeeze().cpu().numpy()
         t_np = t.squeeze().cpu().numpy()
 
-        # Label connected components in target
         labeled_targ, n_lesions = scipy_label(t_np)
 
         if n_lesions == 0:
@@ -448,14 +445,11 @@ class AccumulatedDice(Metric):
         pred = learn.pred  # Model output [B, C, D, H, W]
         targ = learn.y     # Target [B, 1, D, H, W] or [B, D, H, W]
 
-        # Get predicted segmentation
         pred_seg = pred.argmax(dim=1)  # [B, D, H, W]
 
-        # Ensure target has same shape
         if targ.ndim == pred_seg.ndim + 1:
             targ = targ.squeeze(1)
 
-        # Accumulate TP/FP/FN for each foreground class
         idx = 0
         for c in range(self.start_class, self.n_classes):
             c_pred = (pred_seg == c)

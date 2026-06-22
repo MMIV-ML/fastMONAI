@@ -88,7 +88,6 @@ def download_ixi_data(path: (str, Path) = '../data') -> Path:
     path = Path(path) / 'IXI'
     img_path = path / 'T1_images'
 
-    # Check whether image data already present in img_path:
     is_extracted = False
     try:
         if len(list(img_path.iterdir())) >= 581:  # 581 imgs in the IXI dataset

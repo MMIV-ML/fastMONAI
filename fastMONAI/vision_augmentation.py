@@ -690,7 +690,6 @@ class RandomCutout(ItemTransform):
         """
         img, y_true = x
 
-        # Probability check
         if torch.rand(1).item() > self.p:
             return img, y_true
 
