@@ -66,18 +66,15 @@ class MedDataset:
     def _create_data_frame(self):
         """Private method that returns a dataframe with information about the dataset."""
 
-        # Handle img_list (simple list of paths)
         if self.img_list is not None:
             file_list = self.img_list
 
-        # Handle path-based initialization
         elif self.path:
             file_list = glob.glob(f'{self.path}/*{self.postfix}*')
             if not file_list:
                 print('Could not find images. Check the image path')
                 return pd.DataFrame()
 
-        # Handle dataframe-based initialization
         elif self.input_df is not None and self.mask_col in self.input_df.columns:
             file_list = self.input_df[self.mask_col].tolist()
 
@@ -85,11 +82,9 @@ class MedDataset:
             print('Error: Must provide path, img_list, or dataframe with mask_col')
             return pd.DataFrame()
 
-        # Resolve cache path
         if self.use_cache and self.cache_path is None:
             self.cache_path = self._auto_cache_path(file_list)
 
-        # Process images to extract metadata (with optional caching)
         if self.use_cache and self.cache_path is not None:
             data_info_dict = self._process_with_cache(file_list)
         else:
@@ -186,10 +181,8 @@ class MedDataset:
                 # Calculate voxel volume in mm³
                 voxel_volume = o.spacing[0] * o.spacing[1] * o.spacing[2]
 
-                # Get voxel counts for each label
                 mask_labels_dict = o.count_labels()
 
-                # Calculate volumes for each label > 0 (skip background)
                 for key, voxel_count in mask_labels_dict.items():
                     label_int = int(key)
                     if label_int > 0 and voxel_count > 0:  # Skip background (label 0)
@@ -387,38 +380,37 @@ class MedDataset:
 
     def _visualize_single_case(self, img_path, mask_path, case_id, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
         """Helper method to visualize a single case."""
+        # Snapshot global MedBase preprocessing state so visualization stays side-effect-free (ARCH-1)
+        _saved = (MedBase.target_spacing, MedBase.apply_reorder, MedBase.affine_matrix)
         try:
-            # Create MedImage and MedMask with current preprocessing settings
             suggestion = self.get_suggestion()
             MedBase.item_preprocessing(target_spacing=suggestion['target_spacing'], apply_reorder=self.apply_reorder)
 
             img = MedImage.create(img_path)
             mask = MedMask.create(mask_path)
 
-            # Find optimal slice using explicit function
             mask_data = mask.numpy()[0]  # Remove channel dimension
             optimal_slice = find_max_slice(mask_data, anatomical_plane)
 
-            # Create subplot
             fig, axes = plt.subplots(1, 2, figsize=figsize)
 
-            # Show image
             img.show(ctx=axes[0], anatomical_plane=anatomical_plane, slice_index=optimal_slice)
             axes[0].set_title(f"{case_id} - Image (slice {optimal_slice})")
 
-            # Show overlay
             img.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice)
             mask.show(ctx=axes[1], anatomical_plane=anatomical_plane, slice_index=optimal_slice,
                      alpha=0.3, cmap=cmap)
             axes[1].set_title(f"{case_id} - Overlay (slice {optimal_slice})")
 
-            # Adjust spacing to bring plots closer
             plt.subplots_adjust(wspace=0.1)
             plt.tight_layout()
             plt.show()
 
         except Exception as e:
             print(f"Failed to visualize case {case_id}: {e}")
+        finally:
+            # Restore global state: visualize_cases() must not mutate training preprocessing config
+            MedBase.target_spacing, MedBase.apply_reorder, MedBase.affine_matrix = _saved
 
     def visualize_cases(self, n_cases=4, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
         """Visualize cases from the dataset.
@@ -437,7 +429,6 @@ class MedDataset:
             print("Error: No image_col specified. Cannot visualize cases.")
             return
 
-        # Check if required columns exist
         if self.image_col not in self.input_df.columns:
             print(f"Error: Column '{self.image_col}' not found in dataframe.")
             return
@@ -496,21 +487,17 @@ def suggest_patch_size(
         >>> # Use custom spacing
         >>> patch_size = suggest_patch_size(dataset, target_spacing=[1.0, 1.0, 2.0])
     """
-    # Defaults
     min_patch_size = min_patch_size or [32, 32, 32]
     max_patch_size = max_patch_size or [256, 256, 256]
 
-    # Use explicit spacing or get from dataset suggestion
     if target_spacing is None:
         suggestion = dataset.get_suggestion()
         target_spacing = suggestion['target_spacing']
 
-    # Get size statistics (resampled to target_spacing)
     stats = dataset.get_size_statistics(target_spacing)
     median_shape = stats['median']
     min_shape = stats['min']
 
-    # Handle single-image edge case
     if len(dataset.df) == 1:
         warnings.warn("Single image dataset - using image dimensions directly")
 
@@ -521,10 +508,8 @@ def suggest_patch_size(
     # Step 1: Clamp to min(median, min_volume) per axis — safety guarantee
     effective_dims = [min(med, mn) for med, mn in zip(median_shape, min_shape)]
 
-    # Step 2: Round down to nearest divisor
     patch_size = [round_to_divisor(dim, divisor) for dim in effective_dims]
 
-    # Step 3: Clamp to [min_patch_size, max_patch_size] bounds
     patch_size = [
         max(min_p, min(max_p, p))
         for p, min_p, max_p in zip(patch_size, min_patch_size, max_patch_size)
@@ -577,7 +562,6 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
             volume into memory, so reduce for large volumes.
         skip_existing: Skip files that already exist on disk (with size > 0).
     """
-    # Input validation
     if len(df) == 0:
         raise ValueError("DataFrame is empty")
     if img_col not in df.columns:
@@ -608,7 +592,6 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
         all_tfms.extend([getattr(t, 'tio_transform', t) for t in transforms])
     pipeline = tio.Compose(all_tfms) if all_tfms else None
 
-    # Create output directories
     output_dir = Path(output_dir)
     img_dir = output_dir / 'images'
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -638,7 +621,6 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
             'out_img': out_img, 'out_mask': out_mask,
         })
 
-    # Process cases
     processed = 0
     failed = 0
     failed_cases = []

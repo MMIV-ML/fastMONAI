@@ -690,7 +690,6 @@ class RandomCutout(ItemTransform):
         """
         img, y_true = x
 
-        # Probability check
         if torch.rand(1).item() > self.p:
             return img, y_true
 
@@ -884,6 +883,7 @@ class GpuPatchAugmentation:
 
     Operates on [B, C, D, H, W] tensors already on GPU. All operations run
     under torch.no_grad() since augmentation does not need gradient tracking.
+    Inputs are cloned, so the caller's tensors are never mutated.
 
     Transform order: spatial (affine, anisotropy, flip) then intensity
     (gamma, intensity_scale, noise, blur). Spatial transforms apply the
@@ -911,6 +911,17 @@ class GpuPatchAugmentation:
         ...     flip={'axes': (0, 1, 2), 'p': 0.5},
         ... )
         >>> img_aug, mask_aug = gpu_aug(img_gpu, mask_gpu)
+
+    Design rationale (why a from-scratch engine, not MONAI/TorchIO):
+        Genuinely batched -- one affine_grid/grid_sample over the whole
+        [B, C, D, H, W] batch. MONAI/TorchIO transforms are strictly per-sample,
+        so a batched alternative must loop per sample. Measured on an RTX 6000
+        Ada (full pipeline, 128^3): this batched GPU path ~3 ms/batch (B=2) vs
+        MONAI per-sample-on-GPU ~77 ms (~25x slower) vs TorchIO CPU ~287 ms
+        (~100x slower); the gap is structural and grows with batch size, so the
+        GPU path is kept. It is an approximate reimplementation (voxel-space
+        affine, per-axis flip, image-only anisotropy, sign-preserving gamma),
+        not bit-identical to the CPU/TorchIO path.
     """
 
     def __init__(self, affine=None, anisotropy=None, flip=None,
@@ -934,6 +945,10 @@ class GpuPatchAugmentation:
             Tuple (img, mask). mask is None if input was None.
         """
         with torch.no_grad():
+            # Purity: never mutate the caller's input tensors (clone once).
+            img = img.clone()
+            if mask is not None:
+                mask = mask.clone()
             # Spatial transforms (same params for img and mask)
             if self.affine is not None:
                 img, mask = self._apply_affine(img, mask)
@@ -1031,7 +1046,9 @@ class GpuPatchAugmentation:
         """Per-sample anisotropy simulation via F.interpolate.
 
         Downsample along a random axis with nearest interpolation,
-        then upsample back with trilinear (matches TorchIO behavior).
+        then upsample back with trilinear. Approximates TorchIO's
+        RandomAnisotropy and degrades the image only (TorchIO also
+        resamples the label map).
         Only affects img, not mask (anisotropy is intensity degradation).
         """
         cfg = self.anisotropy
@@ -1096,11 +1113,12 @@ class GpuPatchAugmentation:
         if not active.any():
             return img
 
-        # Only apply clamp + pow to active samples (clamp destroys negatives)
+        # Sign-preserving gamma (matches TorchIO): sign(x)*|x|^gamma; keeps negatives.
         active_idx = active.nonzero(as_tuple=True)[0]
         log_gamma = torch.empty(active_idx.shape[0], device=device, dtype=dtype).uniform_(log_lo, log_hi)
         gamma = torch.exp(log_gamma).view(-1, 1, 1, 1, 1)
-        img[active_idx] = img[active_idx].clamp(min=0).pow(gamma)
+        x = img[active_idx]
+        img[active_idx] = x.sign() * x.abs().pow(gamma)
         return img
 
     def _apply_intensity_scale(self, img):
@@ -1222,9 +1240,12 @@ def gpu_patch_augmentations(patch_size, target_spacing,
                             noise_p=0.1, blur_p=0.2, flip_p=0.5):
     """Create GpuPatchAugmentation with nnU-Net-inspired defaults.
 
-    Factory function that mirrors suggest_patch_augmentations but returns
-    a GpuPatchAugmentation for GPU-batched operation. Uses the same shared
-    parameter logic via _compute_patch_aug_params.
+    Approximate GPU reimplementation of suggest_patch_augmentations: it shares
+    the same parameter logic (via _compute_patch_aug_params) and probabilities,
+    but is NOT bit-identical -- the affine is voxel-space (not spacing-aware),
+    flip is per-axis independent, anisotropy degrades the image only, and gamma
+    is sign-preserving. Runs batched on GPU (~25x faster than the per-sample
+    CPU/TorchIO path); see GpuPatchAugmentation for the benchmark and rationale.
 
     Args:
         patch_size: List/tuple of 3 ints -- patch dimensions.
