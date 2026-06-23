@@ -23,7 +23,7 @@ learner = load_learner(models_path/'t2-vibe-adc-learner.pkl', cpu=True) #TODO ad
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
-_, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
+_, apply_reorder, target_spacing = load_variables(config_fn=vars_fn)
 
 # Set file name from command line argument
 img_path = [Path(args.fn_t2), Path(args.fn_vibe), Path(args.fn_adc)]

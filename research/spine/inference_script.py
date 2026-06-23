@@ -19,7 +19,7 @@ loaded_learners = [load_learner(fn, cpu=True) for fn in learner_list]
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
-_, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
+_, apply_reorder, target_spacing = load_variables(config_fn=vars_fn)
 
 # Set file name from command line argument
 img_fn = args.fn
