@@ -20,7 +20,7 @@ learner = load_learner(models_path/'vibe-learner.pkl', cpu=True) #TODO add an op
 
 # Load variables
 vars_fn = models_path/'vars.pkl'
-_, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
+_, apply_reorder, target_spacing = load_variables(config_fn=vars_fn)
 
 # Set file name from command line argument
 img_path = Path(args.fn)

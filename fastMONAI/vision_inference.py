@@ -67,7 +67,7 @@ def load_system_resources(models_path, learner_fn, variables_fn):
 
     learn = load_learner(models_path / learner_fn, cpu=True) 
     vars_fn = models_path / variables_fn
-    _, apply_reorder, target_spacing = load_variables(pkl_fn=vars_fn)
+    _, apply_reorder, target_spacing = load_variables(config_fn=vars_fn)
 
     return learn, apply_reorder, target_spacing
 

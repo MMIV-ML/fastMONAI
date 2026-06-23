@@ -96,18 +96,18 @@ def _to_jsonable(o):
     return o
 
 
-def store_variables(pkl_fn: str | Path, size: list, apply_reorder: bool, target_spacing: int | list):
+def store_variables(config_fn: str | Path, size: list, apply_reorder: bool, target_spacing: int | list):
     """Save inference variables as JSON (numpy values coerced to native types).
 
     Written as JSON for safe, pickle-free sharing; `load_variables` reads JSON and
     still falls back to legacy pickle files.
     """
     var_vals = [size, apply_reorder, target_spacing]
-    with open(pkl_fn, 'w') as f:
+    with open(config_fn, 'w') as f:
         json.dump(_to_jsonable(var_vals), f)
 
 # %% ../nbs/07_utils.ipynb #c2db5512-171c-4dfd-a26e-561b773a6069
-def load_variables(pkl_fn: str | Path):
+def load_variables(config_fn: str | Path):
     """Load stored inference variables.
 
     Tries JSON first. Falls back to legacy pickle ONLY for files named ``.pkl``
@@ -116,29 +116,29 @@ def load_variables(pkl_fn: str | Path):
     artifacts still load.
 
     Args:
-        pkl_fn: File path to load.
+        config_fn: File path to load.
 
     Returns:
         The deserialized ``[size, apply_reorder, target_spacing]`` list.
     """
     try:
-        with open(pkl_fn, 'r') as f:
+        with open(config_fn, 'r') as f:
             return json.load(f)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        if not str(pkl_fn).endswith('.pkl'):
+        if not str(config_fn).endswith('.pkl'):
             raise ValueError(
-                f"{pkl_fn} is not valid JSON. Re-export it, or use a trusted legacy "
+                f"{config_fn} is not valid JSON. Re-export it, or use a trusted legacy "
                 f"'.pkl' file (pickle can execute arbitrary code on load)."
             )
         import warnings
-        warnings.warn(f"Loading legacy pickle '{pkl_fn}'; pickle can execute arbitrary "
+        warnings.warn(f"Loading legacy pickle '{config_fn}'; pickle can execute arbitrary "
                       f"code -- only load files you trust.")
-        with open(pkl_fn, 'rb') as f:
+        with open(config_fn, 'rb') as f:
             return pickle.load(f)
 
 # %% ../nbs/07_utils.ipynb #w143kixa46j
 def store_patch_variables(
-    pkl_fn: str | Path,
+    config_fn: str | Path,
     patch_size: list,
     patch_overlap: int | float | list,
     aggregation_mode: str,
@@ -158,7 +158,7 @@ def store_patch_variables(
     and still falls back to legacy pickle files.
 
     Args:
-        pkl_fn: Path to save the config file.
+        config_fn: Path to save the config file.
         patch_size: Size of patches [x, y, z].
         patch_overlap: Overlap for inference (int, float 0-1, or list).
         aggregation_mode: GridAggregator mode ('crop', 'average', 'hann').
@@ -201,11 +201,11 @@ def store_patch_variables(
         'normalization': normalization
     }
 
-    with open(pkl_fn, 'w') as f:
+    with open(config_fn, 'w') as f:
         json.dump(_to_jsonable(config), f)
 
 # %% ../nbs/07_utils.ipynb #03xsquvh55db
-def load_patch_variables(pkl_fn: str | Path) -> dict:
+def load_patch_variables(config_fn: str | Path) -> dict:
     """Load patch-based training and inference configuration.
 
     Tries JSON first. Falls back to legacy pickle ONLY for files named ``.pkl``
@@ -214,7 +214,7 @@ def load_patch_variables(pkl_fn: str | Path) -> dict:
     integer ``label_probabilities`` keys are restored to ints after a JSON load.
 
     Args:
-        pkl_fn: Path to the config file.
+        config_fn: Path to the config file.
 
     Returns:
         Dictionary with patch configuration (patch_size, patch_overlap,
@@ -228,18 +228,18 @@ def load_patch_variables(pkl_fn: str | Path) -> dict:
         >>> patch_config = PatchConfig(**config)
     """
     try:
-        with open(pkl_fn, 'r') as f:
+        with open(config_fn, 'r') as f:
             config = json.load(f)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        if not str(pkl_fn).endswith('.pkl'):
+        if not str(config_fn).endswith('.pkl'):
             raise ValueError(
-                f"{pkl_fn} is not valid JSON. Re-export it, or use a trusted legacy "
+                f"{config_fn} is not valid JSON. Re-export it, or use a trusted legacy "
                 f"'.pkl' file (pickle can execute arbitrary code on load)."
             )
         import warnings
-        warnings.warn(f"Loading legacy pickle '{pkl_fn}'; pickle can execute arbitrary "
+        warnings.warn(f"Loading legacy pickle '{config_fn}'; pickle can execute arbitrary "
                       f"code -- only load files you trust.")
-        with open(pkl_fn, 'rb') as f:
+        with open(config_fn, 'rb') as f:
             return pickle.load(f)
     # JSON stringifies dict keys; restore int keys for label_probabilities.
     lp = config.get('label_probabilities')
@@ -899,13 +899,45 @@ import threading
 import time
 import socket
 import os
+import sys
+import atexit
+import signal
+import ctypes
 from IPython.display import display, HTML, clear_output
 from IPython.core.magic import register_line_magic
 from IPython import get_ipython
 import requests
 import shutil
 
+# Ask the OS to SIGTERM the `mlflow ui` child the instant this (parent) process dies --
+# this covers a hard-killed kernel (SIGKILL/OOM), which atexit cannot. Linux-only;
+# a no-op elsewhere. libc is loaded once here, outside any fork, so the preexec_fn hook
+# below stays minimal (preexec_fn is documented as unsafe in multithreaded programs, and
+# we launch mlflow ui from a daemon thread -- keeping the hook tiny is the accepted pattern).
+_libc = None
+if sys.platform.startswith('linux'):
+    try:
+        _libc = ctypes.CDLL('libc.so.6', use_errno=True)
+    except OSError:
+        _libc = None
+
+
+def _die_with_parent():
+    """preexec hook: runs in the child after fork(), before exec(). Sets Linux PR_SET_PDEATHSIG."""
+    if _libc is not None:
+        _libc.prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG = 1
+
+
 class MLflowUIManager:
+    """Launch and manage a local ``mlflow ui`` server from a notebook.
+
+    The UI's lifetime is tied to the kernel: it is reaped when the interpreter
+    exits -- gracefully (via an atexit handler) or on a hard kill (via Linux
+    PR_SET_PDEATHSIG, see ``_die_with_parent``) -- so closing/restarting the
+    notebook never leaves an orphaned server holding the port. Call ``stop()``
+    to shut it down sooner. An externally-started UI is reused, not killed.
+    """
+
     def __init__(self):
         self.process = None
         self.thread = None
@@ -914,6 +946,9 @@ class MLflowUIManager:
         self.backend_store_uri = _resolve_backend_store_uri()
         self._owns_process = False
         self._reusing_external = False
+        # Reap the mlflow ui subprocess on clean interpreter shutdown (graceful kernel
+        # shutdown/restart runs atexit). PR_SET_PDEATHSIG covers hard kills.
+        atexit.register(self._kill_process)
         
     def is_port_available(self, port):
         """Check if a port is available."""
@@ -1009,7 +1044,8 @@ class MLflowUIManager:
                     '--host', self.host,
                     '--port', str(self.port),
                     '--backend-store-uri', self.backend_store_uri
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   preexec_fn=_die_with_parent if _libc is not None else None)
                 self.process.wait()
             except Exception as e:
                 if not quiet:
@@ -1051,13 +1087,32 @@ class MLflowUIManager:
         if not quiet:
             display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">Failed to start MLflow UI</div>'))
         return False
-    
+
+    def _kill_process(self):
+        """Terminate the mlflow ui subprocess: terminate -> wait(timeout) -> kill.
+
+        Quiet (no IPython display) so it is safe to run during interpreter shutdown,
+        and idempotent. Used by both ``stop()`` and the atexit handler. Only acts on a
+        process this manager started (``_owns_process``); never an externally-started UI.
+        """
+        proc = self.process
+        if proc is None or not self._owns_process:
+            return
+        self.process, self._owns_process = None, False
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        except Exception:
+            pass
+
     def stop(self):
-        """Stop the MLflow UI server."""
+        """Stop the MLflow UI server (terminate -> wait -> kill)."""
         if self.process and self._owns_process:
-            self.process.terminate()
-            self.process = None
-            self._owns_process = False
+            self._kill_process()
             display(HTML('''
                 <div style="background-color: #ffecb3; border: 2px solid #f57c00; padding: 10px; border-radius: 6px;">
                     <span style="color: #e65100; font-weight: bold; font-size: 14px;">MLflow UI stopped</span>
