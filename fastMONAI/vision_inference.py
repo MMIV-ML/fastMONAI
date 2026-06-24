@@ -124,23 +124,25 @@ def compute_binary_tumor_volume(mask_data: Image):
     return np.sum(mask_data) * voxel_volume_ml
 
 # %% ../nbs/06_vision_inference.ipynb #a64a3407-4b97-4b1c-933c-d4a316dbff94
-def refine_binary_pred_mask(pred_mask, 
-                            remove_size: (int, float) = None,
+def refine_binary_pred_mask(pred_mask,
+                            remove_size: (int, float),
                             percentage: float = 0.2,
                             verbose: bool = False) -> torch.Tensor:
     """Removes small objects from the predicted binary mask.
 
     Args:
-        pred_mask: The predicted mask from which small objects are to be removed.
-        remove_size: The size under which objects are considered 'small'.
-        percentage: The percentage of the remove_size to be used as threshold. 
-            Defaults to 0.2.
+        pred_mask: The (already binary) predicted mask to clean up.
+        remove_size: Absolute reference object size in voxels (required, > 0).
+            Objects smaller than remove_size * percentage are removed.
+        percentage: Fraction of remove_size used as the cutoff. Defaults to 0.2.
         verbose: If True, print the number of components. Defaults to False.
 
     Returns:
         The processed mask with small objects removed.
     """
-                                
+    if remove_size is None or remove_size <= 0:
+        raise ValueError("remove_size must be a positive absolute object size in voxels.")
+
     labeled_mask, n_components = label(pred_mask)
 
     if verbose:
@@ -150,14 +152,8 @@ def refine_binary_pred_mask(pred_mask,
     if n_components == 0:
         return torch.zeros_like(torch.Tensor(pred_mask)).float()
 
-    if remove_size is None:
-        sizes = np.bincount(labeled_mask.ravel())
-        max_label = sizes[1:].argmax() + 1
-        remove_size = sizes[max_label]
-
     small_objects_threshold = remove_size * percentage
-    processed_mask = remove_small_objects(
-        labeled_mask, min_size=small_objects_threshold)
+    processed_mask = remove_small_objects(labeled_mask, min_size=small_objects_threshold)
 
     return torch.Tensor(processed_mask > 0).float()
 

@@ -154,6 +154,7 @@ class ZNormalization(DisplayedTransform):
                     f"• Verify image vs mask data loading"
                 )
                 raise RuntimeError(error_msg) from e
+            raise
 
         return MedImage.create(o)
 
@@ -1009,6 +1010,11 @@ class GpuPatchAugmentation:
         GPU path is kept. It is an approximate reimplementation (voxel-space
         affine, per-axis flip, image-only anisotropy, sign-preserving gamma),
         not bit-identical to the CPU/TorchIO path.
+        The voxel-space affine's geometric error scales with the patch's physical-extent
+        anisotropy (patch_size x target_spacing), not voxel spacing alone: it is sub-voxel
+        when the physical extent is near-isotropic (the common case, including cubic patches
+        on isotropic data) and deviates materially only for strongly anisotropic physical
+        extents (e.g. a cubic patch on anisotropic spacing).
     """
 
     def __init__(self, affine=None, anisotropy=None, flip=None,
@@ -1333,6 +1339,9 @@ def gpu_patch_augmentations(patch_size, target_spacing,
     flip is per-axis independent, anisotropy degrades the image only, and gamma
     is sign-preserving. Runs batched on GPU (~25x faster than the per-sample
     CPU/TorchIO path); see GpuPatchAugmentation for the benchmark and rationale.
+    The voxel-space affine's geometric error scales with physical-extent anisotropy
+    (patch_size x target_spacing), so it is sub-voxel for near-isotropic extents and only
+    matters for strongly anisotropic ones (e.g. a cubic patch on anisotropic spacing).
 
     Args:
         patch_size: List/tuple of 3 ints -- patch dimensions.
