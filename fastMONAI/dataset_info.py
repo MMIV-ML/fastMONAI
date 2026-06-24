@@ -61,6 +61,7 @@ class MedDataset:
         self.max_workers = max_workers
         self.use_cache = use_cache
         self.cache_path = cache_path
+        self.failed_files = []
         self.df = self._create_data_frame()
 
     def _create_data_frame(self):
@@ -93,7 +94,19 @@ class MedDataset:
 
         df = pd.DataFrame(data_info_dict)
 
-        if len(df) > 0 and df.orientation.nunique() > 1 and not self.apply_reorder:
+        # DSET-1: surface failed files instead of letting NaN error rows silently
+        # corrupt downstream statistics (summary/get_suggestion/get_size_statistics/...).
+        if 'error' in df.columns:
+            failed_mask = df['error'].notna()
+            self.failed_files = df.loc[failed_mask, 'path'].tolist()
+            if self.failed_files:
+                warnings.warn(
+                    f'{len(self.failed_files)}/{len(df)} file(s) failed to load and were '
+                    f'excluded from dataset statistics. See self.failed_files.'
+                )
+            df = df.loc[~failed_mask].drop(columns=['error']).reset_index(drop=True)
+
+        if len(df) > 0 and 'orientation' in df.columns and df.orientation.nunique() > 1 and not self.apply_reorder:
             raise ValueError(
                 'Mixed orientations detected in dataset. '
                 'Please recreate MedDataset with apply_reorder=True to get correct resample values: '
@@ -132,6 +145,8 @@ class MedDataset:
 
     def summary(self):
         """Summary DataFrame of the dataset with example path for similar data."""
+        if len(self.df) == 0:
+            raise ValueError("Dataset is empty - cannot summarize")
 
         columns = ['dim_0', 'dim_1', 'dim_2', 'voxel_0', 'voxel_1', 'voxel_2', 'orientation']
 
@@ -157,6 +172,8 @@ class MedDataset:
             dict: {'target_spacing': [voxel_0, voxel_1, voxel_2]}
                   If include_patch_size=True, also includes 'patch_size': [dim_0, dim_1, dim_2]
         """
+        if len(self.df) == 0:
+            raise ValueError("Dataset is empty - cannot suggest preprocessing parameters")
         target_spacing = [float(self.df.voxel_0.mode()[0]), float(self.df.voxel_1.mode()[0]), float(self.df.voxel_2.mode()[0])]
         result = {'target_spacing': target_spacing}
 
@@ -278,11 +295,13 @@ class MedDataset:
             all_results[i] = info
 
         n_cached = len(cached_results)
-        n_processed = len(files_to_process)
+        n_failed = sum(1 for info in fresh_results if 'error' in info)
+        n_processed = len(files_to_process) - n_failed
+        _fail_suffix = f', {n_failed} failed' if n_failed else ''
         if n_cached > 0:
-            print(f"MedDataset cache: {n_cached} cached, {n_processed} processed")
-        elif n_processed > 0:
-            print(f"MedDataset: processed {n_processed} files (results cached)")
+            print(f"MedDataset cache: {n_cached} cached, {n_processed} processed{_fail_suffix}")
+        elif n_processed > 0 or n_failed:
+            print(f"MedDataset: processed {n_processed} files (results cached){_fail_suffix}")
 
         return all_results
 
