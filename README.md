@@ -43,6 +43,9 @@ We recommend using a conda environment to avoid dependency conflicts:
 
 `pip install fastMONAI`
 
+Optional Gradio web-app demo (tutorial 11b):
+`pip install fastMONAI[viz]`.
+
 ## Development install [(GitHub)](https://github.com/MMIV-ML/fastMONAI)
 
 If you want to install an editable version of fastMONAI for development:
