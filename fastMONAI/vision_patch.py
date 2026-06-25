@@ -532,10 +532,9 @@ def _split_df(df, valid_pct, valid_col, seed):
         train_df = df[df[valid_col] == False].reset_index(drop=True)
         valid_df = df[df[valid_col] == True].reset_index(drop=True)
     else:
-        if seed is not None:
-            np.random.seed(seed)
+        rng = np.random.RandomState(seed)
         n = len(df)
-        valid_idx = np.random.choice(n, size=int(n * valid_pct), replace=False)
+        valid_idx = rng.choice(n, size=int(n * valid_pct), replace=False)
         train_idx = np.setdiff1d(np.arange(n), valid_idx)
         train_df = df.iloc[train_idx].reset_index(drop=True)
         valid_df = df.iloc[valid_idx].reset_index(drop=True)

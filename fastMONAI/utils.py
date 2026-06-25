@@ -906,7 +906,6 @@ import ctypes
 from IPython.display import display, HTML, clear_output
 from IPython.core.magic import register_line_magic
 from IPython import get_ipython
-import requests
 import shutil
 
 # Ask the OS to SIGTERM the `mlflow ui` child the instant this (parent) process dies --
@@ -961,6 +960,7 @@ class MLflowUIManager:
     
     def is_mlflow_running(self):
         """Check if MLflow UI is actually responding."""
+        import requests
         try:
             response = requests.get(f'http://localhost:{self.port}', timeout=2)
             return response.status_code == 200
@@ -969,6 +969,7 @@ class MLflowUIManager:
     
     def _find_running_mlflow(self):
         """Find an existing MLflow UI in our port range. Returns port or None."""
+        import requests
         for port in range(self.port, self.port + 10):
             if not self.is_port_available(port):
                 try:

@@ -11,12 +11,10 @@ import torch
 import numpy as np
 from scipy.ndimage import label
 from skimage.morphology import remove_small_objects
-from SimpleITK import DICOMOrient, GetArrayFromImage
 from torchio import Resize, Image
 from .vision_core import *
 from .vision_augmentation import do_pad_or_crop
 from .utils import load_variables
-from imagedata.series import Series
 from fastai.learner import load_learner
 
 # %% ../nbs/06_vision_inference.ipynb #a3d8ecaf-d80c-463b-84f8-197e8966b304
@@ -43,6 +41,7 @@ def save_series_pred(series_obj, save_dir, val='1234'):
 def _to_original_orientation(input_img, org_orientation):
     """Reorients the image to its original orientation."""
     
+    from SimpleITK import DICOMOrient, GetArrayFromImage
     orientation_itk = DICOMOrient(input_img, org_orientation)
     reoriented_array =  GetArrayFromImage(orientation_itk).transpose()
     
