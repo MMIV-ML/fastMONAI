@@ -53,9 +53,8 @@ class CustomLoss:
 
 # %% ../nbs/04_vision_loss_functions.ipynb #5052c7bc-3d9a-4e34-8b64-bceaf2fdc7b6
 class TverskyFocalLoss(_Loss):
-    """
-    Compute Tversky loss with a focus parameter, gamma, applied.
-    The details of Tversky loss is shown in ``monai.losses.TverskyLoss``.
+    """Focal Tversky loss: ``(1 - TI)**gamma`` (TI = Tversky index; see ``monai.losses.TverskyLoss``).
+    ``gamma=1`` reduces to the plain Tversky loss.
     """
 
     def __init__(
@@ -73,8 +72,7 @@ class TverskyFocalLoss(_Loss):
             to_onehot_y: whether to convert `y` into one-hot format.
             sigmoid: if True, apply a sigmoid function to the prediction.
             softmax: if True, apply a softmax function to the prediction.
-            gamma: the focal parameter, it modulates the loss with regards to 
-                how far the prediction is from target.
+            gamma: focal exponent in ``(1 - TI)**gamma``.
             alpha: the weight of false positive in Tversky loss calculation.
             beta: the weight of false negative in Tversky loss calculation.
         """
@@ -102,7 +100,8 @@ class TverskyFocalLoss(_Loss):
         if len(input.shape) != len(target.shape):
             raise ValueError("The number of dimensions for input and target should be the same.")
 
+        # (1 - TI)**gamma; MONAI's TverskyLoss already returns tversky_loss = 1 - TI
         tversky_loss = self.tversky(input, target)
-        total_loss: torch.Tensor = 1 - ((1 - tversky_loss)**self.gamma)
+        total_loss: torch.Tensor = tversky_loss ** self.gamma
 
         return total_loss
