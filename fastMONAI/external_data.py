@@ -222,7 +222,6 @@ def _df_sort_and_add_columns(df, label_list, is_val):
     
     df = df.sort_values(by='img_idx').reset_index(drop=True)
     df['labels'], df['is_val'] = label_list, is_val     
-    #df = df.replace({"labels": {0:'b', 1:'m'}})
     df = df.drop('img_idx', axis=1)
     
     return df 

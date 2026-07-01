@@ -51,7 +51,7 @@ def _load_and_preprocess(file_path, apply_reorder, target_spacing, dtype):
     Returns:
         tuple: Original image, preprocessed image, and its original size.
     """
-    org_img = LabelMap(file_path) if dtype is MedMask else ScalarImage(file_path) #_load(file_path, dtype=dtype) 
+    org_img = LabelMap(file_path) if dtype is MedMask else ScalarImage(file_path)
     input_img, org_size = _preprocess(org_img, apply_reorder, target_spacing)
     
     return org_img, input_img, org_size

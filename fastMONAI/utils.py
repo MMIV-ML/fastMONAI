@@ -19,7 +19,7 @@ from fastcore.foundation import L
 from typing import Any
 
 # Default MLflow backend store: a sqlite DB at the package/repo root, resolved from
-# __file__ so it stays stable across os.chdir. NOT set at import time -- that hijacked
+# __file__ so it stays stable across os.chdir. NOT set at import time, which hijacked
 # the user's MLflow config; set lazily instead (see _ensure_fastmonai_tracking_uri).
 try:
     _mlruns_db = Path(__file__).resolve().parent.parent / 'mlruns.db'
@@ -76,7 +76,7 @@ def _resolve_backend_store_uri():
     Prefers a user-configured local store (sqlite/file/SQLAlchemy DB) so the UI
     shows the same runs fastMONAI logs to; falls back to fastMONAI's default
     sqlite store. An HTTP(S)/databricks tracking server cannot back a local UI,
-    so it is not used here -- open that server's own UI instead. Read-only: never
+    so it is not used here; open that server's own UI instead. Read-only: never
     changes the global tracking URI (viewing must not reconfigure MLflow).
     """
     default = f"sqlite:///{_mlruns_db}"
@@ -306,7 +306,6 @@ def _extract_standard_config(learn) -> dict:
     from fastMONAI.vision_core import MedBase
     dls = learn.dls
 
-    # Get preprocessing from MedBase class attributes
     apply_reorder = MedBase.apply_reorder
     target_spacing = MedBase.target_spacing
 
@@ -315,7 +314,6 @@ def _extract_standard_config(learn) -> dict:
     if hasattr(dls, 'after_item') and dls.after_item:
         item_tfms = list(dls.after_item.fs)
 
-    # Extract size from PadOrCrop transform
     size = _extract_size_from_transforms(item_tfms)
 
     return {
@@ -908,11 +906,11 @@ from IPython.core.magic import register_line_magic
 from IPython import get_ipython
 import shutil
 
-# Ask the OS to SIGTERM the `mlflow ui` child the instant this (parent) process dies --
+# Ask the OS to SIGTERM the `mlflow ui` child the instant this (parent) process dies;
 # this covers a hard-killed kernel (SIGKILL/OOM), which atexit cannot. Linux-only;
 # a no-op elsewhere. libc is loaded once here, outside any fork, so the preexec_fn hook
 # below stays minimal (preexec_fn is documented as unsafe in multithreaded programs, and
-# we launch mlflow ui from a daemon thread -- keeping the hook tiny is the accepted pattern).
+# we launch mlflow ui from a daemon thread, so keeping the hook tiny is the accepted pattern).
 _libc = None
 if sys.platform.startswith('linux'):
     try:
@@ -931,8 +929,8 @@ class MLflowUIManager:
     """Launch and manage a local ``mlflow ui`` server from a notebook.
 
     The UI's lifetime is tied to the kernel: it is reaped when the interpreter
-    exits -- gracefully (via an atexit handler) or on a hard kill (via Linux
-    PR_SET_PDEATHSIG, see ``_die_with_parent``) -- so closing/restarting the
+    exits, gracefully (via an atexit handler) or on a hard kill (via Linux
+    PR_SET_PDEATHSIG, see ``_die_with_parent``), so closing/restarting the
     notebook never leaves an orphaned server holding the port. Call ``stop()``
     to shut it down sooner. An externally-started UI is reused, not killed.
     """

@@ -65,7 +65,6 @@ def pred_to_binary_mask(pred: torch.Tensor) -> torch.Tensor:
 # %% ../nbs/02_vision_data.ipynb #1c510a95
 class MedDataBlock(DataBlock):
     """Container to quickly build dataloaders."""
-    #TODO add get_x
     def __init__(self, blocks: list = None, dl_type: TfmdDL = None, getters: list = None,
                  n_inp: int | None = None, item_tfms: list = None, batch_tfms: list = None,
                  apply_reorder: bool = False, target_spacing: (int, list) = None, **kwargs):

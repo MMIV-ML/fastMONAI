@@ -22,4 +22,5 @@ website:
         - 11e_tutorial_multiclass_segmentation.ipynb
         - 11f_tutorial_inference.ipynb
         - 12a_tutorial_patch_training.ipynb
-        - 12b_tutorial_patch_inference.ipynb
+        - 12b_tutorial_patch_cross_validation.ipynb
+        - 12c_tutorial_patch_inference.ipynb

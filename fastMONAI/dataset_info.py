@@ -94,8 +94,7 @@ class MedDataset:
 
         df = pd.DataFrame(data_info_dict)
 
-        # DSET-1: surface failed files instead of letting NaN error rows silently
-        # corrupt downstream statistics (summary/get_suggestion/get_size_statistics/...).
+        # Surface failed files instead of letting NaN error rows silently corrupt downstream statistics.
         if 'error' in df.columns:
             failed_mask = df['error'].notna()
             self.failed_files = df.loc[failed_mask, 'path'].tolist()
@@ -399,7 +398,7 @@ class MedDataset:
 
     def _visualize_single_case(self, img_path, mask_path, case_id, anatomical_plane=2, cmap='hot', figsize=(12, 5)):
         """Helper method to visualize a single case."""
-        # Snapshot global MedBase preprocessing state so visualization stays side-effect-free (ARCH-1)
+        # Snapshot global MedBase preprocessing state so visualization stays side-effect-free
         _saved = (MedBase.target_spacing, MedBase.apply_reorder, MedBase.affine_matrix)
         try:
             suggestion = self.get_suggestion()
@@ -458,7 +457,7 @@ class MedDataset:
 
         for idx in range(min(n_cases, len(self.input_df))):
             row = self.input_df.iloc[idx]
-            case_id = row.get('case_id', f'Case_{idx}')  # Fallback if no case_id
+            case_id = row.get('case_id', f'Case_{idx}')
             img_path = row[self.image_col]
             mask_path = row[self.mask_col]
 
@@ -524,7 +523,7 @@ def suggest_patch_size(
         """Round down to nearest multiple of divisor."""
         return max(div, int(val // div) * div)
 
-    # Step 1: Clamp to min(median, min_volume) per axis — safety guarantee
+    # Step 1: Clamp to min(median, min_volume) per axis (safety guarantee)
     effective_dims = [min(med, mn) for med, mn in zip(median_shape, min_shape)]
 
     patch_size = [round_to_divisor(dim, divisor) for dim in effective_dims]
@@ -534,7 +533,7 @@ def suggest_patch_size(
         for p, min_p, max_p in zip(patch_size, min_patch_size, max_patch_size)
     ]
 
-    # Step 4: Final safety check — error if bounds force patch > min volume
+    # Step 4: Final safety check, error if bounds force patch > min volume
     for i, (p, min_dim) in enumerate(zip(patch_size, min_shape)):
         if p > min_dim:
             raise ValueError(

@@ -266,7 +266,7 @@ def med_to_subject(
     }
     
     if mask is not None:
-        subject_dict['mask'] = tio.LabelMap(path=str(mask))  # Lazy
+        subject_dict['mask'] = tio.LabelMap(path=str(mask))
     
     return tio.Subject(**subject_dict)
 
@@ -1009,7 +1009,7 @@ _TTA_FLIP_AXES = (
 def _logits_to_probs(logits: torch.Tensor) -> torch.Tensor:
     """Logits -> probabilities: sigmoid for 1 channel (binary), else softmax over the channel dim.
 
-    Upcasts to float32 (logits may be float16 under AMP). Does NOT move to CPU -- callers decide
+    Upcasts to float32 (logits may be float16 under AMP). Does NOT move to CPU; callers decide
     placement (TTA keeps tensors on-device to flip back; the non-TTA path moves to CPU immediately).
     """
     return torch.sigmoid(logits.float()) if logits.shape[1] == 1 else torch.softmax(logits.float(), dim=1)
@@ -1059,7 +1059,7 @@ class PatchInferenceEngine:
             target_spacing, padding_mode) can be set here for DRY usage.
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
         target_spacing: Target voxel spacing. If None, uses config value.
-        batch_size: Number of patches to predict at once. Must be positive.
+        sw_batch_size: Number of patches to predict at once. Must be positive.
         pre_inference_tfms: Optional override for config.normalization. If None, normalization is
             read from config.normalization (the default source of truth, set at training time).
             Provide this only to override the config (e.g. for non-serializable transforms).
@@ -1081,12 +1081,12 @@ class PatchInferenceEngine:
         config: PatchConfig,
         apply_reorder: bool = None,
         target_spacing: list = None,
-        batch_size: int = 4,
+        sw_batch_size: int = 4,
         pre_inference_tfms: list = None,
         amp: bool = False
     ):
-        if batch_size <= 0:
-            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if sw_batch_size <= 0:
+            raise ValueError(f"sw_batch_size must be positive, got {sw_batch_size}")
         
         # We check for Learner explicitly because some models (e.g., MONAI UNet) have a
         # .model attribute that is NOT the full model but an internal Sequential.
@@ -1096,7 +1096,7 @@ class PatchInferenceEngine:
             self.model = learner  # already a PyTorch model
         
         self.config = config
-        self.batch_size = batch_size
+        self.sw_batch_size = sw_batch_size
         
         # Normalization: explicit pre_inference_tfms overrides config.normalization (the
         # default source of truth). Accepts fastMONAI wrappers and raw TorchIO transforms.
@@ -1173,7 +1173,7 @@ class PatchInferenceEngine:
         aggregator = tio.GridAggregator(
             grid_sampler, overlap_mode=self.config.aggregation_mode
         )
-        patch_loader = DataLoader(grid_sampler, batch_size=self.batch_size, num_workers=0)
+        patch_loader = DataLoader(grid_sampler, batch_size=self.sw_batch_size, num_workers=0)
 
         return _PreparedSubject(
             subject=subject, org_img=org_img, input_img=input_img,
@@ -1329,7 +1329,7 @@ def patch_inference(
     file_paths: list,
     apply_reorder: bool = None,
     target_spacing: list = None,
-    batch_size: int = 4,
+    sw_batch_size: int = 4,
     return_probabilities: bool = False,
     progress: bool = True,
     save_dir: str = None,
@@ -1353,7 +1353,7 @@ def patch_inference(
         file_paths: List of image paths.
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
         target_spacing: Target voxel spacing. If None, uses config value.
-        batch_size: Patches per batch.
+        sw_batch_size: Patches per batch.
         return_probabilities: Return probability maps.
         progress: Show progress bar.
         save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.
@@ -1383,7 +1383,7 @@ def patch_inference(
     _target_spacing = target_spacing if target_spacing is not None else config.target_spacing
 
     engine = PatchInferenceEngine(
-        learner, config, _apply_reorder, _target_spacing, batch_size, pre_inference_tfms,
+        learner, config, _apply_reorder, _target_spacing, sw_batch_size, pre_inference_tfms,
         amp=amp
     )
 
