@@ -102,7 +102,6 @@ def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
     elif MedBase.affine_matrix is not None:
         affine_matrix = MedBase.affine_matrix.copy()
     else:
-        # Fallback to identity affine if no affine available
         affine_matrix = np.eye(4, dtype=np.float64)
     
     pred_img = ScalarImage(tensor=reoriented_array, affine=affine_matrix)

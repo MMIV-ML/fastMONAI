@@ -70,7 +70,6 @@ class CustomDictTransform(ItemTransform):
 
 # %% ../nbs/03_vision_augment.ipynb #d7e1fdf2
 def do_pad_or_crop(o, target_shape, padding_mode, mask_name, dtype=torch.Tensor):
-    #TODO:refactorize
     pad_or_crop = tio.CropOrPad(target_shape=target_shape, padding_mode=padding_mode, mask_name=mask_name)
     return dtype(pad_or_crop(o))
 
@@ -138,7 +137,6 @@ class ZNormalization(DisplayedTransform):
                 o = self.z_normalization(o)
         except RuntimeError as e:
             if "Standard deviation is 0" in str(e):
-                # Calculate mean for debugging information
                 mean = float(o.mean())
                 
                 error_msg = (
@@ -312,7 +310,7 @@ def transforms_to_specs(tfms):
 
     Accepts fastMONAI transform wrappers (via `.to_spec()`), pass-through spec
     dicts, and None. Raises TypeError if a transform cannot be serialized (e.g. a
-    custom callable) -- pass such transforms via the pre_inference_tfms /
+    custom callable); pass such transforms via the pre_inference_tfms /
     pre_patch_tfms override instead of the config.
     """
     if tfms is None:
@@ -663,7 +661,6 @@ class _TioRandomCutout(tio.IntensityTransform):
         max_size = max_size if isinstance(max_size, int) else max_size[0]
 
         for _ in range(n_holes):
-            # Random size for this hole
             size = torch.randint(min_size, max_size + 1, (3,))
             radii = size.float() / 2
 
@@ -807,7 +804,6 @@ class RandomCutout(ItemTransform):
         max_size = max_size if isinstance(max_size, int) else max_size[0]
 
         for _ in range(n_holes):
-            # Random size for this hole
             size = torch.randint(min_size, max_size + 1, (3,))
             radii = size.float() / 2
 
@@ -824,7 +820,6 @@ class RandomCutout(ItemTransform):
                     for i in range(3)
                 ]
 
-            # Create ellipsoid mask (numpy)
             ellipsoid = _create_ellipsoid_mask(spatial_shape, center, radii).numpy()
 
             if self.mask_only and mask_np is not None:
@@ -896,8 +891,8 @@ def _compute_patch_aug_params(patch_size, target_spacing,
     symmetric.
 
     Args:
-        patch_size: List/tuple of 3 ints -- patch dimensions.
-        target_spacing: List/tuple of 3 floats -- voxel spacing.
+        patch_size: List/tuple of 3 ints, patch dimensions.
+        target_spacing: List/tuple of 3 floats, voxel spacing.
         anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0).
         translation_fraction: Fraction of patch_size for translation (default 0.15).
 
@@ -946,7 +941,7 @@ def _build_rotation_matrix_3d(angles_rad):
                     for each axis (x, y, z).
 
     Returns:
-        Tensor of shape [N, 3, 3] -- rotation matrices.
+        Tensor of shape [N, 3, 3], rotation matrices.
     """
     cos = torch.cos(angles_rad)
     sin = torch.sin(angles_rad)
@@ -1001,7 +996,7 @@ class GpuPatchAugmentation:
         >>> img_aug, mask_aug = gpu_aug(img_gpu, mask_gpu)
 
     Design rationale (why a from-scratch engine, not MONAI/TorchIO):
-        Genuinely batched -- one affine_grid/grid_sample over the whole
+        Genuinely batched: one affine_grid/grid_sample over the whole
         [B, C, D, H, W] batch. MONAI/TorchIO transforms are strictly per-sample,
         so a batched alternative must loop per sample. Measured on an RTX 6000
         Ada (full pipeline, 128^3): this batched GPU path ~3 ms/batch (B=2) vs
@@ -1335,7 +1330,7 @@ def gpu_patch_augmentations(patch_size, target_spacing,
 
     Approximate GPU reimplementation of suggest_patch_augmentations: it shares
     the same parameter logic (via _compute_patch_aug_params) and probabilities,
-    but is NOT bit-identical -- the affine is voxel-space (not spacing-aware),
+    but is NOT bit-identical: the affine is voxel-space (not spacing-aware),
     flip is per-axis independent, anisotropy degrades the image only, and gamma
     is sign-preserving. Runs batched on GPU (~25x faster than the per-sample
     CPU/TorchIO path); see GpuPatchAugmentation for the benchmark and rationale.
@@ -1344,8 +1339,8 @@ def gpu_patch_augmentations(patch_size, target_spacing,
     matters for strongly anisotropic ones (e.g. a cubic patch on anisotropic spacing).
 
     Args:
-        patch_size: List/tuple of 3 ints -- patch dimensions.
-        target_spacing: List/tuple of 3 floats -- voxel spacing.
+        patch_size: List/tuple of 3 ints, patch dimensions.
+        target_spacing: List/tuple of 3 floats, voxel spacing.
         anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0).
         translation_fraction: Fraction of patch_size for translation (default 0.15).
         affine_p: Probability for RandomAffine (default 0.2).
@@ -1409,8 +1404,8 @@ def suggest_patch_augmentations(patch_size, target_spacing,
     symmetric. Translation is patch_size * fraction per axis.
 
     Args:
-        patch_size: List/tuple of 3 ints -- patch dimensions.
-        target_spacing: List/tuple of 3 floats -- voxel spacing.
+        patch_size: List/tuple of 3 ints, patch dimensions.
+        target_spacing: List/tuple of 3 floats, voxel spacing.
         anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0).
         translation_fraction: Fraction of patch_size for translation (default 0.15).
 
