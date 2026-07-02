@@ -25,7 +25,7 @@ notebooks.
 
 ## Requirements
 
-- **Python:** 3.10, 3.11, or 3.12 (Python 3.11 recommended)
+- **Python:** 3.10, 3.11, 3.12, or 3.13 (Python 3.12 recommended)
 - **GPU:** CUDA-compatible GPU recommended for training (CPU supported
   for inference)
 
@@ -35,16 +35,13 @@ notebooks.
 
 We recommend using a conda environment to avoid dependency conflicts:
 
-`conda create -n fastmonai python=3.11`
+`conda create -n fastmonai python=3.12`
 
 `conda activate fastmonai`
 
 ## Quick Install [(PyPI)](https://pypi.org/project/fastMONAI/)
 
 `pip install fastMONAI`
-
-Optional Gradio web-app demo (tutorial 11b):
-`pip install fastMONAI[viz]`.
 
 ## Development install [(GitHub)](https://github.com/MMIV-ML/fastMONAI)
 
@@ -54,7 +51,7 @@ If you want to install an editable version of fastMONAI for development:
     cd fastMONAI
 
     # Create development environment
-    conda create -n fastmonai-dev python=3.11
+    conda create -n fastmonai-dev python=3.12
     conda activate fastmonai-dev
 
     # Install in development mode

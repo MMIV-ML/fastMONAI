@@ -9,7 +9,6 @@ import pickle
 import torch
 from pathlib import Path
 import mlflow
-import mlflow.pytorch
 import os
 import tempfile
 import json
@@ -429,7 +428,7 @@ class ModelTrackingCallback(Callback):
         Initialize the MLflow tracking callback.
         
         Args:
-            model_name: Name of the model architecture for registration
+            model_name: Name/identifier for the model being tracked
             loss_function: Name of the loss function being used
             item_tfms: List of item transforms
             size: Model input dimensions
@@ -617,13 +616,6 @@ class ModelTrackingCallback(Callback):
         store_variables(config_path, self.size, self.apply_reorder, self.target_spacing)
         mlflow.log_artifact(str(config_path), "config")
     
-    def _register_pytorch_model(self) -> None:
-        """Register the PyTorch model with MLflow."""
-        mlflow.pytorch.log_model(
-            pytorch_model=self.learn.model,
-            registered_model_name=self.model_name
-        )
-
     def _log_split_df(self) -> None:
         """Log train/validation split as CSV artifact if available."""
         dls = self.learn.dls
@@ -682,8 +674,6 @@ class ModelTrackingCallback(Callback):
             temp_path = Path(temp_dir)
             
             self._save_model_artifacts(temp_path)
-            
-            self._register_pytorch_model()
         
         self.run_id = mlflow.active_run().info.run_id
         print(f"MLflow run completed. Run ID: {self.run_id}")
@@ -827,7 +817,7 @@ def create_mlflow_callback(
         experiment_name: MLflow experiment name. If None, uses model name.
         run_name: MLflow run name. If None, auto-generates with timestamp.
         auto_start: If True, auto-starts/stops MLflow run in before_fit/after_fit.
-        model_name: Override auto-extracted model name for registration.
+        model_name: Override the auto-extracted model name (used as the experiment name when experiment_name is None).
         extra_params: Additional parameters to log (e.g., {'dropout': 0.5}).
         extra_tags: MLflow tags to set on the run.
         dataset_version: Dataset version hash string for tracking.
