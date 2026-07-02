@@ -25,7 +25,7 @@ notebooks.
 
 ## Requirements
 
-- **Python:** 3.10, 3.11, or 3.12 (Python 3.11 recommended)
+- **Python:** 3.10, 3.11, 3.12, or 3.13 (Python 3.12 recommended)
 - **GPU:** CUDA-compatible GPU recommended for training (CPU supported
   for inference)
 
@@ -35,16 +35,13 @@ notebooks.
 
 We recommend using a conda environment to avoid dependency conflicts:
 
-`conda create -n fastmonai python=3.11`
+`conda create -n fastmonai python=3.12`
 
 `conda activate fastmonai`
 
 ## Quick Install [(PyPI)](https://pypi.org/project/fastMONAI/)
 
 `pip install fastMONAI`
-
-Optional Gradio web-app demo (tutorial 11b):
-`pip install fastMONAI[viz]`.
 
 ## Development install [(GitHub)](https://github.com/MMIV-ML/fastMONAI)
 
@@ -54,7 +51,7 @@ If you want to install an editable version of fastMONAI for development:
     cd fastMONAI
 
     # Create development environment
-    conda create -n fastmonai-dev python=3.11
+    conda create -n fastmonai-dev python=3.12
     conda activate fastmonai-dev
 
     # Install in development mode
@@ -68,8 +65,10 @@ and dive into our beginner-friendly [video
 tutorial](https://fastmonai.no/tutorial_beginner_video). For a deeper
 understanding and hands-on experience, our comprehensive instructional
 notebooks will walk you through model training for various tasks like
-classification, regression, and segmentation. See the docs at
-https://fastmonai.no for more information.
+classification, regression, and segmentation, running inference with a
+trained model, and patch-based training for large volumes that do not
+fit in memory. See the docs at https://fastmonai.no for more
+information.
 
 | Notebook | 1-Click Notebook |
 |:---|----|
@@ -77,6 +76,10 @@ https://fastmonai.no for more information.
 | [11c_tutorial_regression.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/11c_tutorial_regression.ipynb) <br>shows how to construct a model to predict the age of a subject from MRI scans (“brain age”). | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/nbs/11c_tutorial_regression.ipynb) |
 | [11d_tutorial_binary_segmentation.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/11d_tutorial_binary_segmentation.ipynb) <br>shows how to do binary segmentation (extract the left atrium from monomodal cardiac MRI). | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/nbs/11d_tutorial_binary_segmentation.ipynb) |
 | [11e_tutorial_multiclass_segmentation.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/11e_tutorial_multiclass_segmentation.ipynb) <br>shows how to perform segmentation from multimodal MRI (brain tumor segmentation). | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/nbs/11e_tutorial_multiclass_segmentation.ipynb) |
+| [11f_tutorial_inference.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/11f_tutorial_inference.ipynb) <br>shows how to run inference on new data with an exported learner. | Runs after 11d (inference on an exported model) |
+| [12a_tutorial_patch_training.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/12a_tutorial_patch_training.ipynb) <br>shows how to train a patch-based segmentation model on large 3D volumes with lazy loading (memory stays constant). | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/nbs/12a_tutorial_patch_training.ipynb) |
+| [12b_tutorial_patch_cross_validation.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/12b_tutorial_patch_cross_validation.ipynb) <br>shows how to run k-fold cross-validation and train a final patch-based model. | [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/nbs/12b_tutorial_patch_cross_validation.ipynb) |
+| [12c_tutorial_patch_inference.ipynb](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/nbs/12c_tutorial_patch_inference.ipynb) <br>shows how to deploy a patch-based model with sliding-window inference on new scans. | Runs after 12b (inference on an exported model) |
 
 # How to contribute
 

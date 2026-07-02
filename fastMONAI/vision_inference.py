@@ -2,7 +2,7 @@
 
 # %% auto #0
 __all__ = ['save_series_pred', 'load_system_resources', 'inference', 'compute_binary_tumor_volume', 'refine_binary_pred_mask',
-           'keep_largest', 'gradio_image_classifier']
+           'keep_largest']
 
 # %% ../nbs/06_vision_inference.ipynb #f28504fd-0e10-4a0e-8ac5-3be955aa3622
 from copy import copy
@@ -176,15 +176,3 @@ def keep_largest(pred_mask: torch.Tensor) -> torch.Tensor:
 
     result = (labeled_mask == largest_label).astype(np.float32)
     return torch.from_numpy(result) if isinstance(pred_mask, torch.Tensor) else result
-
-# %% ../nbs/06_vision_inference.ipynb #c2b11267-d760-44b0-bd1b-06fd392ce911
-def gradio_image_classifier(file_obj, learn, apply_reorder, target_spacing):
-    """Predict on images using exported learner and return the result as a dictionary."""
-    
-    img_path = Path(file_obj.name)
-    img = med_img_reader(img_path, apply_reorder=apply_reorder, target_spacing=target_spacing)
-    
-    _, _, predictions = learn.predict(img)
-    prediction_dict = {index: value.item() for index, value in enumerate(predictions)}
-
-    return prediction_dict
