@@ -444,9 +444,6 @@ def calculate_surface_metrics(pred, targ, spacing_mm,
     (``monai.metrics``). Intended for final benchmark evaluation, NOT inside the
     training loop (CPU, per-case).
 
-    Grid-based metrics have a known voxel-discretization (staircasing) bias; for
-    publication-grade surface distances consider a mesh-based implementation.
-
     Args:
         pred: Predicted mask (binary / argmax label). torch.Tensor or np.ndarray,
               shaped [W,H,D], [C,W,H,D] or [B,C,W,H,D] with singleton batch/channel.
