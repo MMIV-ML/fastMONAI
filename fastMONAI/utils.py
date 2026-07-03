@@ -2,7 +2,8 @@
 
 # %% auto #0
 __all__ = ['set_mlflow_tracking_uri', 'store_variables', 'load_variables', 'store_patch_variables', 'load_patch_variables',
-           'print_colab_gpu_info', 'ModelTrackingCallback', 'create_mlflow_callback', 'MLflowUIManager']
+           'print_colab_gpu_info', 'ModelTrackingCallback', 'create_mlflow_callback', 'find_fold_learners',
+           'MLflowUIManager']
 
 # %% ../nbs/07_utils.ipynb #ac941446-cf7e-4f5c-ace0-a36fb078022f
 import pickle
@@ -731,10 +732,13 @@ class ModelTrackingCallback(Callback):
 
         summary_data = []
         for metric in metrics:
-            mean = df[metric].mean()
-            std = df[metric].std()
+            # Drop +/-inf (e.g. surface distances on one_empty cases) so they don't poison
+            # the summary; pandas already skips NaN. Show 'N/A' if nothing finite remains.
+            col = df[metric].replace([float('inf'), float('-inf')], float('nan'))
+            mean, std = col.mean(), col.std()
+            mean_str = f'{mean:.4f}' if not math.isnan(mean) else 'N/A'
             std_str = f'{std:.4f}' if not math.isnan(std) else 'N/A'
-            summary_data.append([metric, f'{mean:.4f}', std_str])
+            summary_data.append([metric, mean_str, std_str])
 
         fig, ax = plt.subplots(figsize=(5, len(metrics) * 0.8 + 0.5))
         ax.axis('off')
@@ -880,6 +884,85 @@ def create_mlflow_callback(
         dataset_version=dataset_version,
         log_split=log_split,
     )
+
+# %% ../nbs/07_utils.ipynb #6e7ed65b
+def find_fold_learners(experiment_name, artifact_path="model/best_learner.pkl",
+                       n_folds=None, fold_tag="fold"):
+    """Discover one trained learner checkpoint per cross-validation fold from an MLflow experiment.
+
+    Reads back what ``ModelTrackingCallback`` logs per run: takes the most recent run for each
+    fold in ``experiment_name`` and downloads ``artifact_path`` from it, returning
+    ``{fold: local_path}`` sorted by fold. Folds are identified by each run's ``tags.<fold_tag>``,
+    falling back to a ``<fold_tag>_<n>`` run name. Warns if the selected folds span more than one
+    ``dataset_version`` tag (a sign of a partial retrain).
+
+    Pair it with the soft-vote ensembling in ``patch_inference`` -- but the returned values are
+    PATHS, so load them first::
+
+        from fastai.learner import load_learner
+        paths = find_fold_learners("vs5f_unet")
+        learners = [load_learner(p) for p in paths.values()]
+        preds = patch_inference(learner=learners, config=config, file_paths=cases)
+
+    Args:
+        experiment_name: MLflow experiment to search (e.g. ``"vs5f_unet"``).
+        artifact_path: run-relative artifact to download per fold (default
+            ``"model/best_learner.pkl"``, what ``ModelTrackingCallback`` logs).
+        n_folds: optional expected folds for a missing-fold warning -- an int ``n`` (labels
+            ``1..n``) or an explicit iterable of labels (use this for 0-indexed folds). ``None``
+            makes no assumption and just returns what was found.
+        fold_tag: run tag naming the fold; also the ``<fold_tag>_`` run-name prefix fallback.
+
+    Returns:
+        ``{fold_int: local_path}`` sorted by fold, or ``{}`` if the experiment is missing or
+        MLflow is unavailable.
+    """
+    from mlflow.exceptions import MlflowException
+    try:
+        _ensure_fastmonai_tracking_uri()  # respect a user-configured tracking server
+        exp = mlflow.get_experiment_by_name(experiment_name)
+        if exp is None:
+            print(f"No MLflow experiment {experiment_name!r}. Nothing to load.")
+            return {}
+        runs = mlflow.search_runs(experiment_ids=[exp.experiment_id],
+                                  order_by=["attributes.start_time DESC"])
+    except (ImportError, MlflowException) as e:
+        print(f"MLflow lookup for {experiment_name!r} skipped: {e}")
+        return {}
+
+    out, fold_dsv = {}, {}
+    prefix = f"{fold_tag}_"
+    for _, row in runs.iterrows():
+        fold = row.get(f"tags.{fold_tag}")
+        # pandas yields NaN (a float, != itself), not None, when the column exists but this
+        # row lacks the tag -- fall back to the run name instead of dropping the run.
+        if fold is None or (isinstance(fold, float) and fold != fold):
+            name = row.get("tags.mlflow.runName") or ""
+            fold = name[len(prefix):] if name.startswith(prefix) else None
+        try:
+            fold = int(fold)
+        except (TypeError, ValueError):
+            continue
+        if fold in out:
+            continue  # newest run already kept for this fold (runs are start_time DESC)
+        try:
+            out[fold] = mlflow.artifacts.download_artifacts(
+                run_id=row["run_id"], artifact_path=artifact_path)
+        except Exception:
+            continue  # fall through to the next-newest run for this fold
+        fold_dsv[fold] = row.get("tags.dataset_version")
+
+    print(f"Found fold learners for {sorted(out)} in {experiment_name!r}.")
+    if n_folds is not None:
+        expected = range(1, n_folds + 1) if isinstance(n_folds, int) else n_folds
+        missing = [f for f in expected if f not in out]
+        if missing:
+            print(f"WARNING: no checkpoint for folds {missing}; ensemble will use {len(out)} model(s).")
+    distinct_dsv = {v for v in fold_dsv.values() if isinstance(v, str) and v}
+    if len(distinct_dsv) > 1:
+        shown = {f: v[:8] for f, v in sorted(fold_dsv.items()) if isinstance(v, str) and v}
+        print(f"WARNING: selected folds span multiple dataset_versions {shown} - possible partial retrain.")
+    return dict(sorted(out.items()))
 
 # %% ../nbs/07_utils.ipynb #a3d2d585
 import subprocess

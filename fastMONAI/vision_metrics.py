@@ -5,14 +5,17 @@ __all__ = ['calculate_dsc', 'calculate_hd95', 'calculate_haus', 'binary_dice_sco
            'calculate_confusion_metrics', 'binary_sensitivity', 'multi_sensitivity', 'binary_precision',
            'multi_precision', 'calculate_lesion_detection_rate', 'binary_lesion_detection_rate',
            'multi_lesion_detection_rate', 'calculate_signed_rve', 'binary_signed_rve', 'multi_signed_rve',
-           'calculate_surface_metrics', 'AccumulatedDice', 'AccumulatedMultiDice', 'EMACheckpoint']
+           'calculate_surface_metrics', 'calculate_all_metrics', 'evaluate_segmentations', 'AccumulatedDice',
+           'AccumulatedMultiDice', 'EMACheckpoint']
 
 # %% ../nbs/05_vision_metrics.ipynb #8b6a83ac
 import warnings
 import torch
 import numpy as np
+import pandas as pd
 from monai.metrics import compute_hausdorff_distance, compute_dice, get_confusion_matrix, compute_confusion_matrix_metric, compute_average_surface_distance, compute_surface_dice
 from scipy.ndimage import label as scipy_label
+from pathlib import Path
 from .vision_data import pred_to_binary_mask, batch_pred_to_multiclass_mask
 from fastai.learner import Metric
 from fastai.callback.tracker import TrackerCallback
@@ -505,6 +508,97 @@ def calculate_surface_metrics(pred, targ, spacing_mm,
             hd_key: float(hd[0, 0]),
             **nsd,
             "status": "ok", **base}
+
+# %% ../nbs/05_vision_metrics.ipynb #ed336bbf
+def calculate_all_metrics(pred, targ, spacing_mm, *, nsd_tolerances_mm=(0.5, 1.0, 2.0),
+                          binary: bool = True) -> dict:
+    """Full per-case metric panel for one segmentation vs its ground truth.
+
+    Orchestrates the individual ``calculate_*`` functions into one dict: Dice, sensitivity,
+    precision, lesion detection rate, signed RVE, and the spacing-aware surface metrics
+    (ASSD / HD95 / NSD in mm). For a whole dataset, use ``evaluate_segmentations``.
+
+    Args:
+        pred: predicted mask (binary / argmax label). torch.Tensor or np.ndarray, shaped
+            [W,H,D], [C,W,H,D] or [B,C,W,H,D] with singleton batch/channel dims.
+        targ: ground-truth mask, same shape convention, on the SAME voxel grid as ``pred``.
+        spacing_mm: voxel spacing in mm in array-axis (i,j,k) order matching ``targ``. Pass it
+            explicitly (read from the GT file); a permuted spacing silently corrupts the
+            surface distances.
+        nsd_tolerances_mm: NSD tolerance(s) in mm, forwarded to ``calculate_surface_metrics``.
+        binary: single-foreground-class segmentation (the only mode supported). The confusion
+            metrics run on the single label channel -- MONAI keeps a size-1 channel when
+            ``include_background=False``, so a single-channel input is scored correctly.
+
+    Returns:
+        dict: ``dsc``, ``sensitivity``, ``precision``, ``ldr``, ``rve``, the ``nsd_tau*_mm``
+        values, ``assd_mm``, ``hd95_mm``, ``surface_status`` and ``spacing_mm``.
+    """
+    if not binary:
+        raise NotImplementedError("calculate_all_metrics supports binary (single foreground "
+                                  "class) segmentation only.")
+
+    pred_t = pred if isinstance(pred, torch.Tensor) else torch.as_tensor(np.asarray(pred))
+    targ_t = targ if isinstance(targ, torch.Tensor) else torch.as_tensor(np.asarray(targ))
+    while pred_t.ndim < 5: pred_t = pred_t.unsqueeze(0)   # -> [B,C,W,H,D]
+    while targ_t.ndim < 5: targ_t = targ_t.unsqueeze(0)
+    if pred_t.shape[-3:] != targ_t.shape[-3:]:
+        raise ValueError("pred and targ must share a voxel grid; got spatial shapes "
+                         f"{tuple(pred_t.shape[-3:])} vs {tuple(targ_t.shape[-3:])}.")
+    pred_t, targ_t = pred_t.float(), targ_t.float()
+
+    sm = calculate_surface_metrics(pred_t, targ_t, spacing_mm, nsd_tolerances_mm=nsd_tolerances_mm)
+    row = {
+        "dsc": calculate_dsc(pred_t, targ_t).nanmean().item(),
+        "sensitivity": calculate_confusion_metrics(pred_t, targ_t, "sensitivity").nanmean().item(),
+        "precision": calculate_confusion_metrics(pred_t, targ_t, "precision").nanmean().item(),
+        "ldr": calculate_lesion_detection_rate(pred_t, targ_t).nanmean().item(),
+        "rve": calculate_signed_rve(pred_t, targ_t).nanmean().item(),
+    }
+    row.update({k: sm[k] for k in sm if k.startswith("nsd_tau")})
+    row["assd_mm"], row["hd95_mm"] = sm["assd_mm"], sm["hd95_mm"]
+    row["surface_status"], row["spacing_mm"] = sm["status"], sm["spacing_mm"]
+    return row
+
+# %% ../nbs/05_vision_metrics.ipynb #2e526be3
+def evaluate_segmentations(preds, gt_paths, case_ids=None, *,
+                           nsd_tolerances_mm=(0.5, 1.0, 2.0), binary: bool = True):
+    """Score a batch of predictions against ground-truth masks into a per-case DataFrame.
+
+    For each (prediction, ground-truth) pair, the GT mask AND its voxel spacing are read from a
+    SINGLE object, so the array and its spacing can never disagree -- reading spacing from a
+    separately-loaded file is a silent source of axis-permutation errors that corrupt the surface
+    metrics. Predictions may be tensors (as returned by ``patch_inference``) or paths to saved
+    masks, so predictions written with ``patch_inference(save_dir=...)`` can be re-scored without
+    re-running inference.
+
+    Args:
+        preds: sequence of predicted masks -- torch.Tensor / np.ndarray, or paths to mask files.
+        gt_paths: sequence of ground-truth mask file paths (one per prediction, same voxel grid).
+        case_ids: optional row labels; default is each GT file's name stem.
+        nsd_tolerances_mm: NSD tolerance(s) in mm, forwarded to the surface metrics.
+        binary: binary (single foreground class) segmentation only.
+
+    Returns:
+        pandas.DataFrame with one row per case: ``case_id`` plus the columns from
+        ``calculate_all_metrics``.
+    """
+    import torchio as tio  # lazy: only this benchmark helper needs torchio I/O
+    preds, gt_paths = list(preds), list(gt_paths)
+    if len(preds) != len(gt_paths):
+        raise ValueError(f"preds and gt_paths must have equal length; got {len(preds)} and "
+                         f"{len(gt_paths)}.")
+
+    rows = []
+    for i, (pred, gt_path) in enumerate(zip(preds, gt_paths)):
+        gt = tio.LabelMap(gt_path)                       # single source: .data and .spacing agree
+        pred_data = tio.LabelMap(pred).data if isinstance(pred, (str, Path)) else pred
+        case_id = case_ids[i] if case_ids is not None else Path(str(gt_path)).name.split(".")[0]
+        row = {"case_id": case_id}
+        row.update(calculate_all_metrics(pred_data, gt.data, gt.spacing,
+                                         nsd_tolerances_mm=nsd_tolerances_mm, binary=binary))
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 # %% ../nbs/05_vision_metrics.ipynb #js7clwse6n
 class AccumulatedDice(Metric):
