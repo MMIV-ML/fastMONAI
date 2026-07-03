@@ -98,7 +98,9 @@ class PatchConfig:
           Can be int, float, or string (e.g., 'minimum', 'mean').
         keep_largest_component: If True, keep only the largest connected component
             in binary segmentation predictions. Only applies during inference when
-            return_probabilities=False. Defaults to False.
+            return_probabilities=False. Defaults to False. Binary-only: for multi-class
+            output (more than 2 classes) it is skipped with a warning, since it would
+            otherwise merge all classes into one blob and collapse the labels.
         binary_threshold: Decision boundary for single-channel (sigmoid) masks; a voxel is
             foreground when probability >= binary_threshold (matches MONAI AsDiscrete). Only
             applies when return_probabilities=False and n_classes == 1. Defaults to 0.5.
@@ -1009,29 +1011,34 @@ _TTA_FLIP_AXES = (
 def _logits_to_probs(logits: torch.Tensor) -> torch.Tensor:
     """Logits -> probabilities: sigmoid for 1 channel (binary), else softmax over the channel dim.
 
-    Upcasts to float32 (logits may be float16 under AMP). Does NOT move to CPU; callers decide
+    Upcasts to float32 (logits may be bfloat16 under AMP). Does NOT move to CPU; callers decide
     placement (TTA keeps tensors on-device to flip back; the non-TTA path moves to CPU immediately).
     """
     return torch.sigmoid(logits.float()) if logits.shape[1] == 1 else torch.softmax(logits.float(), dim=1)
 
 
-def _predict_patch_tta(model, patch_input, amp_context=None) -> torch.Tensor:
-    """Mirror TTA: average probabilities over the 8 flip combinations.
+def _predict_patch_tta(models, patch_input, amp_context=None) -> torch.Tensor:
+    """Mirror TTA (with optional model ensemble): average probabilities over the 8 flips and all models.
 
-    Uses a running sum (2x memory, not 9x). Each pass: flip -> forward -> activate -> flip back -> accumulate.
-    Returns the averaged probability tensor [B, C, D, H, W] on CPU. amp_context, if given, wraps the forward pass.
+    models is a single model or a list of models; a list soft-votes (averages probabilities).
+    Uses a running sum (2x memory, not 9x per model). Each pass: flip -> forward -> activate ->
+    flip back -> accumulate. Returns the averaged probability tensor [B, C, D, H, W] on CPU.
+    amp_context, if given, wraps each forward pass.
     """
     if amp_context is None: amp_context = nullcontext()
+    if not isinstance(models, (list, tuple)):
+        models = [models]
     summed_probs = None
     for axes in _TTA_FLIP_AXES:
         flipped = torch.flip(patch_input, list(axes)) if axes else patch_input
-        with amp_context:
-            logits = model(flipped)
-        probs = _logits_to_probs(logits)
-        if axes:
-            probs = torch.flip(probs, list(axes))
-        summed_probs = probs if summed_probs is None else summed_probs + probs
-    return (summed_probs / len(_TTA_FLIP_AXES)).cpu()
+        for model in models:
+            with amp_context:
+                logits = model(flipped)
+            probs = _logits_to_probs(logits)
+            if axes:
+                probs = torch.flip(probs, list(axes))
+            summed_probs = probs if summed_probs is None else summed_probs + probs
+    return (summed_probs / (len(_TTA_FLIP_AXES) * len(models))).cpu()
 
 
 @dataclass
@@ -1053,8 +1060,10 @@ class PatchInferenceEngine:
     GridAggregator to reconstruct the full volume from predictions.
     
     Args:
-        learner: fastai Learner or PyTorch model (nn.Module). When passing a raw
-            PyTorch model, load weights first with model.load_state_dict().
+        learner: fastai Learner or PyTorch model (nn.Module), or a list of them for
+            soft-vote ensembling (per-patch probabilities are averaged before argmax/
+            threshold). When passing a raw PyTorch model, load weights first with
+            model.load_state_dict().
         config: PatchConfig with inference settings. Preprocessing params (apply_reorder,
             target_spacing, padding_mode) can be set here for DRY usage.
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
@@ -1064,7 +1073,7 @@ class PatchInferenceEngine:
             read from config.normalization (the default source of truth, set at training time).
             Provide this only to override the config (e.g. for non-serializable transforms).
             Accepts both fastMONAI wrappers and raw TorchIO transforms.
-        amp: If True, use automatic mixed precision (float16) for the forward pass.
+        amp: If True, use automatic mixed precision (bfloat16) for the forward pass.
             Only supported on CUDA devices; ignored with a warning on CPU/MPS.
             Defaults to False.
     
@@ -1090,10 +1099,11 @@ class PatchInferenceEngine:
         
         # We check for Learner explicitly because some models (e.g., MONAI UNet) have a
         # .model attribute that is NOT the full model but an internal Sequential.
-        if isinstance(learner, Learner):
-            self.model = learner.model
-        else:
-            self.model = learner  # already a PyTorch model
+        _learners = list(learner) if isinstance(learner, (list, tuple)) else [learner]
+        if len(_learners) == 0:
+            raise ValueError("learner must be a model/Learner or a non-empty list of them.")
+        self.models = [l.model if isinstance(l, Learner) else l for l in _learners]
+        self.model = self.models[0]  # first model; alias kept for single-model back-compat
         
         self.config = config
         self.sw_batch_size = sw_batch_size
@@ -1123,11 +1133,12 @@ class PatchInferenceEngine:
                 self._device = _get_default_device()
 
         # Set eval mode once at construction (this class is inference-only)
-        self.model.eval()
+        for _m in self.models:
+            _m.eval()
 
         # AMP: CUDA-only, matching nnU-Net pattern
         if amp and self._device.type == 'cuda':
-            self._amp_context = torch.amp.autocast('cuda', dtype=torch.float16)
+            self._amp_context = torch.amp.autocast('cuda', dtype=torch.bfloat16)
         else:
             if amp and self._device.type != 'cuda':
                 warnings.warn("AMP is only supported on CUDA devices. Ignoring amp=True.")
@@ -1182,9 +1193,10 @@ class PatchInferenceEngine:
         )
 
     def _run_inference(self, prepared: _PreparedSubject, tta: bool = False) -> torch.Tensor:
-        """Run the model over all patches and aggregate; returns the raw probability tensor.
+        """Run the model(s) over all patches and aggregate; returns the raw probability tensor.
 
         Must run on the main thread (model forward pass). tta enables mirror test-time augmentation.
+        With multiple models the per-patch probabilities are averaged (soft voting).
         """
         # inference_mode is slightly faster than no_grad (disables autograd tracking
         # and view tracking). Safe here since we don't do in-place ops on outputs.
@@ -1194,11 +1206,15 @@ class PatchInferenceEngine:
                 locations = patches_batch[tio.LOCATION]
 
                 if tta:
-                    probs = _predict_patch_tta(self.model, patch_input, self._amp_context)
+                    probs = _predict_patch_tta(self.models, patch_input, self._amp_context)
                 else:
-                    with self._amp_context:
-                        logits = self.model(patch_input)
-                    probs = _logits_to_probs(logits).cpu()
+                    summed = None
+                    for _m in self.models:
+                        with self._amp_context:
+                            logits = _m(patch_input)
+                        p = _logits_to_probs(logits)
+                        summed = p if summed is None else summed + p
+                    probs = (summed / len(self.models)).cpu()
 
                 prepared.aggregator.add_batch(probs, locations)
 
@@ -1224,8 +1240,15 @@ class PatchInferenceEngine:
                 result = output.argmax(dim=0, keepdim=True).float()
 
         if not return_probabilities and self.config.keep_largest_component:
-            from fastMONAI.vision_inference import keep_largest
-            result = keep_largest(result.squeeze(0)).unsqueeze(0)
+            if n_classes > 2:
+                warnings.warn(
+                    f"keep_largest_component is binary-only; skipping it for multi-class output "
+                    f"(n_classes={n_classes}). Set keep_largest_component=False for multi-class "
+                    f"models, or post-process each class separately."
+                )
+            else:
+                from fastMONAI.vision_inference import keep_largest
+                result = keep_largest(result.squeeze(0)).unsqueeze(0)
 
         if return_probabilities:
             pred_img = tio.ScalarImage(tensor=result.float(), affine=prepared.input_img.affine)
@@ -1281,9 +1304,10 @@ class PatchInferenceEngine:
         return result
     
     def to(self, device):
-        """Move engine to device."""
+        """Move engine (all models) to device."""
         self._device = device
-        self.model.to(device)
+        for _m in self.models:
+            _m.to(device)
         return self
 
 # %% ../nbs/10_vision_patch.ipynb #cell-18
@@ -1347,7 +1371,8 @@ def patch_inference(
     GPU compute use different hardware.
 
     Args:
-        learner: PyTorch model or fastai Learner.
+        learner: PyTorch model or fastai Learner, or a list of them to soft-vote
+            ensemble (per-patch probabilities are averaged before argmax/threshold).
         config: PatchConfig with inference settings. Preprocessing params (apply_reorder,
             target_spacing) can be set here for DRY usage.
         file_paths: List of image paths.
@@ -1365,7 +1390,7 @@ def patch_inference(
             thread for preparation and saving. Holds two subjects in memory
             simultaneously (current + next). Set to False for memory-constrained
             environments processing very large volumes.
-        amp: If True, use automatic mixed precision (float16) for the forward pass.
+        amp: If True, use automatic mixed precision (bfloat16) for the forward pass.
             Only supported on CUDA devices; ignored with a warning on CPU/MPS.
 
     Returns:
