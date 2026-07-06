@@ -1,0 +1,16 @@
+name: fastmonai
+channels:
+  - pytorch
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - pytorch=2.6.0
+  - torchvision
+  - torchaudio
+  - cpuonly
+  - pip
+  - pip:
+    - fastMONAI==0.9.2
+    - SimpleITK
+    - ipython
