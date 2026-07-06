@@ -1,4 +1,5 @@
 #imports all of the functions and classes from the fastMONAI library
+from .vision_plot import show_segmentation_comparison
 from .vision_core import *
 from .vision_data import *
 from .vision_augmentation import *

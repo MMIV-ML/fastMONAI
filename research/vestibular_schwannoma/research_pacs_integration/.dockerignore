@@ -1,0 +1,15 @@
+# Keep large/irrelevant files out of the Docker build context and image.
+# NOTE: do NOT ignore the model directories or *.pkl weights - they must ship.
+
+# Saved docker image export(s) - e.g. vs-seg_docker_image_Sathiesh.tar.gz (~11.8 GB)
+*.tar.gz
+*.tar
+
+# Stale editor backup of the Dockerfile
+.ror/virt/Dockerfile~
+
+# Local tooling / caches
+.claude/
+**/__pycache__/
+*.pyc
+*.pyo
