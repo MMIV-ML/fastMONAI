@@ -180,6 +180,7 @@ _proc/
 # MLflow
 mlruns/
 mlruns.db
+mlflow.db
 
 # Reports
 reports/
@@ -192,3 +193,20 @@ DICOM/
 dicom/
 # Exception: keep test image used in vision_core
 !images/IXI002-Guys-0828-T1.nii.gz
+
+# Patient imaging. PACS exports name DICOM files without an extension, so the
+# *.dcm rule above does not catch them. Ignore the data directories outright.
+research/nii_data/
+DICOMDIR
+SECTRA/
+
+# Research working directory: MLflow runs, model weights, exported docker images
+research/vs_seg/
+
+# Archives and internal review artifacts
+*.tar
+*.tar.gz
+*_code_review.html
+
+# Local working notes
+TODO.md

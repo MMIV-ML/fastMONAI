@@ -25,6 +25,7 @@ from .vision_plot import find_max_slice
 from .vision_inference import _do_resize
 from .dataset_info import MedDataset, suggest_patch_size
 from .vision_augmentation import transforms_to_specs, transforms_from_specs
+from .utils import unwrap_compiled_model
 
 # %% ../nbs/10_vision_patch.ipynb #aw2pkvm2ibe
 def _get_default_device() -> torch.device:
@@ -1063,7 +1064,8 @@ class PatchInferenceEngine:
         learner: fastai Learner or PyTorch model (nn.Module), or a list of them for
             soft-vote ensembling (per-patch probabilities are averaged before argmax/
             threshold). When passing a raw PyTorch model, load weights first with
-            model.load_state_dict().
+            model.load_state_dict(). A torch.compile'd model is unwrapped for inference;
+            the caller's wrapper object is left in place.
         config: PatchConfig with inference settings. Preprocessing params (apply_reorder,
             target_spacing, padding_mode) can be set here for DRY usage.
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
@@ -1102,7 +1104,13 @@ class PatchInferenceEngine:
         _learners = list(learner) if isinstance(learner, (list, tuple)) else [learner]
         if len(_learners) == 0:
             raise ValueError("learner must be a model/Learner or a non-empty list of them.")
-        self.models = [l.model if isinstance(l, Learner) else l for l in _learners]
+        _models = [l.model if isinstance(l, Learner) else l for l in _learners]
+        self.models = [unwrap_compiled_model(m) for m in _models]
+        if any(u is not m for u, m in zip(self.models, _models)):
+            warnings.warn(
+                "torch.compile wrapper removed; patch inference runs the underlying "
+                "module eagerly, so compile speedups do not apply."
+            )
         self.model = self.models[0]  # first model; alias kept for single-model back-compat
         
         self.config = config

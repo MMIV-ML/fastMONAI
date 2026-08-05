@@ -3,19 +3,31 @@
 Bundle exported cross-validation fold learners into vs5f_unet_models/ so the
 UNet 5-fold ensemble container can be built.
 
-Each exported best_learner.pkl is copied as-is: no loading, no re-export, and no
-torch.compile unwrap. The raw exported learners load and run in the container,
-matching the single-model vs_seg build that already runs in production.
+Each exported best_learner.pkl is re-exported with any torch.compile wrapper removed.
+A fold trained under torch.compile pickles its dynamo state, and that state only works on
+the torch that wrote it: load_learner still succeeds, so the mismatch would not surface
+until the first forward pass inside the container. Once the wrapper is stripped the pickle
+runs on any torch. Saving uses cloudpickle, as fastai's Learner.export does; plain pickle
+cannot serialize the dataloader placeholder.
 
-Run once in the fastmonai-dev env, for example:
+The exported .pkl are unpickled in the container, so requirements.yml must install the
+packages the pickle references (fastMONAI, fastai, monai, torchio) at compatible versions
+(README section 7):
+    conda activate fastmonai-latest
     python prepare_fold_models.py --experiment vs5f_unet
+
+MLflow discovery downloads artifacts to a temp dir, which loses the run id (it is parsed
+from the path). Pass --pkl-paths with the in-place mlruns paths, in fold order, to keep
+the real run ids in mlflow_run_ids.txt.
 '''
 
 import argparse
 import glob
-import shutil
 from pathlib import Path
 
+import cloudpickle
+import torch
+from fastai.learner import load_learner
 from fastMONAI.vision_all import *
 
 
@@ -66,8 +78,8 @@ def discover_learners(args):
 def main():
     parser = argparse.ArgumentParser(
         prog="PrepareFoldModels",
-        description="Copy exported cross-validation fold learners into the "
-                    "ensemble models directory (no cleaning or re-export)."
+        description="Re-export cross-validation fold learners into the ensemble "
+                    "models directory, with any torch.compile wrapper removed."
     )
     parser.add_argument("--experiment", type=str, default="vs5f_unet",
                         help="MLflow experiment to discover fold learners from "
@@ -107,23 +119,21 @@ def main():
             "No fold learners found. Pass --pkl-paths, run against a live MLflow "
             "store, or point --mlruns-glob at exported best_learner.pkl files.")
 
-    # Copy each exported learner as-is (no loading, no re-export, no cleaning).
     run_ids = []
     for i, (src, run_id) in enumerate(folds, start=1):
         dst = out / ("fold_" + str(i) + ".pkl")
-        shutil.copy(src, dst)
+        learn = load_learner(src, cpu=True)
+        learn.model = unwrap_compiled_model(learn.model).eval()
+        torch.save(learn, dst, pickle_module=cloudpickle)
         run_ids.append(run_id)
-        print(f"Copied fold {i}: {src} -> {dst} (run {run_id})")
+        print(f"Exported fold {i}: {src} -> {dst} (run {run_id})")
 
-    # Ensemble provenance, one run id per line in fold_i.pkl order.
+    # One run id per line, in fold_i.pkl order.
     run_ids_path = out / "mlflow_run_ids.txt"
     run_ids_path.write_text("\n".join(run_ids) + "\n")
 
-    # Full patch-inference config, read back at inference with load_patch_variables
-    # into PatchConfig(**config). Prefer the canonical training config so every
-    # patch/preprocessing/postprocessing parameter (overlap, aggregation,
-    # normalization, keep_largest_component, ...) stays coupled to training; fall
-    # back to the CLI args + known-training defaults only if it is missing.
+    # Prefer the canonical training config so every patch/preprocessing parameter stays
+    # coupled to training; the CLI args are only a fallback if it is missing.
     settings_path = out / "inference_patch_config.json"
     if args.patch_config and args.patch_config.is_file():
         config = load_patch_variables(args.patch_config)

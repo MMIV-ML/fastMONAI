@@ -1,16 +1,24 @@
 name: fastmonai
 channels:
-  - pytorch
   - conda-forge
   - nodefaults
 dependencies:
   - python=3.11
-  - pytorch=2.6.0
-  - torchvision
-  - torchaudio
-  - cpuonly
   - pip
   - pip:
+    # torch must come from the CPU index, to keep CUDA wheels and several GB of
+    # nvidia-* packages out of a CPU-only image. monai 1.6.0 requires torch>=2.8, so a
+    # conda pytorch/cpuonly pin below that is silently overridden by pip.
+    - --extra-index-url https://download.pytorch.org/whl/cpu
+    - torch==2.12.1+cpu
+    - torchvision==0.27.1+cpu
+    # A .pkl learner unpickles by importing the classes it references, so these four
+    # must be installed and compatible. The exact pins are for build reproducibility;
+    # the pickles are not bound to a torch version once prepare_fold_models.py has
+    # stripped the torch.compile wrapper (README section 7).
     - fastMONAI==0.9.2
+    - fastai==2.8.7
+    - monai==1.6.0
+    - torchio==1.2.1
     - SimpleITK
     - ipython
