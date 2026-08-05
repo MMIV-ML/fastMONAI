@@ -24,6 +24,11 @@ CSV will be added (see Status).
 
 ## Requirements
 
-fastMONAI and its dependencies. UNet and DynUNet are MONAI built-ins and need nothing extra.
-SegMamba needs our fork; see "Install SegMamba" in
-`01_five_fold_cross_validation.ipynb` for the one-line GitHub install.
+An editable install of this repository (`pip install -e '.[dev]'` from the repo root). Both
+notebooks resolve their paths from `fastMONAI.__file__` and `chdir` into
+`research/vestibular_schwannoma`, so a plain PyPI install of fastMONAI will not work: there
+is no `research/` directory under `site-packages`.
+
+UNet and DynUNet are MONAI built-ins and need nothing extra. SegMamba needs our fork; section 1
+("Environment setup") of `01_five_fold_cross_validation.ipynb` prints the one-line GitHub install
+if the import fails.

@@ -23,32 +23,50 @@ Ensemble provenance is read from `vs5f_unet_models/mlflow_run_ids.txt` (one fold
 
 ## 3. Prepare weights (before building)
 
-The fold weights are not committed to the repo (they are large, and unlike the untracked `vs_seg` tree this folder is tracked - see `.gitignore`). Generate `vs5f_unet_models/` on the build host before you build. In the `fastmonai-dev` conda env:
+The fold weights are not committed to the repo (they are large, and unlike the untracked `vs_seg` tree this folder is tracked - see `.gitignore`). Generate `vs5f_unet_models/` on the build host before you build:
 
 ```bash
-source ~/miniconda3/etc/profile.d/conda.sh && conda activate fastmonai-dev
+source ~/miniconda3/etc/profile.d/conda.sh && conda activate fastmonai-latest
 python prepare_fold_models.py
 ```
 
+Run this in an environment that can unpickle the source learners, meaning fastMONAI, fastai, monai and torchio are installed at compatible versions, and the Python minor version matches the container. See the environment note below for which of the local envs qualify.
+
+The default `--experiment vs5f_unet` targets the experiment that notebook 01 writes; it does not exist yet, so a bare run finds nothing. The bundle currently shipped was built from `vs_five_fold_patch` with the `--pkl-paths` form shown below.
+
+Each fold is re-exported rather than copied, with any `torch.compile` wrapper stripped. A fold trained under `torch.compile` pickles its dynamo state, and that state only works on the torch that wrote it: `load_learner` still succeeds, so the mismatch would not surface until the first forward pass, on a real case, inside the container. Stripping the wrapper is what makes the bundled `.pkl` portable across torch versions.
+
+MLflow discovery downloads artifacts to a temp dir, and the run id is parsed from the artifact path, so `--experiment` alone writes fold numbers into `mlflow_run_ids.txt` instead of run ids. Pass the in-place `mlruns` paths, in fold order, to keep the real ids:
+
+```bash
+M=../../vs_seg/mlruns/3
+python prepare_fold_models.py --pkl-paths \
+  $M/<fold-1-run-id>/artifacts/model/best_learner.pkl \
+  ... one per fold, in order
+```
+
+As of 2026-08-03, `fastmonai-dev` and `fastmonai-latest` are valid export environments: both are Python 3.11 and both agree on the four packages the pickles bind to (fastMONAI 0.9.2, fastai 2.8.7, monai 1.6.0, torchio 1.2.1). They differ only in torch, which does not matter once the compile wrapper is stripped.
+
+**`fastmonai-py312` is not valid.** It is Python 3.12, and `requirements.yml` pins the container to `python=3.11`. The exported learner carries `EmptyMedPatchDataLoaders`, a class defined inside `MedPatchDataLoaders.new_empty()`, so cloudpickle serialises it by value including its CPython bytecode. A bundle exported under 3.12 unpickles cleanly under 3.11 and then segfaults on first use, inside the container, on a real case. Match the export environment's Python minor version to `requirements.yml`, and keep fastMONAI and fastai matched too.
+
 This writes three things into `vs5f_unet_models/`:
 
-- `fold_1.pkl .. fold_5.pkl` - the exported fold learners, copied AS-IS with no cleaning and no re-export, exactly like the vs_seg `unet_models/final_unet_learner.pkl`.
+- `fold_1.pkl .. fold_5.pkl` - the fold learners, re-exported with any `torch.compile` wrapper removed.
 - `inference_patch_config.json` - the full patch-inference config, sourced from the canonical training config `../inference_patch_config.json`.
 - `mlflow_run_ids.txt` - one fold run-id per line, used for DICOM provenance.
 
-Equivalent manual step (copy each exported fold `best_learner.pkl`, plus the config):
+To check a bundle by hand, `load_learner` a fold and read `type(learn.model).__name__`: it must be the network (`UNet`), never `OptimizedModule`.
+
+Only the config has a manual equivalent. The fold `.pkl` must go through `prepare_fold_models.py`, which strips the `torch.compile` wrapper; copying `best_learner.pkl` straight across reintroduces it.
 
 ```bash
 mkdir -p vs5f_unet_models
-cp /path/to/fold_1/best_learner.pkl vs5f_unet_models/fold_1.pkl
-cp /path/to/fold_2/best_learner.pkl vs5f_unet_models/fold_2.pkl
-# ... repeat for fold_3, fold_4, fold_5
 cp ../inference_patch_config.json vs5f_unet_models/inference_patch_config.json
 ```
 
 `inference_patch_config.json` is read at inference with `load_patch_variables` and rebuilt into a full `PatchConfig(**config)`, so `patch_size`, `patch_overlap`, `aggregation_mode`, `apply_reorder`, `target_spacing`, `keep_largest_component` and `normalization` all come from the one training config - the single source of truth. A retrain that changes any of them then propagates to inference automatically (unlike vs_seg, which persists only `[patch_size, apply_reorder, target_spacing]` and hardcodes the rest in the stub).
 
-Note: only four UNet fold runs currently exist on disk, not a full five. The stub ensembles whatever N folds are present, so the container runs a 4-fold ensemble until the fifth fold is trained and prepared.
+As of 2026-08-03 the bundled folds come from MLflow experiment `vs_five_fold_patch`, which holds all five (`tags.fold` 1-5, one `dataset_version`). That experiment also contains a `final_all_data_clean` run trained on every case; it is deliberately excluded, and needs no special handling - `find_fold_learners` selects on `tags.fold`, which that run does not carry. The stub ensembles whatever N folds are present, so a partial bundle silently produces an N-fold ensemble: check the `Folds ensembled:` line in the run output.
 
 ## 4. Build, run, export
 
@@ -115,6 +133,30 @@ Set `"ROR_CONT_OPTIONS": "{\"tta\":false}"` to disable TTA. The `config.json` tr
 
 The container returns four series to PACS: `fused`, `fused_vote_map`, `reports`, and `mask`. The stub writes `/output/mask` (segmentation) and `/output/vote_map` (foreground probability); `entrypoint.sh` runs pr2mask, which produces `fused`, `fused_vote_map`, and `reports`. This is the same output contract as vs_seg.
 
-## 7. Caveat
+## 7. Version pinning (important)
 
-The exported `.pkl` fold learners are version-bound. The container's fastMONAI and fastai must match the versions used to train the folds, or the pickled learners will fail to load.
+A `.pkl` learner unpickles by importing the classes it references, so the container needs fastMONAI, fastai, monai and torchio installed at compatible versions. It is **not** bound to a particular torch: once `prepare_fold_models.py` has stripped the `torch.compile` wrapper, the pickle loads and runs on any torch (verified in both directions, a bundle written under torch 2.12.1 runs under 2.8.0 and vice versa). `requirements.yml` pins the whole stack explicitly for build reproducibility rather than letting the resolver choose:
+
+```yaml
+- --extra-index-url https://download.pytorch.org/whl/cpu
+- torch==2.12.1+cpu
+- torchvision==0.27.1+cpu
+- fastMONAI==0.9.2
+- fastai==2.8.7
+- monai==1.6.0
+- torchio==1.2.1
+```
+
+Two things to know before changing these:
+
+- **torch must come from the CPU index.** `monai==1.6.0` requires `torch>=2.8`. A conda `pytorch=2.6.0` + `cpuonly` pin (as used previously) is silently overridden by pip, which then pulls the default CUDA wheel and several GB of `nvidia-*` packages into what is supposed to be a CPU-only image. The torch pin does **not** have to track the environment the folds were exported from; any recent CPU build works.
+- **Re-check after every retrain.** Confirm the export environment's Python minor version and its `fastMONAI` / `fastai` / `monai` / `torchio` versions are compatible with the block above. Python matters because the pickle embeds cloudpickled bytecode (see section 3). A newer fastMONAI that adds classes the pinned version lacks would fail to unpickle.
+
+Verify inside the built image before shipping:
+
+```bash
+docker run --rm --entrypoint bash vs-seg-5fold:latest -lc \
+  'python -c "import torch;print(torch.__version__, torch.cuda.is_available())"'
+```
+
+Expect a `+cpu` build and `False`.

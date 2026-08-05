@@ -14,7 +14,7 @@ from skimage.morphology import remove_small_objects
 from torchio import Resize, Image
 from .vision_core import *
 from .vision_augmentation import do_pad_or_crop
-from .utils import load_variables
+from .utils import load_variables, unwrap_compiled_model
 from fastai.learner import load_learner
 
 # %% ../nbs/06_vision_inference.ipynb #a3d8ecaf-d80c-463b-84f8-197e8966b304
@@ -64,7 +64,7 @@ def _do_resize(o, target_shape, image_interpolation='linear',
 def load_system_resources(models_path, learner_fn, variables_fn):
     """Load necessary resources like learner and variables."""
 
-    learn = load_learner(models_path / learner_fn, cpu=True) 
+    learn = unwrap_compiled_model(load_learner(models_path / learner_fn, cpu=True))
     vars_fn = models_path / variables_fn
     _, apply_reorder, target_spacing = load_variables(config_fn=vars_fn)
 
@@ -74,8 +74,10 @@ def load_system_resources(models_path, learner_fn, variables_fn):
 def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
               save_path: (str, Path) = None, org_img=None, input_img=None,
               org_size=None): 
-    """Predict on new data using exported model."""         
-    
+    """Predict on new data using exported model."""
+
+    learn_inf = unwrap_compiled_model(learn_inf)
+
     if None in [org_img, input_img, org_size]: 
         org_img, input_img, org_size = med_img_reader(fn, apply_reorder, target_spacing, 
                                                       only_tensor=False)

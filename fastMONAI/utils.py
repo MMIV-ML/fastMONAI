@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['set_mlflow_tracking_uri', 'store_variables', 'load_variables', 'store_patch_variables', 'load_patch_variables',
-           'print_colab_gpu_info', 'ModelTrackingCallback', 'create_mlflow_callback', 'find_fold_learners',
-           'MLflowUIManager']
+           'print_colab_gpu_info', 'unwrap_compiled_model', 'strip_compile_prefix', 'ModelTrackingCallback',
+           'create_mlflow_callback', 'find_fold_learners', 'MLflowUIManager']
 
 # %% ../nbs/07_utils.ipynb #ac941446-cf7e-4f5c-ace0-a36fb078022f
 import pickle
@@ -15,6 +15,7 @@ import tempfile
 import json
 from datetime import datetime
 from fastai.callback.core import Callback
+from fastai.learner import Learner
 from fastcore.foundation import L
 from typing import Any
 
@@ -264,6 +265,56 @@ def print_colab_gpu_info():
     if torch.cuda.is_available(): print('GPU attached.')
     else: print(colab_gpu_msg)
 
+# %% ../nbs/07_utils.ipynb #compilehelpers
+def unwrap_compiled_model(model):
+    """Return `model` with any torch.compile wrapper removed.
+
+    `torch.compile(model)` returns an `OptimizedModule` that holds the original
+    module as `_orig_mod` alongside TorchDynamo state bound to the torch build that
+    created it. A learner exported while compiled loads on any torch, but raises on
+    the first forward pass under a different one. The returned module shares its
+    weights with the wrapper.
+
+    Args:
+        model: An nn.Module, or a fastai Learner whose `.model` is unwrapped in place.
+
+    Returns:
+        The innermost nn.Module, or the same Learner that was passed in. A model that
+        was never compiled is returned unchanged.
+
+    Note:
+        Handles `torch.compile(model)`. `model.compile()` compiles in place and leaves
+        no wrapper to remove.
+    """
+    if isinstance(model, Learner):
+        model.model = unwrap_compiled_model(model.model)
+        return model
+
+    while hasattr(model, '_orig_mod'):
+        model = model._orig_mod
+    return model
+
+
+def strip_compile_prefix(state_dict, prefix: str = '_orig_mod.'):
+    """Remove the torch.compile key prefix from a state dict, in place.
+
+    `learn.save()` on a compiled model writes keys prefixed with `_orig_mod.`, which
+    an uncompiled module cannot load.
+
+    Args:
+        state_dict: A state dict, e.g. from `torch.load`. fastai checkpoints written
+            with `with_opt=True` are {'model': ..., 'opt': ...}; pass the 'model' value.
+        prefix: Key prefix to remove.
+
+    Returns:
+        The same dict, so it can be passed straight to `load_state_dict`. A dict
+        without the prefix is returned unchanged.
+    """
+    from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
+
+    consume_prefix_in_state_dict_if_present(state_dict, prefix)
+    return state_dict
+
 # %% ../nbs/07_utils.ipynb #czquspt567w
 def _detect_patch_workflow(dls) -> bool:
     """Detect if DataLoaders are patch-based (MedPatchDataLoaders).
@@ -392,7 +443,9 @@ def _extract_model_name(learn) -> str:
     Returns:
         Name of the model architecture
     """
-    model = learn.model
+    # nn.Module._get_name resolves on the class, so an OptimizedModule reports itself
+    # rather than proxying through to the module it wraps.
+    model = unwrap_compiled_model(learn.model)
     return model._get_name() if hasattr(model, '_get_name') else model.__class__.__name__
 
 # %% ../nbs/07_utils.ipynb #030876d2
@@ -567,56 +620,71 @@ class ModelTrackingCallback(Callback):
     
     def _save_model_artifacts(self, temp_dir: Path) -> None:
         """Save model weights, learner, and configuration as artifacts."""
-        import shutil
-
-        # Save final epoch weights (without optimizer state to reduce file size)
-        weights_path = temp_dir / "final_weights"
-        self.learn.save(str(weights_path), with_opt=False)
-        weights_file = f"{weights_path}.pth"
-        if os.path.exists(weights_file):
-            mlflow.log_artifact(weights_file, "model")
-
-        # Auto-detect checkpoint callback (SaveModelCallback, EMACheckpoint, etc.)
-        from fastai.callback.tracker import TrackerCallback
-        best_model_cb = None
-        for cb in self.learn.cbs:
-            if isinstance(cb, TrackerCallback) and hasattr(cb, 'fname'):
-                best_model_path = self.learn.path / self.learn.model_dir / f'{cb.fname}.pth'
-                if best_model_path.exists():
-                    best_weights_dest = temp_dir / "best_weights.pth"
-                    shutil.copy2(str(best_model_path), str(best_weights_dest))
-                    mlflow.log_artifact(str(best_weights_dest), "model")
-                    print(f"Logged best model weights: best_weights.pth")
-                    best_model_cb = cb
-                break
-
-        # Remove ModelTrackingCallback before exporting learners
+        # Artifacts are written from the underlying module: a torch.compile wrapper
+        # pickles TorchDynamo state that only runs on the torch build that wrote it.
+        # The wrapper is restored before returning, since training and evaluation
+        # continue on this learner after the export.
+        compiled_model = self.learn.model
         original_cbs = self.learn.cbs.copy()
-        filtered_cbs = L([cb for cb in self.learn.cbs
-                          if not isinstance(cb, ModelTrackingCallback)])
-        self.learn.cbs = filtered_cbs
+        self.learn.model = unwrap_compiled_model(compiled_model)
 
-        # Export before loading best weights
-        final_learner_path = temp_dir / "final_learner.pkl"
-        self.learn.export(str(final_learner_path))
-        mlflow.log_artifact(str(final_learner_path), "model")
-        print("Logged final epoch learner: final_learner.pkl")
+        try:
+            # Save final epoch weights (without optimizer state to reduce file size)
+            weights_path = temp_dir / "final_weights"
+            self.learn.save(str(weights_path), with_opt=False)
+            weights_file = f"{weights_path}.pth"
+            if os.path.exists(weights_file):
+                mlflow.log_artifact(weights_file, "model")
 
-        if best_model_cb is not None:
-            self.learn.load(best_model_cb.fname)
-            print(f"Loaded best model weights ({best_model_cb.fname}) for best learner export")
+            # Auto-detect checkpoint callback (SaveModelCallback, EMACheckpoint, etc.)
+            from fastai.callback.tracker import TrackerCallback
+            best_model_cb = None
+            for cb in self.learn.cbs:
+                if isinstance(cb, TrackerCallback) and hasattr(cb, 'fname'):
+                    best_model_path = self.learn.path / self.learn.model_dir / f'{cb.fname}.pth'
+                    if best_model_path.exists():
+                        best_model_cb = cb
+                    break
 
-            best_learner_path = temp_dir / "best_learner.pkl"
-            self.learn.export(str(best_learner_path))
-            mlflow.log_artifact(str(best_learner_path), "model")
-            print("Logged best epoch learner: best_learner.pkl")
+            # Remove ModelTrackingCallback before exporting learners
+            self.learn.cbs = L([cb for cb in self.learn.cbs
+                                if not isinstance(cb, ModelTrackingCallback)])
 
-        self.learn.cbs = original_cbs
+            # Export before loading best weights
+            final_learner_path = temp_dir / "final_learner.pkl"
+            self.learn.export(str(final_learner_path))
+            mlflow.log_artifact(str(final_learner_path), "model")
+            print("Logged final epoch learner: final_learner.pkl")
 
-        config_path = temp_dir / "inference_settings.json"
-        store_variables(config_path, self.size, self.apply_reorder, self.target_spacing)
-        mlflow.log_artifact(str(config_path), "config")
-    
+            # Logged before the best-model export, so a checkpoint that fails to
+            # load does not also cost the inference settings.
+            config_path = temp_dir / "inference_settings.json"
+            store_variables(config_path, self.size, self.apply_reorder, self.target_spacing)
+            mlflow.log_artifact(str(config_path), "config")
+
+            if best_model_cb is not None:
+                # The checkpoint was written during training, so its keys carry the
+                # wrapper prefix. Load it through the wrapper, then unwrap again.
+                self.learn.model = compiled_model
+                self.learn.load(best_model_cb.fname)
+                self.learn.model = unwrap_compiled_model(compiled_model)
+                print(f"Loaded best model weights ({best_model_cb.fname}) for best learner export")
+
+                best_weights_path = temp_dir / "best_weights"
+                self.learn.save(str(best_weights_path), with_opt=False)
+                best_weights_file = f"{best_weights_path}.pth"
+                if os.path.exists(best_weights_file):
+                    mlflow.log_artifact(best_weights_file, "model")
+                    print("Logged best model weights: best_weights.pth")
+
+                best_learner_path = temp_dir / "best_learner.pkl"
+                self.learn.export(str(best_learner_path))
+                mlflow.log_artifact(str(best_learner_path), "model")
+                print("Logged best epoch learner: best_learner.pkl")
+        finally:
+            self.learn.model = compiled_model
+            self.learn.cbs = original_cbs
+
     def _log_split_df(self) -> None:
         """Log train/validation split as CSV artifact if available."""
         dls = self.learn.dls
@@ -974,9 +1042,7 @@ import sys
 import atexit
 import signal
 import ctypes
-from IPython.display import display, HTML, clear_output
-from IPython.core.magic import register_line_magic
-from IPython import get_ipython
+from IPython.display import display, HTML
 import shutil
 
 # Ask the OS to SIGTERM the `mlflow ui` child the instant this (parent) process dies;
@@ -1069,7 +1135,7 @@ class MLflowUIManager:
         
         if not self.check_mlflow_installed():
             if not quiet:
-                display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">❌ MLflow not installed. Run: pip install mlflow</div>'))
+                display(HTML('<div style="color: #d32f2f; font-weight: bold; font-size: 14px;">MLflow not installed. Run: pip install mlflow</div>'))
             return False
         
         existing_port = self._find_running_mlflow()
@@ -1194,7 +1260,7 @@ class MLflowUIManager:
             self._reusing_external = False
             display(HTML('''
                 <div style="background-color: #e3f2fd; border: 2px solid #1976d2; padding: 10px; border-radius: 6px;">
-                    <span style="color: #0d47a1; font-weight: bold; font-size: 14px;">MLflow UI was started externally — not stopping it</span>
+                    <span style="color: #0d47a1; font-weight: bold; font-size: 14px;">MLflow UI was started externally, not stopping it</span>
                 </div>
             '''))
         else:

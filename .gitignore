@@ -180,6 +180,7 @@ _proc/
 # MLflow
 mlruns/
 mlruns.db
+mlflow.db
 
 # Reports
 reports/
@@ -188,7 +189,43 @@ reports/
 *.dcm
 *.nii
 *.nii.gz
-DICOM/
-dicom/
 # Exception: keep test image used in vision_core
 !images/IXI002-Guys-0828-T1.nii.gz
+
+# research/ holds patient data, so it denies by default and allows code back by
+# type. PACS exports name DICOM files without an extension, so the *.dcm rule
+# above cannot catch them; only default-deny does. A new export directory is
+# then ignored without anyone remembering to add a rule for it.
+research/**
+!research/**/
+!research/**/*.py
+!research/**/*.ipynb
+!research/**/*.md
+!research/**/*.yml
+!research/**/*.yaml
+!research/**/*.toml
+!research/**/*.cfg
+!research/**/*.sh
+# Images only under figs/. Patient snapshots are raster files too, so an
+# unscoped image rule would re-include them.
+!research/**/figs/**/*.png
+!research/**/figs/**/*.jpg
+!research/**/figs/**/*.svg
+!research/**/Dockerfile
+!research/**/.gitignore
+!research/**/.dockerignore
+!research/vestibular_schwannoma/ml_dataset.csv
+
+# Bulk data directories. Listed last so none of the negations above can reach
+# inside them: a negation that re-includes a parent directory would otherwise
+# let git descend and match files within.
+research/nii_data/
+research/vs_seg/
+
+# Archives and internal review artifacts
+*.tar
+*.tar.gz
+*_code_review.html
+
+# Local working notes
+TODO.md
