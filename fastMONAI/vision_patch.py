@@ -4,7 +4,8 @@
 
 # %% auto #0
 __all__ = ['normalize_patch_transforms', 'PatchConfig', 'med_to_subject', 'create_subjects_dataset', 'create_patch_sampler',
-           'MedPatchDataLoader', 'MedPatchDataLoaders', 'PatchInferenceEngine', 'patch_inference']
+           'MedPatchDataLoader', 'MedPatchDataLoaders', 'PatchInferenceEngine', 'prediction_filename',
+           'patch_inference']
 
 # %% ../nbs/10_vision_patch.ipynb #cell-2
 import torch
@@ -184,8 +185,8 @@ class PatchConfig:
         if not 0.0 <= self.binary_threshold <= 1.0:
             raise ValueError(f"binary_threshold must be in [0, 1], got {self.binary_threshold}")
 
-        # Coerce normalization (live transforms or specs) to JSON-serializable specs so the
-        # config can round-trip through store_patch_variables/load_patch_variables.
+        # Coerce normalization (live transforms or specs) to JSON-serializable specs so it
+        # can be embedded in the Safetensors inference contract.
         if self.normalization is not None:
             self.normalization = transforms_to_specs(self.normalization)
 
@@ -1236,7 +1237,8 @@ class PatchInferenceEngine:
     ) -> tuple[torch.Tensor, np.ndarray]:
         """Post-process the aggregated output (threshold/argmax, resize, reorient); returns (result, affine).
 
-        return_probabilities keeps the probability map instead of taking argmax/threshold.
+        return_probabilities keeps the probability map and restores it with linear
+        interpolation. Decoded labels are restored with nearest-neighbor interpolation.
         """
         if return_probabilities:
             result = output
@@ -1263,8 +1265,12 @@ class PatchInferenceEngine:
         else:
             pred_img = tio.LabelMap(tensor=result.float(), affine=prepared.input_img.affine)
 
-        # Resize back to original size (before resampling)
-        pred_img = _do_resize(pred_img, prepared.org_size, image_interpolation='nearest')
+        # Continuous probabilities use linear interpolation; discrete labels stay nearest.
+        image_interpolation = 'linear' if return_probabilities else 'nearest'
+        pred_img = _do_resize(
+            pred_img, prepared.org_size, image_interpolation=image_interpolation,
+            label_interpolation='nearest'
+        )
 
         # Reorient to original orientation (if reorder was applied)
         if self.apply_reorder:
@@ -1311,6 +1317,35 @@ class PatchInferenceEngine:
             return result, affine
         return result
     
+
+    def predict_mask_and_probabilities(
+        self,
+        img_path: Path | str,
+        return_affine: bool = False,
+        tta: bool = False
+    ) -> (
+        tuple[torch.Tensor, torch.Tensor]
+        | tuple[torch.Tensor, torch.Tensor, np.ndarray]
+    ):
+        """Predict a configured mask and probability map from one model inference.
+
+        The mask is decoded from the aggregated probabilities before resizing and restored
+        with nearest-neighbor interpolation. Probability channels are restored independently
+        with linear interpolation.
+
+        Returns:
+            ``(mask, probabilities)`` or ``(mask, probabilities, affine)`` when
+            ``return_affine=True``. The mask has shape ``[1, D, H, W]`` and dtype
+            ``torch.long``; probabilities have shape ``[C, D, H, W]`` and floating dtype.
+        """
+        prepared = self._prepare_subject(img_path)
+        output = self._run_inference(prepared, tta=tta)
+        mask, affine = self._postprocess(output, prepared, return_probabilities=False)
+        probabilities, _ = self._postprocess(output, prepared, return_probabilities=True)
+
+        if return_affine:
+            return mask, probabilities, affine
+        return mask, probabilities
     def to(self, device):
         """Move engine (all models) to device."""
         self._device = device
@@ -1322,22 +1357,24 @@ class PatchInferenceEngine:
 from concurrent.futures import ThreadPoolExecutor
 
 
+def prediction_filename(input_path: str | Path) -> str:
+    """Return the filename used by patch inference for a saved prediction."""
+    input_path = Path(input_path)
+    stem = input_path.stem
+    if input_path.suffix == '.gz' and stem.endswith('.nii'):
+        return f"{stem[:-4]}_pred.nii.gz"
+    if input_path.suffix == '.nii':
+        return f"{stem}_pred.nii"
+    return f"{stem}_pred.nii.gz"
+
+
 def _save_prediction(pred, affine, input_path, save_path, return_probabilities):
     """Save a single prediction as a NIfTI file (`<stem>_pred.nii[.gz]` in save_path).
 
     Module-level (no closure captures) so it is safe to run in a background save thread.
     return_probabilities saves a ScalarImage, otherwise a LabelMap.
     """
-    input_path = Path(input_path)
-    stem = input_path.stem
-    if input_path.suffix == '.gz' and stem.endswith('.nii'):
-        stem = stem[:-4]
-        out_name = f"{stem}_pred.nii.gz"
-    elif input_path.suffix == '.nii':
-        out_name = f"{stem}_pred.nii"
-    else:
-        out_name = f"{stem}_pred.nii.gz"
-    out_path = save_path / out_name
+    out_path = save_path / prediction_filename(input_path)
 
     if return_probabilities:
         pred_img = tio.ScalarImage(tensor=pred, affine=affine)

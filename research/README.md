@@ -1,5 +1,10 @@
 # Research 
 
+## Shared deployment guidance
+
+Projects targeting the Research PACS should follow
+[Research PACS deployment with ROR](RESEARCH_PACS_DEPLOYMENT.md).
+
 
 ## Table of contents
 | Notebook                                                                                                                                                                                                                               | 1-Click Notebook                                                                                                                                                                                   |

@@ -107,7 +107,11 @@ class MedImageDataLoaders(DataLoaders):
             target_spacing=target_spacing
         )
 
-        return cls.from_dblock(dblock, df, **kwargs)
+        dls = cls.from_dblock(dblock, df, **kwargs)
+        # Retain column identities; actual membership remains in train_ds/valid_ds.
+        dls._img_col = fn_col
+        dls._mask_col = label_col
+        return dls
 
 # %% ../nbs/02_vision_data.ipynb #71268a0f
 @dispatch

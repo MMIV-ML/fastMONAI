@@ -1,0 +1,86 @@
+# Local development environments and editor state
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.vscode/
+.idea/
+.DS_Store
+
+# Python, notebook, test, and coverage caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Private/local medical data. Keep only documentation, the reviewed research
+# index, and synthetic examples.
+data/**
+!data/
+!data/README.md
+!data/ml_dataset.csv
+!data/*.example.csv
+raw_data/
+nii_data/
+dicom_data/
+*.dcm
+*.nii
+*.nii.gz
+*.nrrd
+*.mha
+*.mhd
+
+# Local variants of the dataset manifest
+ml_dataset.local.csv
+ml_dataset.private.csv
+
+# Preprocessing, predictions, evaluation, and notebook run products
+preprocessed/
+cv_results/
+cv_results_*/
+inference_predictions/
+predictions/
+outputs/
+results/
+reports/
+cv_model_comparison.csv
+inference_patch_config.json
+preprocessing_manifest.json
+train_val_split.csv
+
+# Experiment tracking
+mlruns/
+mlruns.db
+mlflow.db
+*.sqlite
+*.sqlite3
+wandb/
+
+# Training checkpoints and deployment bundles
+models/
+checkpoints/
+model_bundles/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# Container/image exports and temporary staging
+*.tar
+*.tar.gz
+*.tgz
+*.tar.sha256
+*.tar.gz.sha256
+.tmp*/
+tmp*/
+*~
+
+# Private project planning
+docs/roadmap.html
