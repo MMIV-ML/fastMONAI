@@ -1,5 +1,5 @@
 # Keep large/irrelevant files out of the Docker build context and image.
-# NOTE: do NOT ignore the model directories or *.pkl weights - they must ship.
+# NOTE: do not ignore model_bundles/; their declared Safetensors members must ship.
 
 # Saved docker image export(s) - e.g. vs-seg_docker_image_Sathiesh.tar.gz (~11.8 GB)
 *.tar.gz
@@ -13,3 +13,4 @@
 **/__pycache__/
 *.pyc
 *.pyo
+test_*.py

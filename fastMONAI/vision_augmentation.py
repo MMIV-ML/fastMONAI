@@ -2,9 +2,9 @@
 
 # %% auto #0
 __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization', 'RescaleIntensity', 'NormalizeIntensity',
-           'build_transform_from_spec', 'transforms_to_specs', 'transforms_from_specs', 'BraTSMaskConverter',
-           'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField', 'RandomBlur',
-           'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomAnisotropy', 'RandomCutout',
+           'build_transform_from_spec', 'transforms_to_specs', 'transforms_from_specs', 'inference_transforms_to_specs',
+           'BraTSMaskConverter', 'BinaryConverter', 'RandomGhosting', 'RandomSpike', 'RandomNoise', 'RandomBiasField',
+           'RandomBlur', 'RandomGamma', 'RandomIntensityScale', 'RandomMotion', 'RandomAnisotropy', 'RandomCutout',
            'RandomElasticDeformation', 'RandomAffine', 'RandomFlip', 'OneOf', 'GpuPatchAugmentation',
            'gpu_patch_augmentations', 'suggest_patch_augmentations']
 
@@ -12,6 +12,7 @@ __all__ = ['CustomDictTransform', 'do_pad_or_crop', 'PadOrCrop', 'ZNormalization
 from fastai.data.all import *
 from .vision_core import *
 import torch.nn.functional as F
+import json
 import math
 import torchio as tio
 from monai.transforms import NormalizeIntensity as MonaiNormalizeIntensity
@@ -75,7 +76,7 @@ def do_pad_or_crop(o, target_shape, padding_mode, mask_name, dtype=torch.Tensor)
 
 # %% ../nbs/03_vision_augment.ipynb #9c75bb84
 class PadOrCrop(DisplayedTransform):
-    """Resize image using TorchIO `CropOrPad`."""
+    """Resize image using TorchIO CropOrPad."""
     
     order = 0
 
@@ -85,6 +86,17 @@ class PadOrCrop(DisplayedTransform):
         self.pad_or_crop = tio.CropOrPad(target_shape=size,
                                     padding_mode=padding_mode, 
                                     mask_name=mask_name)
+
+    def to_spec(self):
+        """Return a JSON-serializable specification of the effective transform."""
+        spec = {
+            'name': 'PadOrCrop',
+            'size': list(self.pad_or_crop.target_shape),
+            'padding_mode': self.pad_or_crop.padding_mode,
+            'mask_name': self.pad_or_crop.mask_name,
+        }
+        _validate_transform_spec_json(spec)
+        return spec
 
     @property
     def tio_transform(self):
@@ -281,34 +293,52 @@ class NormalizeIntensity(DisplayedTransform):
         return o
 
 # %% ../nbs/03_vision_augment.ipynb #norm-spec-registry
-# Registry + (de)serialization helpers for normalization transforms.
-# Lets PatchConfig.normalization persist as JSON specs (name + scalar kwargs)
-# and reconstruct the live transforms for training/inference.
-_NORM_TFM_REGISTRY = {
+# Allow-listed registry + (de)serialization helpers for inference transforms.
+# PatchConfig.normalization remains a supported subset; standard inference also
+# uses this registry to persist its ordered deterministic item transforms.
+_TRANSFORM_SPEC_REGISTRY = {
+    'PadOrCrop': PadOrCrop,
     'ZNormalization': ZNormalization,
     'RescaleIntensity': RescaleIntensity,
     'NormalizeIntensity': NormalizeIntensity,
 }
+# Backward-compatible private alias for code that inspected the old registry.
+_NORM_TFM_REGISTRY = _TRANSFORM_SPEC_REGISTRY
+
+
+def _validate_transform_spec_json(spec):
+    """Fail early unless a transform spec is a JSON object with an allow-listed name."""
+    if not isinstance(spec, dict):
+        raise TypeError(f'Transform spec must be a dict, got {type(spec).__name__}.')
+    name = spec.get('name')
+    if name not in _TRANSFORM_SPEC_REGISTRY:
+        raise ValueError(
+            f"Unknown transform spec name {name!r}. "
+            f"Known: {sorted(_TRANSFORM_SPEC_REGISTRY)}."
+        )
+    try:
+        json.dumps(spec, allow_nan=False)
+    except (TypeError, ValueError) as e:
+        raise TypeError(f'Transform spec for {name!r} is not JSON-serializable: {e}') from e
 
 
 def build_transform_from_spec(spec):
-    """Reconstruct a normalization transform from a JSON spec dict.
+    """Reconstruct an allow-listed transform from a JSON spec dict.
 
-    `spec` must contain a `name` key naming a registered transform
-    (see `_NORM_TFM_REGISTRY`); remaining keys are passed as constructor kwargs.
+    spec must contain a name key naming a registered transform; remaining keys
+    are passed as constructor kwargs.
     """
+    _validate_transform_spec_json(spec)
     spec = dict(spec)
-    name = spec.pop('name', None)
-    cls = _NORM_TFM_REGISTRY.get(name)
-    if cls is None:
-        raise ValueError(f"Unknown transform spec name {name!r}. Known: {sorted(_NORM_TFM_REGISTRY)}.")
+    name = spec.pop('name')
+    cls = _TRANSFORM_SPEC_REGISTRY[name]
     return cls(**spec)
 
 
 def transforms_to_specs(tfms):
     """Convert transforms (or specs) to JSON-serializable spec dicts.
 
-    Accepts fastMONAI transform wrappers (via `.to_spec()`), pass-through spec
+    Accepts fastMONAI transform wrappers (via .to_spec()), pass-through spec
     dicts, and None. Raises TypeError if a transform cannot be serialized (e.g. a
     custom callable); pass such transforms via the pre_inference_tfms /
     pre_patch_tfms override instead of the config.
@@ -318,26 +348,46 @@ def transforms_to_specs(tfms):
     specs = []
     for t in tfms:
         if isinstance(t, dict):
-            specs.append(t)
+            spec = dict(t)
         elif hasattr(t, 'to_spec'):
-            specs.append(t.to_spec())
+            spec = t.to_spec()
         else:
             raise TypeError(
                 f"{type(t).__name__} is not config-serializable (no to_spec). "
                 "Pass it via the pre_inference_tfms/pre_patch_tfms override instead."
             )
+        _validate_transform_spec_json(spec)
+        # Construct once while writing so invalid kwargs fail before an artifact exists.
+        build_transform_from_spec(spec)
+        specs.append(spec)
     return specs
 
 
 def transforms_from_specs(specs):
     """Reconstruct live transforms from JSON spec dicts.
 
-    Accepts spec dicts (rebuilt via `build_transform_from_spec`), pass-through
+    Accepts spec dicts (rebuilt via build_transform_from_spec), pass-through
     live transforms, and None.
     """
     if specs is None:
         return None
     return [build_transform_from_spec(s) if isinstance(s, dict) else s for s in specs]
+
+
+def inference_transforms_to_specs(tfms):
+    """Serialize the ordered transforms that run for validation/inference.
+
+    fastai transforms with split_idx == 0 are training-only and are omitted.
+    Every remaining transform must be allow-listed and round-trippable, preventing
+    a standard inference artifact from silently dropping preprocessing.
+    """
+    if tfms is None:
+        return None
+    inference_tfms = [
+        t for t in tfms
+        if isinstance(t, dict) or getattr(t, 'split_idx', None) != 0
+    ]
+    return transforms_to_specs(inference_tfms)
 
 # %% ../nbs/03_vision_augment.ipynb #be431cc2
 class BraTSMaskConverter(DisplayedTransform):

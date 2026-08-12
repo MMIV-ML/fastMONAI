@@ -214,7 +214,7 @@ research/**
 !research/**/Dockerfile
 !research/**/.gitignore
 !research/**/.dockerignore
-!research/vestibular_schwannoma/ml_dataset.csv
+!research/vestibular_schwannoma/data/ml_dataset.csv
 
 # Bulk data directories. Listed last so none of the negations above can reach
 # inside them: a negation that re-includes a parent directory would otherwise

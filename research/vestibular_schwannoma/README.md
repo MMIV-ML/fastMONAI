@@ -1,34 +1,71 @@
 # Vestibular Schwannoma Segmentation (CE-T1w)
 
-This folder reproduces our fastMONAI results for segmenting vestibular schwannoma (VS) in
-contrast-enhanced T1-weighted (CE-T1w) MRI. The task is binary 3D segmentation: for every
-voxel, tumor (1) or background (0), trained and evaluated with the patch-based workflow.
+This project uses fastMONAI for patch-based 3D segmentation of vestibular schwannoma in
+contrast-enhanced T1-weighted MRI. It includes five-fold cross-validation, optional all-data
+training, inference on new cases, and PACS deployment.
 
-**Status: under development.** Downloading the data and preprocessing it into the layout the
-notebooks expect are not part of this folder yet and will be added.
+## Contents
 
-## Notebooks
+- `notebooks/01_five_fold_cross_validation.ipynb`: train and compare UNet, DynUNet, and
+  optional SegMamba models.
+- `notebooks/02_inference_new_cases.ipynb`: run one declared model or an explicit ensemble.
+- `workflow/`: project-local configuration, model recipes, training, result aggregation,
+  and inference artifact handling used by the notebooks.
+- `data/ml_dataset.csv`: public case index and fixed fold assignments.
+- `deployment/pacs/`: Safetensors bundle builder and ROR/PACS container.
+- `tests/workflow/`: CPU-only workflow contract and orchestration tests.
+- `tests/deployment/`: deployment tests.
 
-- `01_five_fold_cross_validation.ipynb` - five-fold cross-validation comparing three models
-  (UNet, DynUNet, and a SegMamba fork) on the same fixed folds. Each fold is trained and then
-  evaluated with sliding-window inference, and the notebook ends with a cross-model summary.
-- `02_inference_new_cases.ipynb` - runs a soft-vote ensemble of the five
-  folds, on new cases, reusing the exact preprocessing contract from training.
+## Setup and data
 
-## Data
+Use fastMONAI 0.10.0 or a matching development checkout. From the fastMONAI repository root:
 
-`ml_dataset.csv` has one row per case: image and mask paths (relative to this folder, under
-`../nii_data/...`), a pre-assigned `fold` (1..5), and a `split` column. The scans themselves
-are not included here yet. The steps that download the data and build `../nii_data/` and this
-CSV will be added (see Status).
+```bash
+pip install -e '.[dev]'
+```
 
-## Requirements
+Medical images are not included. A reproducible workflow for preprocessing the downloaded
+public datasets is in progress. Until it lands, the CSV expects prepared data under
+`../nii_data/`; see [data/README.md](data/README.md).
+UNet and DynUNet use MONAI. The training notebook prints the installation command for the
+optional SegMamba fork when needed.
 
-An editable install of this repository (`pip install -e '.[dev]'` from the repo root). Both
-notebooks resolve their paths from `fastMONAI.__file__` and `chdir` into
-`research/vestibular_schwannoma`, so a plain PyPI install of fastMONAI will not work: there
-is no `research/` directory under `site-packages`.
+## Run
 
-UNet and DynUNet are MONAI built-ins and need nothing extra. SegMamba needs our fork; section 1
-("Environment setup") of `01_five_fold_cross_validation.ipynb` prints the one-line GitHub install
-if the import fails.
+Start Jupyter from this directory or `notebooks/`:
+
+```bash
+jupyter lab notebooks/01_five_fold_cross_validation.ipynb
+```
+
+Notebook 01 uses the fixed `fold` column for cross-validation and can optionally train one
+final model on all cases. Notebook 02 reads the preprocessing and output contract embedded
+in each declared Safetensors model.
+
+The notebooks keep the scientific choices visible but delegate reusable project orchestration
+to `workflow/`. Model recipes contain the VS-specific architecture and loss settings, while
+model reconstruction, patch inference, metrics, and artifact formats remain fastMONAI
+responsibilities.
+
+Training retains weights-only `.pth` checkpoints for continued training. Inference and
+deployment use strict-loaded `.safetensors` artifacts. Generated data, results, tracking
+stores, checkpoints, and model bundles are excluded from Git.
+
+For container preparation and execution, see
+[deployment/pacs/README.md](deployment/pacs/README.md).
+
+## Reproducibility
+
+Preprocessing cache reuse is validated through `preprocessing_manifest.json`. MLflow records
+the dataset, preprocessing cache, actual DataLoader split, metrics, and model artifacts.
+
+Run the workflow tests from the parent repository with the development environment active:
+
+```bash
+python -m unittest discover -s research/vestibular_schwannoma/tests/workflow -v
+```
+
+## Citation and license
+
+This project is part of fastMONAI. Use the parent repository's `CITATION.cff` and Apache-2.0
+license, and cite the originating datasets under their applicable terms.
