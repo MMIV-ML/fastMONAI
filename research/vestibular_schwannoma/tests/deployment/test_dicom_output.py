@@ -88,14 +88,14 @@ def _write_test_image(
         dataset.HighBit = 15
         dataset.PixelRepresentation = 0
         dataset.PixelData = np.zeros((rows, columns), dtype="<u2").tobytes()
-        dataset.save_as(str(path), write_like_original=False)
+        dicom._save_dataset(dataset, path, enforce_file_format=True)
         if meta_sop_uid is not None:
             written = dcmread(str(path))
             if meta_sop_uid is False:
                 del written.file_meta.MediaStorageSOPInstanceUID
             else:
                 written.file_meta.MediaStorageSOPInstanceUID = meta_sop_uid
-            written.save_as(str(path), write_like_original=True)
+            dicom._save_dataset(written, path, enforce_file_format=False)
     return path
 
 
@@ -503,7 +503,7 @@ class DicomUIDTests(unittest.TestCase):
                 warnings.simplefilter("ignore")
                 dataset.StudyInstanceUID = HEX_STUDY_UID
                 dataset.FrameOfReferenceUID = HEX_FRAME_UID
-                dataset.save_as(str(path), write_like_original=False)
+                dicom._save_dataset(dataset, path, enforce_file_format=True)
 
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")

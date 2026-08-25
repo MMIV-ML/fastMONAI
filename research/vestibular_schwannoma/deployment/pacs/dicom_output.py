@@ -11,7 +11,7 @@ from pathlib import Path
 import fastMONAI
 import numpy as np
 from imagedata.series import Series
-from pydicom import dcmread
+from pydicom import __version_info__ as pydicom_version_info, dcmread
 from pydicom.misc import is_dicom
 from pydicom.uid import UID, generate_uid
 
@@ -28,6 +28,7 @@ from deployment_models import (
 
 SEGMENTATION_MASK = "segmentation_mask"
 PROBABILITY_MAP = "probability_map"
+_PYDICOM_MAJOR = int(pydicom_version_info[0])
 
 _REPRESENTATION_LABELS = {
     SEGMENTATION_MASK: "segmentation mask",
@@ -50,6 +51,14 @@ def _suppress_invalid_ui_warnings():
             module=r"^pydicom\.valuerep$",
         )
         yield
+
+
+def _save_dataset(dataset, path, *, enforce_file_format):
+    """Write with the supported pydicom file-format argument."""
+    if _PYDICOM_MAJOR >= 3:
+        dataset.save_as(str(path), enforce_file_format=enforce_file_format)
+    else:
+        dataset.save_as(str(path), write_like_original=not enforce_file_format)
 
 
 def _validate_sha256(value: str, label: str) -> str:
@@ -429,7 +438,7 @@ def _finalize_written_dicom(save_dir):
             if not UID(series_uid).is_valid or not UID(sop_uid).is_valid:
                 raise RuntimeError(f"writer produced an invalid DICOM UID in {path}")
             dataset.file_meta.MediaStorageSOPInstanceUID = sop_uid
-            dataset.save_as(str(path), write_like_original=False)
+            _save_dataset(dataset, path, enforce_file_format=True)
 
 
 def save_series_pred(
