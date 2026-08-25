@@ -1,4 +1,4 @@
-"""VS-specific model and loss recipes.
+"""VS-specific training model definitions.
 
 Model reconstruction itself is delegated to fastMONAI's versioned model-spec API,
 which keeps training and Safetensors inference on the same construction path.
@@ -30,7 +30,7 @@ SEGMAMBA_INSTALL_HINT = (
 
 
 @dataclass(frozen=True)
-class ModelRecipe:
+class TrainingModelConfig:
     """Everything the VS training workflow needs for one model family."""
 
     key: str
@@ -38,8 +38,11 @@ class ModelRecipe:
     model_spec: dict
     make_loss: Callable[[], object]
     experiment_name: str
-    checkpoint_name: str
     supports_compile: bool = True
+
+    @property
+    def checkpoint_name(self) -> str:
+        return f"best_{self.key}"
 
 
 def _make_dice_ce_loss() -> CustomLoss:
@@ -110,30 +113,27 @@ SEGMAMBA_SPEC = make_model_spec(
 )
 
 
-MODEL_RECIPES = {
-    "unet": ModelRecipe(
+TRAINING_MODEL_CONFIGS = {
+    "unet": TrainingModelConfig(
         key="unet",
         display_name="UNet",
         model_spec=UNET_SPEC,
         make_loss=_make_dice_ce_loss,
-        experiment_name="vs5f_unet",
-        checkpoint_name="best_unet",
+        experiment_name="vestibular_schwannoma_unet",
     ),
-    "dynunet": ModelRecipe(
+    "dynunet": TrainingModelConfig(
         key="dynunet",
         display_name="DynUNet",
         model_spec=DYNUNET_SPEC,
         make_loss=_make_dynunet_loss,
-        experiment_name="vs5f_dynunet",
-        checkpoint_name="best_dynunet",
+        experiment_name="vestibular_schwannoma_dynunet",
     ),
-    "segmamba": ModelRecipe(
+    "segmamba": TrainingModelConfig(
         key="segmamba",
         display_name="SegMamba V2",
         model_spec=SEGMAMBA_SPEC,
         make_loss=_make_dice_ce_loss,
-        experiment_name="vs5f_segmamba",
-        checkpoint_name="best_segmamba",
+        experiment_name="vestibular_schwannoma_segmamba",
         supports_compile=False,
     ),
 }
@@ -149,19 +149,19 @@ def segmamba_available() -> bool:
         return False
 
 
-def get_model_recipes(
+def get_training_model_configs(
     model_keys: Iterable[str], *, skip_unavailable: bool = True
-) -> dict[str, ModelRecipe]:
+) -> dict[str, TrainingModelConfig]:
     """Resolve declared model keys in order, optionally skipping missing SegMamba."""
 
     keys = list(model_keys)
     if len(keys) != len(set(keys)):
         raise ValueError("model_keys contains duplicates")
-    unknown = sorted(set(keys) - set(MODEL_RECIPES))
+    unknown = sorted(set(keys) - set(TRAINING_MODEL_CONFIGS))
     if unknown:
         raise ValueError(f"Unknown model keys: {unknown}")
 
-    recipes = {}
+    configs = {}
     for key in keys:
         if key == "segmamba" and not segmamba_available():
             message = f"SegMamba was requested but is unavailable. {SEGMAMBA_INSTALL_HINT}"
@@ -169,14 +169,14 @@ def get_model_recipes(
                 raise ImportError(message)
             warnings.warn(message, stacklevel=2)
             continue
-        recipes[key] = MODEL_RECIPES[key]
-    if not recipes:
+        configs[key] = TRAINING_MODEL_CONFIGS[key]
+    if not configs:
         raise RuntimeError("None of the requested models is available")
-    return recipes
+    return configs
 
 
-def build_training_model(recipe: ModelRecipe, *, compile_model: bool):
+def build_training_model(config: TrainingModelConfig, *, compile_model: bool):
     """Build from the persisted specification, then optionally compile for training."""
 
-    model = build_model_from_spec(recipe.model_spec)
-    return torch.compile(model) if compile_model and recipe.supports_compile else model
+    model = build_model_from_spec(config.model_spec)
+    return torch.compile(model) if compile_model and config.supports_compile else model

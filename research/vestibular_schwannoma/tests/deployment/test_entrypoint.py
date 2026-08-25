@@ -16,50 +16,51 @@ class EntrypointTests(unittest.TestCase):
         self.root = Path(self.tempdir.name)
         self.output = self.root / "output"
         self.output.mkdir()
-        self.capture = self.root / "python_args.txt"
+        self.input_dir = self.root / "data" / "input"
+        self.input_dir.mkdir(parents=True)
+        self.capture = self.root / "conda_args.txt"
 
         self.entrypoint = self.root / "entrypoint.sh"
-        script = ENTRYPOINT.read_text().replace(
-            'output="/output"', f'output="{self.output}"', 1
+        script = (
+            ENTRYPOINT.read_text()
+            .replace(
+                'readonly INPUT_DIR="/data/input"',
+                f'readonly INPUT_DIR="{self.input_dir}"',
+                1,
+            )
+            .replace(
+                'readonly OUTPUT_DIR="/output"',
+                f'readonly OUTPUT_DIR="{self.output}"',
+                1,
+            )
         )
         self.entrypoint.write_text(script)
-
-        (self.root / "stub_inference.py").write_text("# test stub\n")
-        bundle = self.root / "model_bundles" / "unet"
-        bundle.mkdir(parents=True)
-        (bundle / "deployment_config.json").write_text(
-            json.dumps({
-                "mode": "single",
-                "model_type": "unet",
-                "expected_member_count": 1,
-            })
-        )
+        (self.root / "pacs_inference.py").write_text("# test runner\n")
 
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
         conda = fake_bin / "conda"
-        conda.write_text("#!/bin/bash\nexit 0\n")
-        conda.chmod(0o755)
-        python = fake_bin / "python"
-        python.write_text(
+        conda.write_text(
             "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"$CAPTURE_PATH\"\n"
         )
-        python.chmod(0o755)
+        conda.chmod(0o755)
         self.fake_bin = fake_bin
 
     def tearDown(self):
         self.tempdir.cleanup()
 
-    def run_entrypoint(self, options):
+    def run_entrypoint(self, options=None):
         env = os.environ.copy()
         env.update(
             {
-                "CONDA_DEFAULT_ENV": "test",
-                "ROR_CONT_OPTIONS": options,
                 "CAPTURE_PATH": str(self.capture),
                 "PATH": f"{self.fake_bin}:{env['PATH']}",
             }
         )
+        if options is None:
+            env.pop("ROR_CONT_OPTIONS", None)
+        else:
+            env["ROR_CONT_OPTIONS"] = options
         return subprocess.run(
             ["bash", str(self.entrypoint)],
             env=env,
@@ -71,25 +72,42 @@ class EntrypointTests(unittest.TestCase):
     def captured_args(self):
         return self.capture.read_text().splitlines()
 
-    def test_valid_options_preserve_python_arguments(self):
+    def expected_args(self, model_type="unet", *, tta=True):
+        args = [
+            "run",
+            "--no-capture-output",
+            "-n",
+            "fastmonai",
+            "python",
+            str(self.root / "pacs_inference.py"),
+            str(self.input_dir),
+            str(self.output),
+            "--model-type",
+            model_type,
+        ]
+        args.append("--tta" if tta else "--no-tta")
+        return args
+
+    def test_valid_options_are_forwarded_as_arguments(self):
         result = self.run_entrypoint(
-            json.dumps(
-                {
-                    "model-type": "unet",
-                    "tta": False,
-                }
-            )
+            json.dumps({"model-type": "dynunet", "tta": False})
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
             self.captured_args(),
-            [
-                str(self.root / "stub_inference.py"),
-                "/data",
-                str(self.output),
-                "--model-type",
-                "unet",
-            ],
+            self.expected_args("dynunet", tta=False),
+        )
+
+    def test_defaults_to_unet_with_tta(self):
+        result = self.run_entrypoint()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.captured_args(), self.expected_args())
+
+    def test_tta_can_be_enabled_explicitly(self):
+        result = self.run_entrypoint(json.dumps({"tta": True}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.captured_args(), self.expected_args(tta=True)
         )
 
     def test_shell_metacharacters_are_rejected_without_execution(self):
@@ -101,67 +119,39 @@ class EntrypointTests(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertFalse(self.capture.exists())
 
-    def test_dynunet_is_forwarded_as_one_argument_for_a_dynunet_bundle(self):
-        deployment = (
-            self.root / "model_bundles" / "dynunet" / "deployment_config.json"
-        )
-        deployment.parent.mkdir(parents=True)
-        deployment.write_text(json.dumps({
-            "mode": "ensemble",
-            "model_type": "dynunet",
-            "expected_member_count": 5,
-        }))
-        result = self.run_entrypoint(json.dumps({"model-type": "dynunet"}))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.captured_args(),
-            [
-                str(self.root / "stub_inference.py"),
-                "/data",
-                str(self.output),
-                "--model-type",
-                "dynunet",
-                "--tta",
-            ],
-        )
+    def test_missing_input_directory_is_rejected(self):
+        self.input_dir.rmdir()
+        result = self.run_entrypoint(json.dumps({"model-type": "unet"}))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("expected an input DICOM directory", result.stderr)
+        self.assertFalse(self.capture.exists())
 
-    def test_requested_model_type_must_match_bundle(self):
-        deployment = (
-            self.root / "model_bundles" / "dynunet" / "deployment_config.json"
-        )
-        deployment.parent.mkdir(parents=True)
-        deployment.write_text(json.dumps({
-            "mode": "ensemble",
-            "model_type": "unet",
-            "expected_member_count": 5,
-        }))
-        result = self.run_entrypoint(json.dumps({"model-type": "dynunet"}))
+    def test_missing_inference_script_is_rejected(self):
+        (self.root / "pacs_inference.py").unlink()
+        result = self.run_entrypoint(json.dumps({"model-type": "unet"}))
         self.assertEqual(result.returncode, 1)
-        self.assertIn(
-            "bundle declares model-type unet, requested dynunet", result.stderr
-        )
+        self.assertIn("bundled inference script is missing", result.stderr)
         self.assertFalse(self.capture.exists())
 
     def test_unknown_option_is_rejected(self):
         result = self.run_entrypoint(json.dumps({"model-tpye": "unet"}))
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
+        self.assertFalse(self.capture.exists())
 
     def test_malformed_json_is_rejected(self):
         result = self.run_entrypoint('{"model-type":')
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
+        self.assertFalse(self.capture.exists())
 
-    def test_invalid_boolean_is_rejected(self):
-        result = self.run_entrypoint(json.dumps({"tta": "sometimes"}))
-        self.assertEqual(result.returncode, 2)
-        self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
-
-    def test_command_is_not_reinterpreted(self):
-        script = ENTRYPOINT.read_text()
-        self.assertNotIn("eval ", script)
-        self.assertNotIn("bash -c", script)
-        self.assertIn('"' + '$' + '{cmd[@]}"', script)
+    def test_only_json_boolean_tta_is_accepted(self):
+        for value in ("false", 0, 1, None, [], {}):
+            with self.subTest(value=value):
+                result = self.run_entrypoint(json.dumps({"tta": value}))
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
+                self.assertFalse(self.capture.exists())
 
 
 if __name__ == "__main__":

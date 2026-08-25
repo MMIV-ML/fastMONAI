@@ -166,9 +166,8 @@ preprocessed/
 cv_results_*/
 inference_patch_config.json
 
-# Claude - share skills/settings, keep local config private
-.claude/settings.local.json
-.claude/*.local.*
+# Keep Claude-specific project configuration local
+.claude/
 CLAUDE*.md
 
 # nbdev processed notebooks

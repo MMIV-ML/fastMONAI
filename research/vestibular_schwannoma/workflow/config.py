@@ -5,10 +5,17 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from fastMONAI.vision_all import GpuPatchAugmentation, PatchConfig
+from fastMONAI.vision_all import (
+    GpuPatchAugmentation,
+    PatchConfig,
+    make_output_spec,
+)
+from .models import TRAINING_MODEL_CONFIGS
 
 
-SUPPORTED_MODEL_KEYS = frozenset({"unet", "dynunet", "segmamba"})
+INFERENCE_RUN_IDS_SCHEMA = 1
+INFERENCE_RUN_IDS_FILENAME = "inference_run_ids.json"
+VS_OUTPUT_SPEC = make_output_spec("multiclass_segmentation", classes=2)
 
 
 @dataclass(frozen=True)
@@ -19,7 +26,7 @@ class ExperimentConfig:
     folds: tuple[int, ...] = (1, 2, 3, 4, 5)
     run_cross_validation: bool = True
     train_all_data: bool = False
-    all_data_monitor_seed: int = 42
+    training_seed: int = 42
     epochs: int = 500
     batch_size: int = 4
     learning_rate: float = 1e-3
@@ -29,8 +36,8 @@ class ExperimentConfig:
     patch_size: tuple[int, int, int] = (192, 192, 48)
     preprocess_workers: int = min(32, os.cpu_count() or 1)
     samples_per_volume: int = 4
-    queue_num_workers: int = 16
-    queue_length: int = 1200
+    queue_num_workers: int = 4
+    queue_length: int = 300
     continue_on_error: bool = True
 
     def __post_init__(self) -> None:
@@ -38,7 +45,7 @@ class ExperimentConfig:
             raise ValueError("model_keys must contain at least one model")
         if len(set(self.model_keys)) != len(self.model_keys):
             raise ValueError("model_keys contains duplicates")
-        unknown_models = sorted(set(self.model_keys) - SUPPORTED_MODEL_KEYS)
+        unknown_models = sorted(set(self.model_keys) - set(TRAINING_MODEL_CONFIGS))
         if unknown_models:
             raise ValueError(f"Unknown model keys: {unknown_models}")
 
@@ -49,6 +56,13 @@ class ExperimentConfig:
                 raise ValueError("folds must not be empty when cross-validation is enabled")
             if len(set(self.folds)) != len(self.folds):
                 raise ValueError("folds contains duplicates")
+
+        if (
+            not isinstance(self.training_seed, int)
+            or isinstance(self.training_seed, bool)
+            or self.training_seed < 0
+        ):
+            raise ValueError("training_seed must be a non-negative integer")
 
         positive = {
             "epochs": self.epochs,
@@ -78,7 +92,7 @@ def make_patch_config(config: ExperimentConfig, normalization: list) -> PatchCon
         sampler_type="label",
         label_probabilities={0: 0.2, 1: 0.8},
         patch_overlap=0.5,
-        keep_largest_component=True,
+        keep_largest_component=False,
         target_spacing=list(config.target_spacing),
         preprocessed=True,
         normalization=normalization,
