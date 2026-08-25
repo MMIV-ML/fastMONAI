@@ -11,7 +11,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import torchio as tio
 from fastai.learner import Learner
+from fastai.torch_core import set_seed
+from scipy.ndimage import label
 
 from fastMONAI.vision_all import (
     AccumulatedDice,
@@ -20,13 +23,16 @@ from fastMONAI.vision_all import (
     PatchConfig,
     create_mlflow_callback,
     evaluate_segmentations,
-    make_output_spec,
     patch_inference,
 )
-from fastMONAI.vision_metrics import _SURFACE_DISTANCE_SOURCE
-
-from .config import ExperimentConfig, make_gpu_augmentation
-from .models import ModelRecipe, build_training_model
+from .config import (
+    INFERENCE_RUN_IDS_FILENAME,
+    INFERENCE_RUN_IDS_SCHEMA,
+    VS_OUTPUT_SPEC,
+    ExperimentConfig,
+    make_gpu_augmentation,
+)
+from .models import TrainingModelConfig, build_training_model
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,41 @@ class TrainingSweep:
     fold_runs: dict[str, dict[int, FoldRun]] = field(default_factory=dict)
     all_data_run_ids: dict[str, str] = field(default_factory=dict)
     failures: list[RunFailure] = field(default_factory=list)
+    inference_run_ids_path: Path | None = None
+
+
+def _write_inference_run_ids(
+    sweep: TrainingSweep,
+    experiment: ExperimentConfig,
+    results_root: Path,
+) -> Path:
+    """Persist exact MLflow runs for each fully completed inference role."""
+
+    models = {}
+    requested_folds = set(experiment.folds)
+    for model_key in experiment.model_keys:
+        roles = {}
+        fold_runs = sweep.fold_runs.get(model_key, {})
+        if experiment.run_cross_validation and set(fold_runs) == requested_folds:
+            roles["best"] = {
+                f"fold_{fold}": fold_runs[fold].run_id for fold in experiment.folds
+            }
+        if experiment.train_all_data and model_key in sweep.all_data_run_ids:
+            roles["final"] = {"all_data": sweep.all_data_run_ids[model_key]}
+        if roles:
+            models[model_key] = roles
+
+    manifest = {
+        "schema_version": INFERENCE_RUN_IDS_SCHEMA,
+        "run_group": results_root.name,
+        "models": models,
+    }
+    results_root.mkdir(parents=True, exist_ok=True)
+    destination = results_root / INFERENCE_RUN_IDS_FILENAME
+    temporary = destination.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(destination)
+    return destination
 
 
 def _mark_failed(callback) -> None:
@@ -78,22 +119,47 @@ def _release_training_resources(dls) -> None:
         gc.collect()
 
 
-def _write_benchmark_metadata(results_df: pd.DataFrame, destination: Path) -> None:
-    payload = {
-        "surface_distance_source": _SURFACE_DISTANCE_SOURCE,
-        "nsd_tolerances_mm": [0.5, 1.0, 2.0],
-        "nsd_headline_tau_mm": 1.0,
-        "status_counts": results_df["surface_status"].value_counts().to_dict(),
-        "per_case": [
-            {
-                "case_id": row["case_id"],
-                "spacing_mm": list(row["spacing_mm"]),
-                "surface_status": row["surface_status"],
-            }
-            for row in results_df.to_dict("records")
-        ],
+def _set_training_seed(seed: int) -> None:
+    # Seed Python, NumPy, PyTorch, and CUDA while retaining cuDNN performance optimizations.
+    set_seed(seed, reproducible=False)
+
+
+def _gpu_augmentations_json(gpu_augmentation) -> str:
+    """Serialize the applied GPU augmentation pipeline for MLflow."""
+
+    transformations = [
+        {"name": name, "params": params}
+        for name, params in vars(gpu_augmentation).items()
+        if params is not None
+    ]
+    return json.dumps(transformations, indent=2, separators=(",", ": "))
+
+
+def _component_counts(prediction, ground_truth_path: str | Path) -> dict[str, int]:
+    """Count predicted regions and regions with no ground-truth overlap."""
+
+    prediction_array = np.asarray(
+        prediction.detach().cpu()
+        if isinstance(prediction, torch.Tensor)
+        else prediction
+    ).squeeze().astype(bool)
+    ground_truth = (
+        np.asarray(tio.LabelMap(ground_truth_path).data).squeeze().astype(bool)
+    )
+    if prediction_array.shape != ground_truth.shape:
+        raise ValueError(
+            "prediction and ground truth must share a voxel grid; got "
+            f"{prediction_array.shape} and {ground_truth.shape}"
+        )
+    labels, component_count = label(prediction_array)
+    false_positive_count = sum(
+        not np.any(ground_truth[labels == component])
+        for component in range(1, component_count + 1)
+    )
+    return {
+        "predicted_component_count": int(component_count),
+        "false_positive_component_count": int(false_positive_count),
     }
-    destination.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def evaluate_fold(
@@ -101,7 +167,6 @@ def evaluate_fold(
     *,
     patch_config: PatchConfig,
     dls: MedPatchDataLoaders,
-    pre_inference_transforms: list,
     fold: int,
     use_tta: bool,
     mlflow_callback,
@@ -123,7 +188,6 @@ def evaluate_fold(
         learner=learn,
         config=patch_config,
         file_paths=image_paths,
-        pre_inference_tfms=pre_inference_transforms,
         save_dir=str(prediction_dir),
         progress=True,
         tta=use_tta,
@@ -133,9 +197,17 @@ def evaluate_fold(
         mask_paths,
         case_ids=validation_df["case_id"].tolist(),
     )
+    component_metrics = pd.DataFrame(
+        [
+            _component_counts(prediction, mask_path)
+            for prediction, mask_path in zip(predictions, mask_paths)
+        ]
+    )
+    results = pd.concat(
+        [results.reset_index(drop=True), component_metrics], axis=1
+    )
     results.insert(1, "image", [Path(path).name for path in image_paths])
     results.to_csv(fold_dir / "results.csv", index=False)
-    _write_benchmark_metadata(results, fold_dir / "benchmark_meta.json")
 
     numeric = results.select_dtypes(include="number").replace(
         [np.inf, -np.inf], np.nan
@@ -152,22 +224,18 @@ def evaluate_fold(
 
 
 def train_one_fold(
-    recipe: ModelRecipe,
+    model_config: TrainingModelConfig,
     fold: int,
     train_df: pd.DataFrame,
     *,
     experiment: ExperimentConfig,
     patch_config: PatchConfig,
-    pre_inference_transforms: list,
     preprocessing_manifest: str | Path,
     results_dir: str | Path,
-    output_spec: dict | None = None,
 ) -> FoldRun:
     """Train a fresh model and evaluate it on exactly one held-out fold."""
 
-    output_spec = output_spec or make_output_spec(
-        "multiclass_segmentation", classes=2
-    )
+    _set_training_seed(experiment.training_seed)
     fold_df = train_df.copy()
     fold_df["is_val"] = fold_df["fold"] == fold
     gpu_augmentation = make_gpu_augmentation(experiment)
@@ -182,59 +250,62 @@ def train_one_fold(
     )
 
     print(f"\n{'=' * 60}")
-    print(f"  {recipe.display_name.upper()}  |  FOLD {fold}")
+    print(f"  {model_config.display_name.upper()}  |  FOLD {fold}")
     print(f"{'=' * 60}\n")
     print(
-        f"[{recipe.key} fold {fold}] Train: {len(dls.train.subjects_dataset)}, "
+        f"[{model_config.key} fold {fold}] Train: {len(dls.train.subjects_dataset)}, "
         f"Val: {len(dls.valid.subjects_dataset)}"
     )
 
     mlflow_callback = None
     try:
         model = build_training_model(
-            recipe, compile_model=experiment.compile_models
+            model_config, compile_model=experiment.compile_models
         )
         learn = Learner(
             dls,
             model,
-            loss_func=recipe.make_loss(),
+            loss_func=model_config.make_loss(),
             metrics=[AccumulatedDice(n_classes=2)],
         ).to_bf16()
         save_best = EMACheckpoint(
             monitor="accumulated_dice",
             momentum=0.9,
             comp=np.greater,
-            fname=recipe.checkpoint_name,
+            fname=model_config.checkpoint_name,
             with_opt=False,
         )
         mlflow_callback = create_mlflow_callback(
             learn,
-            experiment_name=recipe.experiment_name,
+            experiment_name=model_config.experiment_name,
             run_name=f"fold_{fold}",
             extra_tags={"fold": str(fold), "run_group": Path(results_dir).parent.name},
+            extra_params={
+                "training_seed": experiment.training_seed,
+                "gpu_augmentations": _gpu_augmentations_json(gpu_augmentation),
+            },
             preprocessing_manifest=preprocessing_manifest,
-            sample_id_col="t1_img_path",
-            model_spec=recipe.model_spec,
-            output_spec=output_spec,
+            sample_id_col="case_id",
+            model_spec=model_config.model_spec,
+            output_spec=VS_OUTPUT_SPEC,
         )
         learn.fit_one_cycle(
             experiment.epochs,
             experiment.learning_rate,
             cbs=[mlflow_callback, save_best],
         )
-        learn.load(recipe.checkpoint_name)
+        learn.load(model_config.checkpoint_name)
         results = evaluate_fold(
             learn,
             patch_config=patch_config,
             dls=dls,
-            pre_inference_transforms=pre_inference_transforms,
             fold=fold,
             use_tta=experiment.use_tta,
             mlflow_callback=mlflow_callback,
             results_dir=results_dir,
         )
         return FoldRun(
-            model_key=recipe.key,
+            model_key=model_config.key,
             fold=fold,
             run_id=mlflow_callback.run_id,
             results_dir=Path(results_dir) / f"fold_{fold}",
@@ -248,71 +319,72 @@ def train_one_fold(
 
 
 def train_all_data_model(
-    recipe: ModelRecipe,
+    model_config: TrainingModelConfig,
     train_df: pd.DataFrame,
     *,
     experiment: ExperimentConfig,
     patch_config: PatchConfig,
     preprocessing_manifest: str | Path,
     run_group: str,
-    output_spec: dict | None = None,
 ) -> str:
-    """Train every case, using duplicated rows only for monitoring during fitting."""
+    """Train every case, duplicating one stable case only for internal monitoring."""
 
-    output_spec = output_spec or make_output_spec(
-        "multiclass_segmentation", classes=2
-    )
-    available_folds = sorted(map(int, train_df["fold"].dropna().unique()))
-    if not available_folds:
-        raise ValueError("No folds are available for all-data monitoring")
-    monitor_fold = np.random.default_rng(
-        experiment.all_data_monitor_seed
-    ).choice(available_folds).item()
-    monitor_df = train_df[train_df["fold"] == monitor_fold].copy()
+    _set_training_seed(experiment.training_seed)
+    if train_df.empty:
+        raise ValueError("No cases are available for all-data training")
+    if "case_id" not in train_df.columns or train_df["case_id"].isna().any():
+        raise ValueError("case_id is required for stable all-data monitoring")
+    monitor_df = train_df.sort_values("case_id", kind="stable").iloc[[0]].copy()
+    monitor_case_id = str(monitor_df.iloc[0]["case_id"])
     print(
-        f"[{recipe.key} all_data] selected fold {monitor_fold} for duplicated monitoring "
-        f"(seed={experiment.all_data_monitor_seed}); these cases remain in training"
+        f"[{model_config.key} all_data] duplicated case {monitor_case_id!r} for internal "
+        "monitoring; it remains in training"
     )
 
     all_train_df = train_df.copy()
     all_train_df["is_val"] = False
     monitor_df["is_val"] = True
     fit_df = pd.concat([all_train_df, monitor_df], ignore_index=True)
+    gpu_augmentation = make_gpu_augmentation(experiment)
     dls = MedPatchDataLoaders.from_df(
         df=fit_df,
         img_col="t1_img_path_preprocessed",
         mask_col="t1_seg_path_preprocessed",
         valid_col="is_val",
         patch_config=patch_config,
-        gpu_augmentation=make_gpu_augmentation(experiment),
+        gpu_augmentation=gpu_augmentation,
         bs=experiment.batch_size,
     )
 
     mlflow_callback = None
     try:
         model = build_training_model(
-            recipe, compile_model=experiment.compile_models
+            model_config, compile_model=experiment.compile_models
         )
         learn = Learner(
             dls,
             model,
-            loss_func=recipe.make_loss(),
+            loss_func=model_config.make_loss(),
             metrics=[AccumulatedDice(n_classes=2)],
         ).to_bf16()
         mlflow_callback = create_mlflow_callback(
             learn,
-            experiment_name=recipe.experiment_name,
+            experiment_name=model_config.experiment_name,
             run_name="all_data",
             extra_tags={
                 "training_scope": "all_data",
                 "run_group": run_group,
-                "monitor_fold": str(monitor_fold),
+                "monitor_case_id": monitor_case_id,
                 "monitor_is_training_duplicate": "true",
             },
+            extra_params={
+                "training_seed": experiment.training_seed,
+                "gpu_augmentations": _gpu_augmentations_json(gpu_augmentation),
+            },
             preprocessing_manifest=preprocessing_manifest,
-            sample_id_col="t1_img_path",
-            model_spec=recipe.model_spec,
-            output_spec=output_spec,
+            sample_id_col="case_id",
+            model_spec=model_config.model_spec,
+            output_spec=VS_OUTPUT_SPEC,
         )
         learn.fit_one_cycle(
             experiment.epochs,
@@ -328,25 +400,20 @@ def train_all_data_model(
 
 
 def run_training_sweep(
-    recipes: dict[str, ModelRecipe],
+    model_configs: dict[str, TrainingModelConfig],
     train_df: pd.DataFrame,
     *,
     experiment: ExperimentConfig,
     patch_config: PatchConfig,
-    pre_inference_transforms: list,
     preprocessing_manifest: str | Path,
     results_root: str | Path,
-    output_spec: dict | None = None,
 ) -> TrainingSweep:
     """Run every requested fold and/or all-data model with structured failures."""
 
     results_root = Path(results_root)
-    output_spec = output_spec or make_output_spec(
-        "multiclass_segmentation", classes=2
-    )
     sweep = TrainingSweep()
 
-    for model_key, recipe in recipes.items():
+    for model_key, model_config in model_configs.items():
         model_results_dir = results_root / model_key
         sweep.fold_runs[model_key] = {}
         if experiment.run_cross_validation:
@@ -354,15 +421,13 @@ def run_training_sweep(
             for fold in experiment.folds:
                 try:
                     run = train_one_fold(
-                        recipe,
+                        model_config,
                         fold,
                         train_df,
                         experiment=experiment,
                         patch_config=patch_config,
-                        pre_inference_transforms=pre_inference_transforms,
                         preprocessing_manifest=preprocessing_manifest,
                         results_dir=model_results_dir,
-                        output_spec=output_spec,
                     )
                     sweep.fold_runs[model_key][fold] = run
                 except Exception as error:
@@ -386,13 +451,12 @@ def run_training_sweep(
         if experiment.train_all_data:
             try:
                 sweep.all_data_run_ids[model_key] = train_all_data_model(
-                    recipe,
+                    model_config,
                     train_df,
                     experiment=experiment,
                     patch_config=patch_config,
                     preprocessing_manifest=preprocessing_manifest,
                     run_group=results_root.name,
-                    output_spec=output_spec,
                 )
                 print(
                     f"[{model_key}] all-data MLflow run: "
@@ -415,5 +479,9 @@ def run_training_sweep(
                 if not experiment.continue_on_error:
                     raise
 
+    sweep.inference_run_ids_path = _write_inference_run_ids(
+        sweep, experiment, results_root
+    )
+    print(f"Inference run selection: {sweep.inference_run_ids_path}")
     print("\nSweep complete.")
     return sweep

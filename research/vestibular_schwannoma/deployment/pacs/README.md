@@ -1,21 +1,22 @@
 # Vestibular Schwannoma ROR/PACS Container
 
-This directory builds a PACS container from one declared Safetensors model or an explicit
-ensemble. Current model types are `unet` and `dynunet`; TTA is enabled by default.
+This directory builds the CE-T1w vestibular schwannoma segmentation container.
+It can ship `unet`, `dynunet`, or both. One Safetensors member is a single model;
+multiple members form an ensemble and are evaluated sequentially. Eight-flip TTA
+is enabled by default.
 
-For shared ROR installation, versioned image builds, qualification, and PACS handoff, see
-[Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md).
+See [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md)
+for the general build, qualification, export, and handoff workflow.
 
-## Prepare a model bundle
+## Prepare model bundles
 
-Use fastMONAI 0.10.0 or the pinned environment in `requirements.yml`. Set the run-ID variables
-below to full MLflow run IDs.
+Use fastMONAI 0.10.1 or the pinned `fastmonai` environment from
+`requirements.yml`. Supply complete MLflow run IDs.
 
 One model trained on all data:
 
 ```bash
 python prepare_model_bundle.py \
-  --mode single \
   --model-type unet \
   --run "all_data=${ALL_DATA_RUN_ID}" \
   --artifact-role final
@@ -25,7 +26,6 @@ Five-fold ensemble:
 
 ```bash
 python prepare_model_bundle.py \
-  --mode ensemble \
   --model-type dynunet \
   --run "fold_1=${FOLD_1_RUN_ID}" \
   --run "fold_2=${FOLD_2_RUN_ID}" \
@@ -35,50 +35,34 @@ python prepare_model_bundle.py \
   --artifact-role best
 ```
 
-Repeat `--run MEMBER=RUN_ID` for any intentional ensemble size. To use downloaded models,
-replace each `--run` with `--artifact MEMBER=/path/model.safetensors`. Local artifacts must
-still contain matching MLflow run metadata. Output defaults to
-`model_bundles/<model-type>/`; the directory must be new or empty.
+Repeat `--run MEMBER=RUN_ID` for other ensemble sizes. For an existing local
+artifact, use `--artifact MEMBER=/path/model.safetensors`. The builder validates
+and strict-loads every member, then writes the ignored
+`model_bundles/<model-type>/` directory.
 
-The builder strict-loads every model and writes `deployment_config.json` with the exact
-members, roles, run IDs, model/inference specifications, hashes, and resolved DICOM UID
-contract.
+Derived DICOM UIDs use deterministic `2.25` UIDs by default. A site that owns a
+registered prefix reserved for this application can bind it at bundle creation:
 
-## DICOM identity
+```bash
+python prepare_model_bundle.py ... --dicom-uid-prefix "<registered-prefix>"
+```
 
-`deployment_models.py` is the authoritative registry for persistent numeric model,
-deployment, and output codes. Codes must never be reused for a different meaning. The
-builder copies the resolved contract into each bundle's `deployment_config.json`, and the
-runtime rejects a bundle whose contract no longer matches the registry.
+## Test and build
 
-Format version 1 uses deterministic numeric `2.25.<UUID integer>` Series and SOP Instance
-UIDs. The UUID input binds the source series/instance, bundle hash, model code, deployment
-code, member count, and output code. The readable identity remains in DICOM metadata:
-`SeriesDescription` names the model and output, while `SoftwareVersions` records the bundle,
-run IDs, and fastMONAI version.
+Run the deployment tests first:
 
-| Code family | Value | Meaning |
-| --- | ---: | --- |
-| Model | 1 | UNet |
-| Model | 2 | DynUNet |
-| Deployment | 1 | Single model |
-| Deployment | 2 | Ensemble |
-| Output | 1 | Segmentation mask |
-| Output | 2 | Foreground probability |
+```bash
+conda activate fastmonai
+python -m unittest discover -s ../../tests/deployment -p 'test_*.py'
+bash -n entrypoint.sh
+```
 
-The probability DICOM stores `round(probability × 65535)` as uint16 and records the inverse
-scale in `DerivationDescription`. It intentionally omits modality-rescale tags because the
-deployed `pr2mask` vote-map reader expects the stored uint16 values and `--votemapmax 65535`.
-
-## Build and run
-
-After preparing every model type that should ship, run from this directory:
+Build dated and `latest` tags for the same image:
 
 ```bash
 BUILD_VERSION="$(date -u +%Y%m%dT%H%M%SZ)"
 
 docker build --pull \
-  --build-arg conda_env=fastmonai \
   --build-arg VERSION="$BUILD_VERSION" \
   -f .ror/virt/Dockerfile \
   -t "vs-seg:$BUILD_VERSION" \
@@ -86,34 +70,30 @@ docker build --pull \
   .
 ```
 
-Both tags point to the same image. `latest` is a convenient pointer, while the dated tag remains
-selectable after later builds and identifies the qualified release. Export both references so
-the recipient can call either tag; the archive filename alone does not become an image tag.
-Record the test against the exact dated image:
+Qualify and deliver the dated tag:
 
 ```bash
-ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep
 ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
-  -envs '{"model-type":"dynunet","tta":false}'
+  -envs '{"model-type":"unet","tta":true}'
+
+ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
+  -envs '{"model-type":"dynunet","tta":true}'
 ```
 
-Or run that image directly:
+## Runtime contract
 
-```bash
-docker run --rm \
-  -v /path/to/input:/data:ro \
-  -v /path/to/output:/output \
-  "vs-seg:$BUILD_VERSION"
-```
+`ROR_CONT_OPTIONS` accepts:
 
-Supported ROR options are `model-type` and `tta`. Unknown keys, malformed JSON, unsupported
-models, and invalid Boolean values fail before inference.
+- `model-type`: `unet` (default) or `dynunet`.
+- `tta`: JSON Boolean, default `true`.
 
-The container returns `fused`, `fused_vote_map`, `reports`, and `mask` DICOM series. Before
-release, run the deployment tests and validate both a single model and an ensemble on real
-cases:
+Unknown keys and invalid values fail before inference. A header-only preflight
+then rejects inconsistent Study, Series, SOP, modality, or geometry information.
+Nonstandard source UID syntax and missing optional Frame of Reference metadata
+produce aggregated warnings instead of repeated per-slice warnings.
 
-```bash
-python -m unittest discover -s ../../tests -p 'test_*.py'
-bash -n entrypoint.sh
-```
+The runtime writes `mask` and intermediate `vote_map` DICOM series. Fiona's
+`pr2mask` tools then create `fused`, `fused_vote_map`, and `reports`; `vote_map`
+is not published. Probability values are stored as `round(probability x 65535)`
+for the vote-map reader. Existing `mask`, `fused`, `fused_vote_map`, and
+`reports` directories are rejected to avoid overwriting previous results.

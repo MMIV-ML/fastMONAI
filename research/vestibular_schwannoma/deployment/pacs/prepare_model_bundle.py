@@ -5,17 +5,17 @@ Examples
 --------
 One model trained on all data::
 
-    python prepare_model_bundle.py --mode single --model-type unet \
+    python prepare_model_bundle.py --model-type unet \
         --run all_data=RUN_ID --artifact-role final
 
 An intentional ensemble (the member names need not be folds)::
 
-    python prepare_model_bundle.py --mode ensemble --model-type unet \
+    python prepare_model_bundle.py --model-type unet \
         --run fold_1=RUN_ID_1 --run fold_2=RUN_ID_2 --artifact-role best
 
 A five-fold DynUNet deployment declares all five fold-best models::
 
-    python prepare_model_bundle.py --mode ensemble --model-type dynunet \
+    python prepare_model_bundle.py --model-type dynunet \
         --run fold_1=RUN_ID_1 --run fold_2=RUN_ID_2 \
         --run fold_3=RUN_ID_3 --run fold_4=RUN_ID_4 \
         --run fold_5=RUN_ID_5 --artifact-role best
@@ -28,10 +28,9 @@ their MLflow run id in Safetensors metadata.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
-import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,12 +39,19 @@ from fastMONAI.vision_all import (
     make_output_spec,
     read_safetensors_metadata,
 )
-from deployment_models import MODEL_ARCH_IDS, make_dicom_uid_contract
+from deployment_hashing import (
+    bundle_sha256 as _bundle_sha256,
+    sha256_file as _sha256_file,
+)
+from deployment_models import (
+    DEPLOYMENT_SCHEMA,
+    MODEL_CONFIGS,
+    bundle_member_filename,
+    validate_registered_uid_prefix,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEPLOYMENT_SCHEMA = 2
-MEMBER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 @dataclass(frozen=True)
@@ -55,22 +61,6 @@ class MemberSource:
     run_id: str | None
 
 
-def _canonical_json(value) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-
-
-def _sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _parse_member(value: str, option: str) -> tuple[str, str]:
     try:
         member_id, source = value.split("=", 1)
@@ -78,10 +68,10 @@ def _parse_member(value: str, option: str) -> tuple[str, str]:
         raise argparse.ArgumentTypeError(
             f"{option} must use MEMBER_ID=VALUE, got {value!r}"
         ) from exc
-    if not MEMBER_ID_RE.fullmatch(member_id):
-        raise argparse.ArgumentTypeError(
-            f"invalid member id {member_id!r}; use letters, numbers, '.', '_' or '-'"
-        )
+    try:
+        bundle_member_filename(member_id)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid member id {member_id!r}: {exc}") from exc
     if not source:
         raise argparse.ArgumentTypeError(f"{option} has an empty value for {member_id!r}")
     return member_id, source
@@ -100,10 +90,8 @@ def _declared_sources(args) -> list[MemberSource]:
     duplicates = sorted({member for member in member_ids if member_ids.count(member) > 1})
     if duplicates:
         raise ValueError(f"duplicate declared member ids: {duplicates}")
-    if args.mode == "single" and len(sources) != 1:
-        raise ValueError(f"single mode requires exactly one declared member, got {len(sources)}")
-    if args.mode == "ensemble" and len(sources) < 2:
-        raise ValueError(f"ensemble mode requires at least two declared members, got {len(sources)}")
+    if not sources:
+        raise ValueError("at least one --run or --artifact member must be declared")
     return sources
 
 
@@ -143,6 +131,11 @@ def _validate_inference_config(value: dict) -> None:
         )
     if not isinstance(value.get("patch_config"), dict):
         raise ValueError("inference_config.patch_config must be an object")
+    if value["patch_config"].get("keep_largest_component") is not False:
+        raise ValueError(
+            "PACS deployment requires keep_largest_component=False so all predicted "
+            "candidate regions are retained"
+        )
     expected_output = make_output_spec("multiclass_segmentation", classes=2)
     if value.get("output") != expected_output:
         raise ValueError(
@@ -152,19 +145,22 @@ def _validate_inference_config(value: dict) -> None:
     # read_safetensors_metadata already validated the exact inference field set.
 
 
-def _validate_output_dir(out: Path) -> None:
-    if out.exists():
-        entries = list(out.iterdir()) if out.is_dir() else [out]
-        if entries:
-            raise FileExistsError(
-                f"output directory is not empty: {out}. Use a new directory or remove the "
-                "old bundle explicitly so stale model members cannot be shipped."
-            )
-    out.mkdir(parents=True, exist_ok=True)
+def _validate_output_target(out: Path) -> None:
+    if out.exists() and (not out.is_dir() or any(out.iterdir())):
+        raise FileExistsError(
+            f"output directory is not empty: {out}. Use a new directory or remove the "
+            "old bundle explicitly so stale model members cannot be shipped."
+        )
+    out.parent.mkdir(parents=True, exist_ok=True)
 
 
 def build_bundle(args) -> Path:
     sources = _declared_sources(args)
+    registered_prefix = (
+        validate_registered_uid_prefix(args.dicom_uid_prefix)
+        if args.dicom_uid_prefix is not None
+        else None
+    )
     artifact_path = _requested_artifact_path(args)
     resolved = [(source, _resolve_source(source, artifact_path)) for source in sources]
 
@@ -172,7 +168,7 @@ def build_bundle(args) -> Path:
     reference_spec = None
     reference_inference = None
     seen_run_ids = set()
-    allowed_arch_ids = MODEL_ARCH_IDS[args.model_type]
+    allowed_arch_ids = MODEL_CONFIGS[args.model_type]["arch_ids"]
 
     for source, path in resolved:
         metadata = read_safetensors_metadata(path)
@@ -227,49 +223,57 @@ def build_bundle(args) -> Path:
         checked.append((source, path, metadata))
 
     out = (args.out or SCRIPT_DIR / "model_bundles" / args.model_type).resolve()
-    _validate_output_dir(out)
-
-    members = []
-    for source, src, metadata in checked:
-        artifact_name = f"{source.member_id}.safetensors"
-        dst = out / artifact_name
-        shutil.copy2(src, dst)
-        members.append({
-            "member_id": source.member_id,
-            "artifact": artifact_name,
-            "format": "safetensors",
-            "artifact_role": metadata["artifact_role"],
-            "mlflow_run_id": metadata["mlflow_run"],
-            "sha256": _sha256_file(dst),
-        })
-
-    inference_config_hash = _sha256_bytes(
-        _canonical_json(reference_inference).encode("utf-8")
+    _validate_output_target(out)
+    output_mode = out.stat().st_mode & 0o777 if out.exists() else 0o755
+    staging = Path(
+        tempfile.mkdtemp(prefix=f".{out.name}-build-", dir=out.parent)
     )
-    manifest = {
-        "schema_version": DEPLOYMENT_SCHEMA,
-        "mode": args.mode,
-        "model_type": args.model_type,
-        "expected_member_count": len(members),
-        "dicom_uid": make_dicom_uid_contract(
-            args.model_type, args.mode, len(members)
-        ),
-        "members": members,
-        "model_spec": reference_spec,
-        "inference_config": {
-            "canonical_sha256": inference_config_hash,
-        },
-    }
-    manifest["bundle_sha256"] = _sha256_bytes(
-        _canonical_json(manifest).encode("utf-8")
-    )
+    try:
+        staging.chmod(output_mode)
+        members = []
+        for source, src, metadata in checked:
+            artifact_name = bundle_member_filename(source.member_id)
+            dst = staging / artifact_name
+            shutil.copy2(src, dst)
+            members.append({
+                "member_id": source.member_id,
+                "sha256": _sha256_file(dst),
+            })
+
+        manifest = {
+            "schema_version": DEPLOYMENT_SCHEMA,
+            "model_type": args.model_type,
+            "members": members,
+        }
+        if registered_prefix is not None:
+            manifest["registered_prefix"] = registered_prefix
+        manifest["bundle_sha256"] = _bundle_sha256(
+            DEPLOYMENT_SCHEMA,
+            args.model_type,
+            [member["sha256"] for member in members],
+        )
+        staged_manifest = staging / "deployment_config.json"
+        staged_manifest.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        if out.exists():
+            out.rmdir()
+        staging.rename(out)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
     manifest_path = out / "deployment_config.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-                             encoding="utf-8")
 
-    print(f"Built {args.mode} bundle with {len(members)} declared member(s): {out}")
-    for member in members:
-        print(f"  {member['member_id']}: {member['artifact']} (run {member['mlflow_run_id']})")
+    deployment_label = "single-model" if len(members) == 1 else "ensemble"
+    print(f"Built {deployment_label} bundle with {len(members)} declared member(s): {out}")
+    for member, (_, _, metadata) in zip(members, checked):
+        print(
+            f"  {member['member_id']}: {bundle_member_filename(member['member_id'])} "
+            f"(run {metadata['mlflow_run']})"
+        )
     print(f"Deployment config: {manifest_path}")
     return manifest_path
 
@@ -279,8 +283,15 @@ def make_parser() -> argparse.ArgumentParser:
         prog="PrepareModelBundle",
         description="Build an explicit single-model or ensemble Safetensors bundle.",
     )
-    parser.add_argument("--mode", required=True, choices=("single", "ensemble"))
-    parser.add_argument("--model-type", required=True, choices=tuple(MODEL_ARCH_IDS))
+    parser.add_argument("--model-type", required=True, choices=tuple(MODEL_CONFIGS))
+    parser.add_argument(
+        "--dicom-uid-prefix",
+        default=None,
+        help=(
+            "Optional registered numeric UID prefix reserved for this generator, without "
+            "a trailing period. Omit it to use deterministic 2.25 UUID UIDs."
+        ),
+    )
     parser.add_argument(
         "--run", action="append", default=[], metavar="MEMBER_ID=RUN_ID",
         help="Explicit MLflow run member. Repeat for an ensemble.",

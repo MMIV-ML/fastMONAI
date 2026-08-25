@@ -9,7 +9,7 @@ training, inference on new cases, and PACS deployment.
 - `notebooks/01_five_fold_cross_validation.ipynb`: train and compare UNet, DynUNet, and
   optional SegMamba models.
 - `notebooks/02_inference_new_cases.ipynb`: run one declared model or an explicit ensemble.
-- `workflow/`: project-local configuration, model recipes, training, result aggregation,
+- `workflow/`: project-local configuration, training model definitions, result aggregation,
   and inference artifact handling used by the notebooks.
 - `data/ml_dataset.csv`: public case index and fixed fold assignments.
 - `deployment/pacs/`: Safetensors bundle builder and ROR/PACS container.
@@ -18,7 +18,7 @@ training, inference on new cases, and PACS deployment.
 
 ## Setup and data
 
-Use fastMONAI 0.10.0 or a matching development checkout. From the fastMONAI repository root:
+Use fastMONAI 0.10.1 or a matching development checkout. From the fastMONAI repository root:
 
 ```bash
 pip install -e '.[dev]'
@@ -39,31 +39,27 @@ jupyter lab notebooks/01_five_fold_cross_validation.ipynb
 ```
 
 Notebook 01 uses the fixed `fold` column for cross-validation and can optionally train one
-final model on all cases. Notebook 02 reads the preprocessing and output contract embedded
-in each declared Safetensors model.
+final model on all cases. For all-data fitting, one stable case is duplicated only for fastai's
+validation phase; it remains in training, does not select a best checkpoint, and is not held-out
+evaluation. Notebook 02 reads the preprocessing and output contract embedded
+in each declared Safetensors model. Completed training runs are handed to notebook 02 through
+`cv_results/<RESULTS_RUN>/inference_run_ids.json`; models remain stored in MLflow.
+
+Evaluation and inference preserve all predicted regions without size filtering and use TTA by
+default. Predictions require clinical review.
 
 The notebooks keep the scientific choices visible but delegate reusable project orchestration
-to `workflow/`. Model recipes contain the VS-specific architecture and loss settings, while
+to `workflow/`. Training model configs contain the VS-specific architecture and loss settings, while
 model reconstruction, patch inference, metrics, and artifact formats remain fastMONAI
 responsibilities.
 
-Training retains weights-only `.pth` checkpoints for continued training. Inference and
-deployment use strict-loaded `.safetensors` artifacts. Generated data, results, tracking
-stores, checkpoints, and model bundles are excluded from Git.
+Training retains weights-only `.pth` checkpoints for warm-starting or further fitting with a
+newly initialized optimizer and learning-rate schedule; they are not exact training-resume
+checkpoints. Inference and deployment use strict-loaded `.safetensors` artifacts. Generated
+data, results, tracking stores, checkpoints, and model bundles are excluded from Git.
 
 For container preparation and execution, see
 [deployment/pacs/README.md](deployment/pacs/README.md).
-
-## Reproducibility
-
-Preprocessing cache reuse is validated through `preprocessing_manifest.json`. MLflow records
-the dataset, preprocessing cache, actual DataLoader split, metrics, and model artifacts.
-
-Run the workflow tests from the parent repository with the development environment active:
-
-```bash
-python -m unittest discover -s research/vestibular_schwannoma/tests/workflow -v
-```
 
 ## Citation and license
 

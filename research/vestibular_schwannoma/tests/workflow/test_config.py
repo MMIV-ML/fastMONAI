@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 from fastMONAI.vision_all import ZNormalization
 
 from vestibular_schwannoma.workflow.config import (
+    VS_OUTPUT_SPEC,
     ExperimentConfig,
     make_patch_config,
 )
@@ -18,6 +19,10 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config.patch_size, (192, 192, 48))
         self.assertEqual(config.epochs, 500)
         self.assertEqual(config.batch_size, 4)
+        self.assertEqual(config.training_seed, 42)
+        self.assertEqual(config.queue_num_workers, 4)
+        self.assertEqual(config.queue_length, 300)
+        self.assertTrue(config.use_tta)
 
     def test_configuration_is_frozen(self):
         config = ExperimentConfig(model_keys=("unet",))
@@ -36,6 +41,8 @@ class ExperimentConfigTests(unittest.TestCase):
                 "train_all_data": False,
             },
             {"model_keys": ("unet",), "epochs": 0},
+            {"model_keys": ("unet",), "training_seed": -1},
+            {"model_keys": ("unet",), "training_seed": True},
             {"model_keys": ("unet",), "patch_size": (192, 192, 0)},
         ]
         for kwargs in cases:
@@ -50,8 +57,19 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(patch.target_spacing, [0.4102, 0.4102, 1.5])
         self.assertEqual(patch.label_probabilities, {0: 0.2, 1: 0.8})
         self.assertTrue(patch.preprocessed)
-        self.assertTrue(patch.keep_largest_component)
+        self.assertFalse(patch.keep_largest_component)
         self.assertEqual(patch.patch_overlap, 0.5)
+        self.assertEqual(
+            VS_OUTPUT_SPEC,
+            {
+                "output_schema": "1",
+                "kind": "multiclass_segmentation",
+                "activation": "softmax",
+                "classes": [0, 1],
+                "class_axis": 1,
+                "decision": "argmax",
+            },
+        )
 
 
 if __name__ == "__main__":

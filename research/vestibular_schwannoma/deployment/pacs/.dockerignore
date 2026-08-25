@@ -1,7 +1,10 @@
 # Keep large/irrelevant files out of the Docker build context and image.
 # NOTE: do not ignore model_bundles/; their declared Safetensors members must ship.
+# Interrupted atomic bundle builds may leave hidden staging directories.
+model_bundles/.*-build-*/
 
 # Saved docker image export(s) - e.g. vs-seg_docker_image_Sathiesh.tar.gz (~11.8 GB)
+release_packages/
 *.tar.gz
 *.tar
 
@@ -13,4 +16,8 @@
 **/__pycache__/
 *.pyc
 *.pyo
+*.orig
+.env
+.env.*
+*.sha256
 test_*.py

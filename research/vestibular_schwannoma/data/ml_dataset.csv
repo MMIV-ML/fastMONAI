@@ -3,8 +3,8 @@ vs_gk_193,4362.997055053711,../nii_data/queen_square_data/vs_gk_193/vs_gk_193_t1
 vs_gk_115,1491.090202331543,../nii_data/queen_square_data/vs_gk_115/vs_gk_115_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_115/vs_gk_115_seg_refT1.nii.gz,5,2
 vs_gk_43,329.05426025390625,../nii_data/queen_square_data/vs_gk_43/vs_gk_43_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_43/vs_gk_43_seg_refT1.nii.gz,3,0
 vs_gk_213,488.7868881225586,../nii_data/queen_square_data/vs_gk_213/vs_gk_213_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_213/vs_gk_213_seg_refT1.nii.gz,1,0
-vs_gk_87,1049.995994567871,../nii_data/queen_square_data/vs_gk_87/vs_gk_87_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_87/vs_gk_87_seg_refT1.nii.gz,1,1
-vs_gk_53,472.3846435546875,../nii_data/queen_square_data/vs_gk_53/vs_gk_53_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_53/vs_gk_53_seg_refT1.nii.gz,2,0
+vs_gk_87,1045.7061767578125,../nii_data/queen_square_data/vs_gk_87/vs_gk_87_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_87/vs_gk_87_seg_refT1.nii.gz,1,1
+vs_gk_53,463.63677978515625,../nii_data/queen_square_data/vs_gk_53/vs_gk_53_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_53/vs_gk_53_seg_refT1.nii.gz,2,0
 vs_gk_183,416.6170120239258,../nii_data/queen_square_data/vs_gk_183/vs_gk_183_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_183/vs_gk_183_seg_refT1.nii.gz,2,0
 vs_gk_201,945.5263137817384,../nii_data/queen_square_data/vs_gk_201/vs_gk_201_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_201/vs_gk_201_seg_refT1.nii.gz,1,1
 vs_gk_148,461.2815856933594,../nii_data/queen_square_data/vs_gk_148/vs_gk_148_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_148/vs_gk_148_seg_refT1.nii.gz,2,0
@@ -26,7 +26,7 @@ vs_gk_71,2094.188117980957,../nii_data/queen_square_data/vs_gk_71/vs_gk_71_t1_re
 vs_gk_33,1216.541862487793,../nii_data/queen_square_data/vs_gk_33/vs_gk_33_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_33/vs_gk_33_seg_refT1.nii.gz,4,1
 crossmoda2022_etz_86,2706.1180114746094,../nii_data/tilburg_data/crossmoda2022_etz_86/crossmoda2022_etz_86_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_86/crossmoda2022_etz_86_Label.nii.gz,5,2
 vs_gk_218,2993.283462524414,../nii_data/queen_square_data/vs_gk_218/vs_gk_218_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_218/vs_gk_218_seg_refT1.nii.gz,4,2
-vs_gk_86,570.4616546630859,../nii_data/queen_square_data/vs_gk_86/vs_gk_86_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_86/vs_gk_86_seg_refT1.nii.gz,1,0
+vs_gk_86,561.2091064453125,../nii_data/queen_square_data/vs_gk_86/vs_gk_86_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_86/vs_gk_86_seg_refT1.nii.gz,1,0
 vs_gk_25,998.2658386230468,../nii_data/queen_square_data/vs_gk_25/vs_gk_25_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_25/vs_gk_25_seg_refT1.nii.gz,2,1
 crossmoda2022_etz_56,564.2372131347656,../nii_data/tilburg_data/crossmoda2022_etz_56/crossmoda2022_etz_56_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_56/crossmoda2022_etz_56_Label.nii.gz,1,0
 vs_gk_171,1517.838478088379,../nii_data/queen_square_data/vs_gk_171/vs_gk_171_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_171/vs_gk_171_seg_refT1.nii.gz,4,2
@@ -60,7 +60,7 @@ crossmoda2022_etz_66,4598.6846923828125,../nii_data/tilburg_data/crossmoda2022_e
 vs_gk_166,2253.9207458496094,../nii_data/queen_square_data/vs_gk_166/vs_gk_166_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_166/vs_gk_166_seg_refT1.nii.gz,3,2
 crossmoda2022_etz_100,373.4664916992188,../nii_data/tilburg_data/crossmoda2022_etz_100/crossmoda2022_etz_100_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_100/crossmoda2022_etz_100_Label.nii.gz,5,0
 crossmoda2022_etz_41,6595.216369628906,../nii_data/tilburg_data/crossmoda2022_etz_41/crossmoda2022_etz_41_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_41/crossmoda2022_etz_41_Label.nii.gz,2,3
-vs_gk_250,6295.181465148926,../nii_data/queen_square_data/vs_gk_250/vs_gk_250_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_250/vs_gk_250_seg_refT1.nii.gz,5,3
+vs_gk_250,6294.929122924805,../nii_data/queen_square_data/vs_gk_250/vs_gk_250_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_250/vs_gk_250_seg_refT1.nii.gz,5,3
 crossmoda2022_etz_59,7236.165618896484,../nii_data/tilburg_data/crossmoda2022_etz_59/crossmoda2022_etz_59_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_59/crossmoda2022_etz_59_Label.nii.gz,5,3
 vs_gk_116,989.1815185546876,../nii_data/queen_square_data/vs_gk_116/vs_gk_116_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_116/vs_gk_116_seg_refT1.nii.gz,5,1
 vs_gk_157,6971.963310241699,../nii_data/queen_square_data/vs_gk_157/vs_gk_157_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_157/vs_gk_157_seg_refT1.nii.gz,4,3
@@ -145,7 +145,7 @@ vs_gk_11,6224.273300170898,../nii_data/queen_square_data/vs_gk_11/vs_gk_11_t1_re
 crossmoda2022_etz_21,434.0287792682648,../nii_data/tilburg_data/crossmoda2022_etz_21/crossmoda2022_etz_21_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_21/crossmoda2022_etz_21_Label.nii.gz,2,0
 crossmoda2022_etz_40,1098.193359375,../nii_data/tilburg_data/crossmoda2022_etz_40/crossmoda2022_etz_40_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_40/crossmoda2022_etz_40_Label.nii.gz,4,1
 vs_gk_9,3585.2783203125,../nii_data/queen_square_data/vs_gk_9/vs_gk_9_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_9/vs_gk_9_seg_refT1.nii.gz,2,3
-crossmoda2022_etz_67,3602.4337624311447,../nii_data/tilburg_data/crossmoda2022_etz_67/crossmoda2022_etz_67_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_67/crossmoda2022_etz_67_Label.nii.gz,3,3
+crossmoda2022_etz_67,3601.424394607544,../nii_data/tilburg_data/crossmoda2022_etz_67/crossmoda2022_etz_67_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_67/crossmoda2022_etz_67_Label.nii.gz,3,3
 vs_gk_188,3117.183494567871,../nii_data/queen_square_data/vs_gk_188/vs_gk_188_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_188/vs_gk_188_seg_refT1.nii.gz,1,2
 vs_gk_225,5597.2028732299805,../nii_data/queen_square_data/vs_gk_225/vs_gk_225_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_225/vs_gk_225_seg_refT1.nii.gz,3,3
 vs_gk_158,3383.909225463867,../nii_data/queen_square_data/vs_gk_158/vs_gk_158_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_158/vs_gk_158_seg_refT1.nii.gz,1,2
@@ -204,7 +204,7 @@ vs_gk_192,1182.2233200073242,../nii_data/queen_square_data/vs_gk_192/vs_gk_192_t
 vs_gk_59,2304.8938751220703,../nii_data/queen_square_data/vs_gk_59/vs_gk_59_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_59/vs_gk_59_seg_refT1.nii.gz,4,2
 vs_gk_26,2307.16495513916,../nii_data/queen_square_data/vs_gk_26/vs_gk_26_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_26/vs_gk_26_seg_refT1.nii.gz,3,2
 vs_gk_245,3645.5881118774414,../nii_data/queen_square_data/vs_gk_245/vs_gk_245_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_245/vs_gk_245_seg_refT1.nii.gz,3,3
-vs_gk_13,741.1291122436523,../nii_data/queen_square_data/vs_gk_13/vs_gk_13_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_13/vs_gk_13_seg_refT1.nii.gz,3,1
+vs_gk_13,738.6056900024414,../nii_data/queen_square_data/vs_gk_13/vs_gk_13_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_13/vs_gk_13_seg_refT1.nii.gz,3,1
 crossmoda2022_etz_19,11454.318237304688,../nii_data/tilburg_data/crossmoda2022_etz_19/crossmoda2022_etz_19_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_19/crossmoda2022_etz_19_Label.nii.gz,3,3
 vs_gk_234,10988.494491577148,../nii_data/queen_square_data/vs_gk_234/vs_gk_234_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_234/vs_gk_234_seg_refT1.nii.gz,4,3
 vs_gk_169,854.4307708740234,../nii_data/queen_square_data/vs_gk_169/vs_gk_169_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_169/vs_gk_169_seg_refT1.nii.gz,5,1
@@ -252,7 +252,7 @@ vs_gk_173,6871.783447265625,../nii_data/queen_square_data/vs_gk_173/vs_gk_173_t1
 vs_gk_180,540.5170440673828,../nii_data/queen_square_data/vs_gk_180/vs_gk_180_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_180/vs_gk_180_seg_refT1.nii.gz,3,0
 vs_gk_112,99.25460815429688,../nii_data/queen_square_data/vs_gk_112/vs_gk_112_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_112/vs_gk_112_seg_refT1.nii.gz,4,0
 crossmoda2022_etz_83,704.5394065380096,../nii_data/tilburg_data/crossmoda2022_etz_83/crossmoda2022_etz_83_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_83/crossmoda2022_etz_83_Label.nii.gz,2,1
-crossmoda2022_etz_38,3650.886005043984,../nii_data/tilburg_data/crossmoda2022_etz_38/crossmoda2022_etz_38_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_38/crossmoda2022_etz_38_Label.nii.gz,4,3
+crossmoda2022_etz_38,3649.876636505127,../nii_data/tilburg_data/crossmoda2022_etz_38/crossmoda2022_etz_38_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_38/crossmoda2022_etz_38_Label.nii.gz,4,3
 vs_gk_138,4113.68293762207,../nii_data/queen_square_data/vs_gk_138/vs_gk_138_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_138/vs_gk_138_seg_refT1.nii.gz,1,3
 vs_gk_202,3160.081672668457,../nii_data/queen_square_data/vs_gk_202/vs_gk_202_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_202/vs_gk_202_seg_refT1.nii.gz,5,2
 crossmoda2022_etz_14,1582.6904296875,../nii_data/tilburg_data/crossmoda2022_etz_14/crossmoda2022_etz_14_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_14/crossmoda2022_etz_14_Label.nii.gz,3,2
@@ -310,7 +310,7 @@ vs_gk_197,1938.240623474121,../nii_data/queen_square_data/vs_gk_197/vs_gk_197_t1
 vs_gk_126,4501.28059387207,../nii_data/queen_square_data/vs_gk_126/vs_gk_126_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_126/vs_gk_126_seg_refT1.nii.gz,3,3
 crossmoda2022_etz_50,960.919189453125,../nii_data/tilburg_data/crossmoda2022_etz_50/crossmoda2022_etz_50_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_50/crossmoda2022_etz_50_Label.nii.gz,5,1
 vs_gk_55,1395.2001571655271,../nii_data/queen_square_data/vs_gk_55/vs_gk_55_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_55/vs_gk_55_seg_refT1.nii.gz,2,1
-vs_gk_12,1706.842803955078,../nii_data/queen_square_data/vs_gk_12/vs_gk_12_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_12/vs_gk_12_seg_refT1.nii.gz,5,2
+vs_gk_12,1686.9077682495117,../nii_data/queen_square_data/vs_gk_12/vs_gk_12_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_12/vs_gk_12_seg_refT1.nii.gz,5,2
 vs_gk_2,1181.466293334961,../nii_data/queen_square_data/vs_gk_2/vs_gk_2_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_2/vs_gk_2_seg_refT1.nii.gz,4,1
 vs_gk_134,3417.218399047852,../nii_data/queen_square_data/vs_gk_134/vs_gk_134_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_134/vs_gk_134_seg_refT1.nii.gz,2,2
 vs_gk_32,3636.503791809082,../nii_data/queen_square_data/vs_gk_32/vs_gk_32_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_32/vs_gk_32_seg_refT1.nii.gz,4,3

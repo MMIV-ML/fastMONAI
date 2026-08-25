@@ -1071,7 +1071,9 @@ class PatchInferenceEngine:
             target_spacing, padding_mode) can be set here for DRY usage.
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
         target_spacing: Target voxel spacing. If None, uses config value.
-        sw_batch_size: Number of patches to predict at once. Must be positive.
+        sw_batch_size: Number of patches to predict at once. Defaults to 1 as the
+            memory-safe choice for large 3D patches; benchmark higher values for the
+            target accelerator. Must be positive.
         pre_inference_tfms: Optional override for config.normalization. If None, normalization is
             read from config.normalization (the default source of truth, set at training time).
             Provide this only to override the config (e.g. for non-serializable transforms).
@@ -1093,7 +1095,8 @@ class PatchInferenceEngine:
         config: PatchConfig,
         apply_reorder: bool = None,
         target_spacing: list = None,
-        sw_batch_size: int = 4,
+        # Memory-safe for large 3D patches; tune upward after benchmarking.
+        sw_batch_size: int = 1,
         pre_inference_tfms: list = None,
         amp: bool = False
     ):
@@ -1398,7 +1401,8 @@ def patch_inference(
     file_paths: list,
     apply_reorder: bool = None,
     target_spacing: list = None,
-    sw_batch_size: int = 4,
+    # Memory-safe for large 3D patches; tune upward after benchmarking.
+    sw_batch_size: int = 1,
     return_probabilities: bool = False,
     progress: bool = True,
     save_dir: str = None,
@@ -1423,7 +1427,8 @@ def patch_inference(
         file_paths: List of image paths.
         apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value.
         target_spacing: Target voxel spacing. If None, uses config value.
-        sw_batch_size: Patches per batch.
+        sw_batch_size: Patches per batch. Defaults to 1 as the memory-safe choice
+            for large 3D patches; benchmark higher values for the target accelerator.
         return_probabilities: Return probability maps.
         progress: Show progress bar.
         save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.

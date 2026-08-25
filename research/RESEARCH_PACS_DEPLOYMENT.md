@@ -14,9 +14,9 @@ project's values.
 | `<PROJECT_DIR>` | Path to your local fastMONAI checkout | `~/ml_projects/fastMONAI` |
 | `<PROJECT>` | Research project folder under `research/` | `vestibular_schwannoma` |
 | `<CONTAINER_NAME>` | Docker image name you build | `vs-seg` |
-| `<conda_env>` | Conda env name in your `requirements.yml` | `fastmonai` |
 | `<MODEL_TYPE>` | Registered model key | `unet`, `dynunet` |
 | `<BUILD_VERSION>` | UTC build identifier | `20260812T140500Z` |
+| `<DICOM_UID_PREFIX>` | Optional registered DICOM prefix reserved for this generator | site-specific |
 
 The canonical project deployment directory is
 `<PROJECT_DIR>/research/<PROJECT>/deployment/pacs/`.
@@ -63,7 +63,42 @@ ror config --select "<suggested select statement>"
 
 The select statement must match the approved test series.
 
-## 3. Pull Base Docker Image
+## 3. Prepare the model bundle
+
+Build the project's declared Safetensors bundle before building the image. With no prefix, the
+bundle uses deterministic `2.25` UUID-derived UIDs and requires no registration. If the deploying
+organization owns and has reserved a registered DICOM prefix for this generator, pass it without
+a trailing period:
+
+```bash
+python prepare_model_bundle.py ...
+
+# Optional site-controlled identity
+export DICOM_UID_PREFIX="<DICOM_UID_PREFIX>"
+python prepare_model_bundle.py ... --dicom-uid-prefix "$DICOM_UID_PREFIX"
+```
+
+The declared members determine the deployment form: exactly one member is a
+single-model deployment, while two or more members form an ensemble. The
+builder stores the optional prefix in `deployment_config.json`; it cannot be
+overridden at runtime. The prefix is public metadata once used, so keep
+site-specific values out of Git and include it in controlled release records.
+
+Bundle preparation is the static model-validation boundary: it validates lineage,
+roles, architecture, ensemble compatibility, inference configuration, strict model
+loading, and hashes before publishing the bundle. The immutable image trusts that
+prepared bundle. Runtime strictly loads the declared Safetensors files and reads the
+embedded `PatchConfig`, but does not repeat file hashing or release-lineage checks for
+every patient.
+
+For a registered prefix, ask the institution's DICOM/OID administrator first. If the institution
+does not own one, use a recognized allocation authority such as the
+[Medical Connections free UID service](https://www.medicalconnections.co.uk/FreeUID/). Never
+invent a root or use another organization's root. The root owner is responsible for preventing
+duplicate subordinate UIDs and should reserve a subtree for each generator.
+Omitting the prefix selects the public `2.25` form.
+
+## 4. Pull Base Docker Image
 
 Fiona intentionally publishes the ROR/pr2mask base through its `latest` tag. Refresh it before
 each release build:
@@ -77,7 +112,7 @@ docker image inspect haukebartsch/fiona-component-python:latest \
 The build command below also uses `--pull`, so a cached base cannot silently replace the
 current Fiona image. Record the base image ID or digest with the release.
 
-## 4. Build Container
+## 5. Build Container
 
 Build from the project's `deployment/pacs/` directory. Generate the version at build time; do
 not edit a date into the Dockerfile manually.
@@ -88,7 +123,6 @@ cd <PROJECT_DIR>/research/<PROJECT>/deployment/pacs
 BUILD_VERSION="$(date -u +%Y%m%dT%H%M%SZ)"
 
 docker build --pull \
-  --build-arg conda_env="<conda_env>" \
   --build-arg VERSION="$BUILD_VERSION" \
   -f .ror/virt/Dockerfile \
   -t "<CONTAINER_NAME>:$BUILD_VERSION" \
@@ -96,28 +130,18 @@ docker build --pull \
   .
 ```
 
-For vestibular schwannoma, substitute `fastmonai`, `vs-seg`, and the project's
-`deployment/pacs/` directory in the command above.
-
-The project Dockerfile should require the same version that is used as the Docker tag:
-
-```dockerfile
-ARG VERSION
-RUN test -n "${VERSION}" || \
-    (echo "VERSION build argument is required" >&2; exit 1)
-LABEL org.opencontainers.image.version="${VERSION}"
-ENV VERSION="${VERSION}"
-```
+For vestibular schwannoma, substitute `vs-seg` and use the project's
+`deployment/pacs/` directory.
 
 The date must be a Docker tag, not only part of the exported archive filename. An archive
 containing only `<CONTAINER_NAME>:latest` loses its dated identity after `docker load`, and
 `latest` then depends on archive loading order. The build assigns both tags to the same image:
 the dated tag remains a stable identity, while `latest` is a convenient pointer to the most
-recent build. Record and qualify the dated tag. Section 7 exports both tags so the delivered
+recent build. Record and qualify the dated tag. Section 8 exports both tags so the delivered
 image can be called by either one. The Fiona base image still uses its separately managed
-`latest` tag as described in Section 3.
+`latest` tag as described in Section 4.
 
-## 5. Qualify the image locally
+## 6. Qualify the image locally
 
 Before handing it over, run the finished image on the build computer with approved real DICOM
 input. Use the dated tag so the test record identifies the exact release:
@@ -131,8 +155,8 @@ ror trigger -cont "<CONTAINER_NAME>:$BUILD_VERSION" -each -keep
 
 ### Model Selection
 
-Your container registers one or more model types in its inference script
-(`stub_inference.py`; see [Adding your own model](#9-adding-your-own-model)).
+Your container registers one or more model types in `deployment_models.py`
+(see [Adding your own model](#10-adding-your-own-model)).
 Select which one runs with the `model-type` key via the `-envs` option (omit it
 to use the container's default):
 
@@ -143,19 +167,19 @@ ror trigger -cont "<CONTAINER_NAME>:$BUILD_VERSION" -each -keep -envs '{"model-t
 For vestibular schwannoma, run this once with `unet` and once with `dynunet`. The dated and
 `latest` tags behave identically while they point to the same image; no test tag is needed.
 
-Check that every shipped model loads and runs, the expected mask/probability/report series are
-created, and the outputs are readable with correct geometry, valid UIDs, documented model
-codes, and plausible values. `-each` processes every selected series and `-keep` retains output
-for inspection. See `ror trigger --help` for resource limits and dry-run options.
+Check that every shipped model loads and runs, all expected derived DICOM products are created,
+and the outputs are readable with correct geometry, valid UIDs, and plausible values. `-each`
+processes every selected series and `-keep` retains output for
+inspection. See `ror trigger --help` for resource limits and dry-run options.
 
-## 6. Manual Docker run (optional)
+## 7. Manual Docker run (optional)
 
 For direct testing without ROR:
 
 ```bash
 docker run --rm \
   -e ROR_CONT_OPTIONS='{"model-type":"<MODEL_TYPE>"}' \
-  -v <INPUT_DIR>:/data:ro \
+  -v <DICOM_SERIES_DIR>:/data/input:ro \
   -v <OUTPUT_DIR>:/output \
   "<CONTAINER_NAME>:$BUILD_VERSION"
 ```
@@ -163,7 +187,30 @@ docker run --rm \
 Omit `ROR_CONT_OPTIONS` to use the default model. For an interactive shell, add
 `-it --entrypoint /bin/bash` before the image name.
 
-## 7. Export Container
+### Runtime input, preflight, and output
+
+ROR normally supplies the selected source series at `/data/input` and a separate writable
+`/output`. They remain separate container paths even though the derived objects preserve the
+source Study Instance UID and return to the same PACS study. A direct run may bind the same
+physical directory to both paths when required; keep the input mount read-only.
+
+Before loading a model, the application reads DICOM headers only. Missing or inconsistent
+Study, Series, SOP, modality, or core geometry values stop the run. Frame of Reference and
+file-meta SOP identity problems produce a warning. Legacy source UIDs containing nonstandard
+hexadecimal characters produce a warning but are accepted as opaque source identity. The
+derived objects preserve the source Study Instance UID and preserve the Frame of Reference UID
+when it is consistently available, while every fastMONAI-generated Series Instance UID and SOP
+Instance UID is valid numeric DICOM syntax.
+
+The output root may already contain source DICOM, ROR bookkeeping, or unrelated files. Final
+output directories owned by the application must not exist when a run starts, so an earlier
+result is never overwritten. Intermediate products remain in a separate container work
+directory. After postprocessing succeeds and the required output directories are present, the
+final directories are copied to `/output`, and `pacs_command.log` is replaced atomically. Each
+project README must document its exact output names. Where input and output share a physical
+directory, the same preflight and no-overwrite rules apply.
+
+## 8. Export Container
 
 Record the image identity. Reassign `latest` to the qualified dated image immediately before
 export, then save both references so the recipient can call either tag:
@@ -183,7 +230,7 @@ The SHA-256 detects archive corruption during transfer; it does not test the ima
 `docker load`, either tag can be called. The dated tag is the stable release and rollback
 identity; `latest` follows whichever archive was loaded or tagged last.
 
-## 8. Research PACS Deployment
+## 9. Research PACS Deployment
 
 Register the qualified image and its DICOM selection criteria with the Research PACS.
 
@@ -192,6 +239,7 @@ Provide the Research PACS administrator with:
 - the dated tag, `latest` alias, image ID or registry digest, and archive checksum;
 - the Git commit, ROR executable identity, and Fiona base image ID or digest;
 - the model-bundle names and hashes;
+- the bundle's DICOM schema and optional registered prefix;
 - the series selection criteria;
 - the supported `ROR_CONT_OPTIONS` keys and defaults;
 - the expected output series and DICOM identity contract; and
@@ -200,26 +248,28 @@ Provide the Research PACS administrator with:
 Site-specific Fiona configuration, credentials, submission tokens, paths, and trigger rules
 belong in controlled infrastructure documentation; obtain them from the Research PACS administrator.
 
-## 9. Adding Your Own Model
+## 10. Adding Your Own Model
 
-Model types are defined in `deployment_models.py`, while Safetensors metadata rebuilds the
-allow-listed architecture. Supporting a new architecture also requires registering its
-constructor in fastMONAI.
-`entrypoint.sh` must parse `ROR_CONT_OPTIONS` as JSON without shell `eval`, reject unknown keys
-and invalid values, and forward only a validated `model-type`.
+Model types are defined in `deployment_models.py`, while Safetensors metadata
+rebuilds the allow-listed architecture. Supporting a new architecture also
+requires registering its constructor in fastMONAI.
 
 To register a new model type `<name>`:
 
-1. Add `<name>` and its allow-listed Safetensors `arch_id` to `MODEL_ARCH_IDS`.
-2. Add a `MODEL_CONFIGS["<name>"]` entry with `models_dir`, `display_name`, and a new,
-   never-reused positive `dicom_model_code`.
-3. Build a declared Safetensors bundle with `prepare_model_bundle.py`; its generated
-   `deployment_config.json` records members, hashes, inference contract, and DICOM UID contract.
-4. Rebuild the container (Section 4). The new model is selectable with
+1. Add a `MODEL_CONFIGS["<name>"]` entry with its allowed `arch_ids`,
+   `display_name`, and a new, never-reused positive `dicom_model_code`.
+2. Build a declared Safetensors bundle with `prepare_model_bundle.py`.
+3. Rebuild the container (Section 5). The new model is selectable with
    `-envs '{"model-type":"<name>"}'`.
 
+A new architecture serving the same task can retain the pipeline application identity. A new
+modality, task, or input combination needs a distinct stable application identity. Multi-input
+pipelines must bind every source Series UID and ordered SOP-sequence digest in a fixed role order;
+the single-input project implementation must be extended before such a model is deployed.
+
 Do not encode readable names in DICOM UIDs. The numeric code registry is documented in the
-project PACS README; `SeriesDescription` and `SoftwareVersions` carry the readable identity.
+project PACS README. `SeriesDescription` and `DerivationDescription` carry readable model
+identity, while `SoftwareVersions` records the producing fastMONAI version.
 
 ## Project Structure
 
@@ -234,9 +284,12 @@ research/<PROJECT>/
 │       ├── README.md
 │       ├── entrypoint.sh
 │       ├── requirements.yml
+│       ├── deployment_hashing.py
+│       ├── deployment_bundle.py
 │       ├── deployment_models.py
+│       ├── dicom_output.py
 │       ├── prepare_model_bundle.py
-│       ├── stub_inference.py
+│       ├── pacs_inference.py
 │       └── model_bundles/<model>/  # generated locally and ignored by Git
 ├── notebooks/
 ├── workflow/

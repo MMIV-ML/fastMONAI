@@ -12,12 +12,15 @@ dependencies:
     - --extra-index-url https://download.pytorch.org/whl/cpu
     - torch==2.12.1+cpu
     - torchvision==0.27.1+cpu
-    # fastMONAI 0.10.0 contains the versioned model-spec registry and strict
+    # fastMONAI 0.10.1 contains the versioned model-spec registry and strict
     # Safetensors model loader used by new bundles. Keep the deployment stack pinned;
     # requirements plus the built image digest are the runtime contract.
-    - fastMONAI==0.10.0
+    - fastMONAI==0.10.1
     - fastai==2.8.7
     - monai==1.6.0
     - torchio==1.2.1
     - safetensors==0.7.0
-    - pydicom==2.4.5
+    - imagedata==3.9.7
+    - pydicom==3.0.2
+    - pynetdicom==3.0.4
+    - dicom-anonymizer==2.0.0

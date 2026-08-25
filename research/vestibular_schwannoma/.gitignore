@@ -12,6 +12,7 @@ venv/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+notebooks/*[Cc]opy*.ipynb
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -50,10 +51,6 @@ predictions/
 outputs/
 results/
 reports/
-cv_model_comparison.csv
-inference_patch_config.json
-preprocessing_manifest.json
-train_val_split.csv
 
 # Experiment tracking
 mlruns/
@@ -73,6 +70,7 @@ model_bundles/
 *.safetensors
 
 # Container/image exports and temporary staging
+deployment/pacs/release_packages/
 *.tar
 *.tar.gz
 *.tgz
@@ -84,3 +82,4 @@ tmp*/
 
 # Private project planning
 docs/roadmap.html
+docs/component_postprocessing_review.html
