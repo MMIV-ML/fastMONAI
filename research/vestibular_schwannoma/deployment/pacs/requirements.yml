@@ -20,4 +20,7 @@ dependencies:
     - monai==1.6.0
     - torchio==1.2.1
     - safetensors==0.7.0
-    - pydicom==2.4.5
+    - imagedata==3.9.7
+    - pydicom==3.0.2
+    - pynetdicom==3.0.4
+    - dicom-anonymizer==2.0.0
