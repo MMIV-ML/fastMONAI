@@ -282,6 +282,9 @@ def train_one_fold(
             extra_tags={"fold": str(fold), "run_group": Path(results_dir).parent.name},
             extra_params={
                 "training_seed": experiment.training_seed,
+                "foreground_sampling_probability": (
+                    experiment.foreground_sampling_probability
+                ),
                 "gpu_augmentations": _gpu_augmentations_json(gpu_augmentation),
             },
             preprocessing_manifest=preprocessing_manifest,
@@ -379,6 +382,9 @@ def train_all_data_model(
             },
             extra_params={
                 "training_seed": experiment.training_seed,
+                "foreground_sampling_probability": (
+                    experiment.foreground_sampling_probability
+                ),
                 "gpu_augmentations": _gpu_augmentations_json(gpu_augmentation),
             },
             preprocessing_manifest=preprocessing_manifest,

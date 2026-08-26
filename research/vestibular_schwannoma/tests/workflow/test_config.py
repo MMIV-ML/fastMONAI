@@ -22,6 +22,7 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config.training_seed, 42)
         self.assertEqual(config.queue_num_workers, 4)
         self.assertEqual(config.queue_length, 300)
+        self.assertEqual(config.foreground_sampling_probability, 0.8)
         self.assertTrue(config.use_tta)
 
     def test_configuration_is_frozen(self):
@@ -44,6 +45,14 @@ class ExperimentConfigTests(unittest.TestCase):
             {"model_keys": ("unet",), "training_seed": -1},
             {"model_keys": ("unet",), "training_seed": True},
             {"model_keys": ("unet",), "patch_size": (192, 192, 0)},
+            {
+                "model_keys": ("unet",),
+                "foreground_sampling_probability": 0,
+            },
+            {
+                "model_keys": ("unet",),
+                "foreground_sampling_probability": 1,
+            },
         ]
         for kwargs in cases:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
@@ -70,6 +79,14 @@ class ExperimentConfigTests(unittest.TestCase):
                 "decision": "argmax",
             },
         )
+
+    def test_patch_factory_supports_70_30_sampling(self):
+        config = ExperimentConfig(
+            model_keys=("unet",), foreground_sampling_probability=0.7
+        )
+        patch = make_patch_config(config, [])
+        self.assertAlmostEqual(patch.label_probabilities[0], 0.3)
+        self.assertAlmostEqual(patch.label_probabilities[1], 0.7)
 
 
 if __name__ == "__main__":

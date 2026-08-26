@@ -6,11 +6,12 @@ training, inference on new cases, and PACS deployment.
 
 ## Contents
 
+- `train_5fold.py`: command-line five-fold training and evaluation.
 - `notebooks/01_five_fold_cross_validation.ipynb`: train and compare UNet, DynUNet, and
   optional SegMamba models.
 - `notebooks/02_inference_new_cases.ipynb`: run one declared model or an explicit ensemble.
 - `workflow/`: project-local configuration, training model definitions, result aggregation,
-  and inference artifact handling used by the notebooks.
+  and inference artifact handling shared by the CLI and notebooks.
 - `data/ml_dataset.csv`: public case index and fixed fold assignments.
 - `deployment/pacs/`: Safetensors bundle builder and ROR/PACS container.
 - `tests/workflow/`: CPU-only workflow contract and orchestration tests.
@@ -32,7 +33,18 @@ optional SegMamba fork when needed.
 
 ## Run
 
-Start Jupyter from this directory or `notebooks/`:
+Use the CLI for unattended training. Examples for a quick check, one complete model, and the
+full comparison:
+
+```bash
+python train_5fold.py --models unet --folds 1 --epochs 5 --no-compile
+python train_5fold.py --models unet  # One model, all five folds
+python train_5fold.py --skip-unavailable
+```
+
+The default requests four models across five folds for 500 epochs; run
+`python train_5fold.py --help` before starting. For interactive inspection and visualizations,
+start Jupyter from this directory or `notebooks/`:
 
 ```bash
 jupyter lab notebooks/01_five_fold_cross_validation.ipynb

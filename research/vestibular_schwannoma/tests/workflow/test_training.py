@@ -232,6 +232,7 @@ class TrainingOrchestrationTests(unittest.TestCase):
         )
         extra_params = create_callback.call_args.kwargs["extra_params"]
         self.assertEqual(extra_params["training_seed"], 42)
+        self.assertEqual(extra_params["foreground_sampling_probability"], 0.8)
         self.assertEqual(
             json.loads(extra_params["gpu_augmentations"]),
             [
@@ -332,6 +333,7 @@ class TrainingOrchestrationTests(unittest.TestCase):
         )
         extra_params = create_callback.call_args.kwargs["extra_params"]
         self.assertEqual(extra_params["training_seed"], 42)
+        self.assertEqual(extra_params["foreground_sampling_probability"], 0.8)
         self.assertEqual(
             json.loads(extra_params["gpu_augmentations"]),
             [
