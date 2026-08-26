@@ -80,25 +80,32 @@ UNET_SPEC = make_model_spec(
     },
 )
 
-DYNUNET_SPEC = make_model_spec(
-    "monai.dynunet",
-    {
-        "spatial_dims": 3,
-        "in_channels": 1,
-        "out_channels": 2,
-        "kernel_size": [[3, 3, 3]] * 5,
-        "strides": [[1, 1, 1]] + [[2, 2, 2]] * 4,
-        "upsample_kernel_size": [[2, 2, 2]] * 4,
-        "filters": [64, 128, 256, 512, 1024],
-        "res_block": True,
-        "deep_supervision": True,
-        "deep_supr_num": 3,
-    },
-    wrapper_spec={
-        "wrapper_id": "fastmonai.dynunet_ds_adapter",
-        "wrapper_kwargs": {},
-    },
-)
+
+def _make_dynunet_spec(filters: list[int]) -> dict:
+    return make_model_spec(
+        "monai.dynunet",
+        {
+            "spatial_dims": 3,
+            "in_channels": 1,
+            "out_channels": 2,
+            "kernel_size": [[3, 3, 3]] * 5,
+            "strides": [[1, 1, 1]] + [[2, 2, 2]] * 4,
+            "upsample_kernel_size": [[2, 2, 2]] * 4,
+            "filters": filters,
+            "res_block": True,
+            "deep_supervision": True,
+            "deep_supr_num": 3,
+        },
+        wrapper_spec={
+            "wrapper_id": "fastmonai.dynunet_ds_adapter",
+            "wrapper_kwargs": {},
+        },
+    )
+
+
+DYNUNET_SPEC = _make_dynunet_spec([64, 128, 256, 512, 1024])
+
+DYNUNET_SMALL_SPEC = _make_dynunet_spec([32, 64, 128, 256, 512])
 
 SEGMAMBA_SPEC = make_model_spec(
     "segmamba.v2",
@@ -127,6 +134,13 @@ TRAINING_MODEL_CONFIGS = {
         model_spec=DYNUNET_SPEC,
         make_loss=_make_dynunet_loss,
         experiment_name="vestibular_schwannoma_dynunet",
+    ),
+    "dynunet_small": TrainingModelConfig(
+        key="dynunet_small",
+        display_name="DynUNet Small (32-512)",
+        model_spec=DYNUNET_SMALL_SPEC,
+        make_loss=_make_dynunet_loss,
+        experiment_name="vestibular_schwannoma_dynunet_small",
     ),
     "segmamba": TrainingModelConfig(
         key="segmamba",

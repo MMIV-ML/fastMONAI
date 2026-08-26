@@ -38,6 +38,7 @@ class ExperimentConfig:
     samples_per_volume: int = 4
     queue_num_workers: int = 4
     queue_length: int = 300
+    foreground_sampling_probability: float = 0.8
     continue_on_error: bool = True
 
     def __post_init__(self) -> None:
@@ -81,6 +82,10 @@ class ExperimentConfig:
             raise ValueError("target_spacing must contain three positive values")
         if len(self.patch_size) != 3 or any(value <= 0 for value in self.patch_size):
             raise ValueError("patch_size must contain three positive values")
+        if not 0 < self.foreground_sampling_probability < 1:
+            raise ValueError(
+                "foreground_sampling_probability must be strictly between 0 and 1"
+            )
 
 
 def make_patch_config(config: ExperimentConfig, normalization: list) -> PatchConfig:
@@ -90,7 +95,10 @@ def make_patch_config(config: ExperimentConfig, normalization: list) -> PatchCon
         patch_size=list(config.patch_size),
         samples_per_volume=config.samples_per_volume,
         sampler_type="label",
-        label_probabilities={0: 0.2, 1: 0.8},
+        label_probabilities={
+            0: round(1 - config.foreground_sampling_probability, 12),
+            1: config.foreground_sampling_probability,
+        },
         patch_overlap=0.5,
         keep_largest_component=False,
         target_spacing=list(config.target_spacing),

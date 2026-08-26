@@ -8,9 +8,14 @@ class TrainingModelConfigTests(unittest.TestCase):
     def test_specs_are_the_single_architecture_declaration(self):
         self.assertEqual(models.UNET_SPEC["arch_id"], "monai.unet")
         self.assertEqual(models.DYNUNET_SPEC["arch_id"], "monai.dynunet")
+        self.assertEqual(models.DYNUNET_SMALL_SPEC["arch_id"], "monai.dynunet")
         self.assertEqual(
             models.DYNUNET_SPEC["wrapper_spec"][0]["wrapper_id"],
             "fastmonai.dynunet_ds_adapter",
+        )
+        self.assertEqual(
+            models.DYNUNET_SMALL_SPEC["arch_kwargs"]["filters"],
+            [32, 64, 128, 256, 512],
         )
         self.assertEqual(models.SEGMAMBA_SPEC["arch_id"], "segmamba.v2")
 
