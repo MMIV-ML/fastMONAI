@@ -12,6 +12,10 @@ from fastMONAI.vision_all import (
 
 from vestibular_schwannoma.workflow import inference
 from vestibular_schwannoma.workflow.config import VS_OUTPUT_SPEC
+from vestibular_schwannoma.workflow.run_selection import (
+    make_training_contract,
+    read_inference_run_ids,
+)
 
 
 class InferenceArtifactTests(unittest.TestCase):
@@ -44,16 +48,223 @@ class InferenceArtifactTests(unittest.TestCase):
             },
         }
 
-    def write_selection(self, path, *, model_key="unet", role="best", run_ids=None):
+    def write_selection(
+        self,
+        path,
+        *,
+        model_key="unet",
+        role="best",
+        run_ids=None,
+        contract_payload=None,
+        manifest_kind="inference_selection",
+        include_contract=True,
+    ):
         manifest = {
             "schema_version": 1,
+            "manifest_kind": manifest_kind,
             "run_group": "test-group",
             "models": {
-                model_key: {role: run_ids or {"fold_1": "run-1"}},
+                model_key: {
+                    role: run_ids if run_ids is not None else {"fold_1": "run-1"}
+                },
             },
         }
+        if include_contract:
+            manifest["training_contracts"] = {
+                model_key: make_training_contract(
+                    contract_payload or {"campaign": "test"}
+                )
+            }
         path.write_text(json.dumps(manifest), encoding="utf-8")
         return path
+
+    def test_merges_disjoint_fold_run_selections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_selection(
+                root / "folds_123.json",
+                manifest_kind="completed_registry",
+                run_ids={
+                    "fold_1": "run-1",
+                    "fold_2": "run-2",
+                    "fold_3": "run-3",
+                },
+            )
+            second = self.write_selection(
+                root / "folds_45.json",
+                manifest_kind="completed_registry",
+                run_ids={"fold_4": "run-4", "fold_5": "run-5"},
+            )
+            destination = inference.merge_fold_run_selections(
+                [first, second],
+                model_key="unet",
+                output_root=root / "merged",
+            )
+            manifest = json.loads(destination.read_text(encoding="utf-8"))
+
+        self.assertEqual(destination.name, "inference_run_ids.json")
+        self.assertEqual(manifest["manifest_kind"], "inference_selection")
+        self.assertEqual(manifest["run_group"], "merged")
+        self.assertEqual(
+            manifest["training_contracts"]["unet"]["payload"],
+            {"campaign": "test"},
+        )
+        self.assertEqual(
+            manifest["models"]["unet"]["best"],
+            {
+                "fold_1": "run-1",
+                "fold_2": "run-2",
+                "fold_3": "run-3",
+                "fold_4": "run-4",
+                "fold_5": "run-5",
+            },
+        )
+
+    def test_completed_registry_cannot_be_loaded_directly_for_inference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            selection = self.write_selection(
+                Path(directory) / "completed_run_ids.json",
+                manifest_kind="completed_registry",
+            )
+            with self.assertRaisesRegex(ValueError, "partial registry"):
+                inference.load_inference_models(
+                    run_selection_file=selection,
+                    model_key="unet",
+                    artifact_role="best",
+                    device="cpu",
+                )
+
+    def test_legacy_schema_one_selection_without_contract_remains_readable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            selection = self.write_selection(
+                Path(directory) / "legacy.json",
+                manifest_kind="inference_selection",
+                include_contract=False,
+            )
+            manifest = json.loads(selection.read_text())
+            manifest.pop("manifest_kind")
+            selection.write_text(json.dumps(manifest), encoding="utf-8")
+
+            self.assertEqual(
+                read_inference_run_ids(
+                    selection,
+                    model_key="unet",
+                    artifact_role="best",
+                ),
+                {"fold_1": "run-1"},
+            )
+
+    def test_reader_rejects_invalid_or_duplicate_run_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            empty = self.write_selection(
+                root / "empty.json",
+                run_ids={"fold_1": ""},
+            )
+            duplicate = self.write_selection(
+                root / "duplicate.json",
+                run_ids={"fold_1": "same-run", "fold_2": "same-run"},
+            )
+            with self.assertRaisesRegex(ValueError, "non-empty string"):
+                read_inference_run_ids(
+                    empty,
+                    model_key="unet",
+                    artifact_role="best",
+                )
+            with self.assertRaisesRegex(ValueError, "duplicate run IDs"):
+                read_inference_run_ids(
+                    duplicate,
+                    model_key="unet",
+                    artifact_role="best",
+                )
+
+    def test_merge_rejects_training_contract_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_selection(
+                root / "first.json",
+                run_ids={"fold_1": "run-1"},
+            )
+            second = self.write_selection(
+                root / "second.json",
+                run_ids={"fold_2": "run-2"},
+                contract_payload={"campaign": "different"},
+            )
+            with self.assertRaisesRegex(ValueError, "Training contract mismatch"):
+                inference.merge_fold_run_selections(
+                    [first, second],
+                    model_key="unet",
+                    output_root=root / "mismatch-output",
+                )
+            self.assertFalse((root / "mismatch-output").exists())
+
+    def test_merge_rejects_overlapping_or_incomplete_fold_selections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_selection(
+                root / "first.json",
+                run_ids={"fold_1": "run-1"},
+            )
+            overlap = self.write_selection(
+                root / "overlap.json",
+                run_ids={"fold_1": "other-run"},
+            )
+            with self.assertRaisesRegex(ValueError, "Duplicate model member 'fold_1'"):
+                inference.merge_fold_run_selections(
+                    [first, overlap],
+                    model_key="unet",
+                    output_root=root / "overlap-output",
+                )
+            with self.assertRaisesRegex(ValueError, r"missing=\['fold_2'"):
+                inference.merge_fold_run_selections(
+                    [first],
+                    model_key="unet",
+                    output_root=root / "incomplete-output",
+                )
+
+            self.assertFalse((root / "overlap-output").exists())
+            self.assertFalse((root / "incomplete-output").exists())
+
+    def test_merge_rejects_duplicate_run_ids_and_existing_output_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_selection(
+                root / "first.json",
+                run_ids={"fold_1": "same-run"},
+            )
+            second = self.write_selection(
+                root / "second.json",
+                run_ids={
+                    "fold_2": "same-run",
+                    "fold_3": "run-3",
+                    "fold_4": "run-4",
+                    "fold_5": "run-5",
+                },
+            )
+            with self.assertRaisesRegex(ValueError, "duplicate MLflow run IDs"):
+                inference.merge_fold_run_selections(
+                    [first, second],
+                    model_key="unet",
+                    output_root=root / "duplicate-output",
+                )
+
+            existing = root / "existing"
+            existing.mkdir()
+            self.write_selection(
+                second,
+                run_ids={
+                    "fold_2": "different-run",
+                    "fold_3": "run-3",
+                    "fold_4": "run-4",
+                    "fold_5": "run-5",
+                },
+            )
+            with self.assertRaisesRegex(FileExistsError, "new --output-root"):
+                inference.merge_fold_run_selections(
+                    [first, second],
+                    model_key="unet",
+                    output_root=existing,
+                )
 
     def test_loader_requires_exactly_one_source(self):
         for selection, local in ((None, {}), ("selection.json", {"a": "model"})):
@@ -263,7 +474,6 @@ class InferenceArtifactTests(unittest.TestCase):
                     )
         load.assert_not_called()
 
-
     def test_rejects_artifacts_that_remove_disconnected_predictions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "fold_1.safetensors"
@@ -272,9 +482,7 @@ class InferenceArtifactTests(unittest.TestCase):
                 patch.object(
                     inference,
                     "read_safetensors_metadata",
-                    return_value=self.metadata(
-                        "run-1", keep_largest_component=True
-                    ),
+                    return_value=self.metadata("run-1", keep_largest_component=True),
                 ),
                 patch.object(inference, "load_safetensors_model") as load,
                 self.assertRaisesRegex(

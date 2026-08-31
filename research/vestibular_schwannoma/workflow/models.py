@@ -36,6 +36,7 @@ class TrainingModelConfig:
     key: str
     display_name: str
     model_spec: dict
+    loss_spec: dict
     make_loss: Callable[[], object]
     experiment_name: str
     supports_compile: bool = True
@@ -43,6 +44,22 @@ class TrainingModelConfig:
     @property
     def checkpoint_name(self) -> str:
         return f"best_{self.key}"
+
+
+DICE_CE_LOSS_SPEC = {
+    "loss_id": "monai.dice_ce",
+    "kwargs": {
+        "to_onehot_y": True,
+        "softmax": True,
+        "include_background": False,
+        "batch": True,
+    },
+}
+DYNUNET_LOSS_SPEC = {
+    "loss_id": "monai.deep_supervision",
+    "kwargs": {"weight_mode": "exp"},
+    "base_loss": DICE_CE_LOSS_SPEC,
+}
 
 
 def _make_dice_ce_loss() -> CustomLoss:
@@ -72,7 +89,7 @@ UNET_SPEC = make_model_spec(
         "spatial_dims": 3,
         "in_channels": 1,
         "out_channels": 2,
-        "channels": (64, 128, 256, 512, 1024),
+        "channels": (32, 64, 128, 256, 320),
         "strides": (2, 2, 2, 2),
         "num_res_units": 4,
         "norm": "INSTANCE",
@@ -103,9 +120,7 @@ def _make_dynunet_spec(filters: list[int]) -> dict:
     )
 
 
-DYNUNET_SPEC = _make_dynunet_spec([64, 128, 256, 512, 1024])
-
-DYNUNET_SMALL_SPEC = _make_dynunet_spec([32, 64, 128, 256, 512])
+DYNUNET_SPEC = _make_dynunet_spec([32, 64, 128, 256, 320])
 
 SEGMAMBA_SPEC = make_model_spec(
     "segmamba.v2",
@@ -125,27 +140,23 @@ TRAINING_MODEL_CONFIGS = {
         key="unet",
         display_name="UNet",
         model_spec=UNET_SPEC,
+        loss_spec=DICE_CE_LOSS_SPEC,
         make_loss=_make_dice_ce_loss,
         experiment_name="vestibular_schwannoma_unet",
     ),
     "dynunet": TrainingModelConfig(
         key="dynunet",
-        display_name="DynUNet",
+        display_name="DynUNet Small (32-320)",
         model_spec=DYNUNET_SPEC,
+        loss_spec=DYNUNET_LOSS_SPEC,
         make_loss=_make_dynunet_loss,
         experiment_name="vestibular_schwannoma_dynunet",
-    ),
-    "dynunet_small": TrainingModelConfig(
-        key="dynunet_small",
-        display_name="DynUNet Small (32-512)",
-        model_spec=DYNUNET_SMALL_SPEC,
-        make_loss=_make_dynunet_loss,
-        experiment_name="vestibular_schwannoma_dynunet_small",
     ),
     "segmamba": TrainingModelConfig(
         key="segmamba",
         display_name="SegMamba V2",
         model_spec=SEGMAMBA_SPEC,
+        loss_spec=DICE_CE_LOSS_SPEC,
         make_loss=_make_dice_ce_loss,
         experiment_name="vestibular_schwannoma_segmamba",
         supports_compile=False,
