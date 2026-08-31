@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +13,11 @@ from fastMONAI.vision_all import (
     patch_config_to_dict,
     read_safetensors_metadata,
 )
-from .config import INFERENCE_RUN_IDS_SCHEMA, VS_OUTPUT_SPEC
+from .config import VS_OUTPUT_SPEC
+from .run_selection import (
+    merge_fold_run_selections as merge_fold_run_selections,
+    read_inference_run_ids as _read_inference_run_ids,
+)
 
 
 @dataclass(frozen=True)
@@ -41,49 +44,6 @@ def _validate_member_mapping(name: str, values: Mapping | None) -> dict:
     if any(not isinstance(member, str) or not member for member in resolved):
         raise ValueError(f"Every {name} member ID must be a non-empty string")
     return resolved
-
-
-def _read_inference_run_ids(
-    selection_file: str | Path,
-    *,
-    model_key: str,
-    artifact_role: str,
-) -> dict[str, str]:
-    path = Path(selection_file).expanduser()
-    if not path.is_file():
-        raise FileNotFoundError(f"Inference run selection not found: {path}")
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid inference run selection JSON: {path}") from exc
-    if not isinstance(manifest, dict):
-        raise ValueError("Inference run selection must be a JSON object")
-    if manifest.get("schema_version") != INFERENCE_RUN_IDS_SCHEMA:
-        raise ValueError(
-            f"Unsupported inference run selection schema: "
-            f"{manifest.get('schema_version')!r}"
-        )
-    if not isinstance(manifest.get("run_group"), str) or not manifest["run_group"]:
-        raise ValueError("Inference run selection has an invalid run_group")
-    models = manifest.get("models")
-    if not isinstance(models, dict):
-        raise ValueError("Inference run selection has an invalid models mapping")
-    if model_key not in models:
-        raise ValueError(
-            f"Model {model_key!r} is not ready in {path}; "
-            f"available models: {sorted(models)}"
-        )
-    roles = models[model_key]
-    if not isinstance(roles, dict) or artifact_role not in roles:
-        available = sorted(roles) if isinstance(roles, dict) else []
-        raise ValueError(
-            f"Role {artifact_role!r} is not ready for model {model_key!r}; "
-            f"available roles: {available}"
-        )
-    run_ids = _validate_member_mapping("inference run selection", roles[artifact_role])
-    if not run_ids:
-        raise ValueError("Inference run selection contains no model members")
-    return run_ids
 
 
 def load_inference_models(
@@ -113,10 +73,6 @@ def load_inference_models(
             model_key=model_key,
             artifact_role=artifact_role,
         )
-        if any(not isinstance(run_id, str) or not run_id for run_id in run_ids.values()):
-            raise ValueError("Every MLflow run ID must be a non-empty string")
-        if len(set(run_ids.values())) != len(run_ids):
-            raise ValueError("Inference run selection contains duplicate run IDs")
         resolved = find_model_artifacts(
             run_ids=run_ids,
             artifact_role=artifact_role,
@@ -134,7 +90,9 @@ def load_inference_models(
     missing = [str(path) for path in artifacts.values() if not path.is_file()]
     if missing:
         raise FileNotFoundError(f"Model artifacts not found: {missing}")
-    invalid = [str(path) for path in artifacts.values() if path.suffix != ".safetensors"]
+    invalid = [
+        str(path) for path in artifacts.values() if path.suffix != ".safetensors"
+    ]
     if invalid:
         raise ValueError(f"All model artifacts must be Safetensors files: {invalid}")
     canonical = [path.resolve() for path in artifacts.values()]

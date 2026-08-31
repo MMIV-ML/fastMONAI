@@ -27,7 +27,7 @@ Run the default five folds and skip an optional model if it is not installed::
 
     python train_5fold.py --skip-unavailable
 
-The defaults request four models, folds 1-5, and 500 epochs. Models and folds run
+The defaults request three models, folds 1-5, and 500 epochs. Models and folds run
 sequentially so only one model occupies GPU memory at a time. Each held-out fold is
 evaluated with TTA.
 
@@ -41,8 +41,10 @@ Performance controls
   then ``--queue-length``; a larger queue consumes more RAM.
 
 Preprocessing is cached in ``preprocessed/`` and outputs go below
-``cv_results/<UTC timestamp>/`` unless overridden. Generated data, caches, MLflow
-state, predictions, and weights stay outside Git through the project ``.gitignore``.
+``cv_results/<UTC timestamp>/`` unless overridden. Every independently launched job must
+use a new results root. Warm the preprocessing cache with one process before launching
+multiple training jobs. Generated data, caches, MLflow state, predictions, and weights
+stay outside Git through the project ``.gitignore``.
 
 This launcher performs cross-validation only. Use the shared workflow directly (or
 extend the CLI explicitly) if an all-data final/deployment model is required.
@@ -63,19 +65,27 @@ from fastMONAI.vision_all import MedDataset, MedMask, ZNormalization, preprocess
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+RESEARCH_ROOT = PROJECT_ROOT.parent
+if str(RESEARCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(RESEARCH_ROOT))
 
-from workflow.config import ExperimentConfig, make_patch_config  # noqa: E402
-from workflow.models import (  # noqa: E402
+from vestibular_schwannoma.workflow.config import (  # noqa: E402
+    CROSS_VALIDATION_FOLDS,
+    ExperimentConfig,
+    make_patch_config,
+)
+from vestibular_schwannoma.workflow.models import (  # noqa: E402
     TRAINING_MODEL_CONFIGS,
     get_training_model_configs,
 )
-from workflow.results import aggregate_results, build_model_comparison  # noqa: E402
-from workflow.training import run_training_sweep  # noqa: E402
+from vestibular_schwannoma.workflow.results import (  # noqa: E402
+    aggregate_results,
+    build_model_comparison,
+)
+from vestibular_schwannoma.workflow.training import run_training_sweep  # noqa: E402
 
 
-DEFAULT_MODELS = ("unet", "dynunet", "dynunet_small", "segmamba")
+DEFAULT_MODELS = ("unet", "dynunet", "segmamba")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -90,13 +100,13 @@ def _parser() -> argparse.ArgumentParser:
         nargs="+",
         choices=tuple(TRAINING_MODEL_CONFIGS),
         default=list(DEFAULT_MODELS),
-        help="Model keys to train in order (default: all four).",
+        help="Model keys to train in order (default: all three).",
     )
     parser.add_argument(
         "--folds",
         nargs="+",
         type=int,
-        default=[1, 2, 3, 4, 5],
+        default=list(CROSS_VALIDATION_FOLDS),
         help="Held-out folds to run (default: 1 2 3 4 5).",
     )
     parser.add_argument("--epochs", type=int, default=500)
@@ -152,7 +162,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--results-root",
         type=Path,
-        help="Output directory (default: cv_results/<UTC timestamp>).",
+        help=(
+            "New output directory; it must not already exist "
+            "(default: cv_results/<UTC timestamp>)."
+        ),
     )
     parser.add_argument(
         "--no-compile",
@@ -252,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         use_tta=True,
         compile_models=not args.no_compile,
         target_spacing=(0.4102, 0.4102, 1.5),
-        patch_size=(192, 192, 48),
+        patch_size=(256, 256, 48),
         preprocess_workers=args.preprocess_workers,
         samples_per_volume=args.samples_per_volume,
         queue_num_workers=args.queue_workers,
@@ -263,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
 
     data_csv = _project_path(args.data_csv)
     preprocessed_dir = _project_path(args.preprocessed_dir)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     results_root = _project_path(args.results_root or Path("cv_results") / timestamp)
     _print_plan(experiment, data_csv, results_root)
 

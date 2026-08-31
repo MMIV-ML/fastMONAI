@@ -11,10 +11,13 @@ from fastMONAI.vision_all import (
     make_output_spec,
 )
 from .models import TRAINING_MODEL_CONFIGS
+from .run_selection import (
+    CROSS_VALIDATION_FOLDS,
+    INFERENCE_RUN_IDS_FILENAME as INFERENCE_RUN_IDS_FILENAME,
+    INFERENCE_RUN_IDS_SCHEMA as INFERENCE_RUN_IDS_SCHEMA,
+)
 
 
-INFERENCE_RUN_IDS_SCHEMA = 1
-INFERENCE_RUN_IDS_FILENAME = "inference_run_ids.json"
 VS_OUTPUT_SPEC = make_output_spec("multiclass_segmentation", classes=2)
 
 
@@ -23,7 +26,7 @@ class ExperimentConfig:
     """Immutable settings shared by cross-validation and all-data training."""
 
     model_keys: tuple[str, ...] = ("unet", "dynunet", "segmamba")
-    folds: tuple[int, ...] = (1, 2, 3, 4, 5)
+    folds: tuple[int, ...] = CROSS_VALIDATION_FOLDS
     run_cross_validation: bool = True
     train_all_data: bool = False
     training_seed: int = 42
@@ -33,7 +36,7 @@ class ExperimentConfig:
     use_tta: bool = True
     compile_models: bool = True
     target_spacing: tuple[float, float, float] = (0.4102, 0.4102, 1.5)
-    patch_size: tuple[int, int, int] = (192, 192, 48)
+    patch_size: tuple[int, int, int] = (256, 256, 48)
     preprocess_workers: int = min(32, os.cpu_count() or 1)
     samples_per_volume: int = 4
     queue_num_workers: int = 4
@@ -54,7 +57,9 @@ class ExperimentConfig:
             raise ValueError("Enable cross-validation, all-data training, or both")
         if self.run_cross_validation:
             if not self.folds:
-                raise ValueError("folds must not be empty when cross-validation is enabled")
+                raise ValueError(
+                    "folds must not be empty when cross-validation is enabled"
+                )
             if len(set(self.folds)) != len(self.folds):
                 raise ValueError("folds contains duplicates")
 
@@ -78,7 +83,9 @@ class ExperimentConfig:
         if invalid:
             raise ValueError(f"These settings must be positive: {invalid}")
 
-        if len(self.target_spacing) != 3 or any(value <= 0 for value in self.target_spacing):
+        if len(self.target_spacing) != 3 or any(
+            value <= 0 for value in self.target_spacing
+        ):
             raise ValueError("target_spacing must contain three positive values")
         if len(self.patch_size) != 3 or any(value <= 0 for value in self.patch_size):
             raise ValueError("patch_size must contain three positive values")

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -23,16 +24,23 @@ from fastMONAI.vision_all import (
     PatchConfig,
     create_mlflow_callback,
     evaluate_segmentations,
+    patch_config_to_dict,
     patch_inference,
 )
-from .config import (
+from .config import VS_OUTPUT_SPEC, ExperimentConfig, make_gpu_augmentation
+from .models import TrainingModelConfig, build_training_model
+from .run_selection import (
+    COMPLETED_REGISTRY_KIND,
+    COMPLETED_RUN_IDS_FILENAME,
+    CROSS_VALIDATION_FOLDS,
     INFERENCE_RUN_IDS_FILENAME,
     INFERENCE_RUN_IDS_SCHEMA,
-    VS_OUTPUT_SPEC,
-    ExperimentConfig,
-    make_gpu_augmentation,
+    INFERENCE_SELECTION_KIND,
+    make_training_contract,
 )
-from .models import TrainingModelConfig, build_training_model
+
+
+VS_TRAINING_WORKFLOW_REVISION = 1
 
 
 @dataclass(frozen=True)
@@ -64,41 +72,184 @@ class TrainingSweep:
     fold_runs: dict[str, dict[int, FoldRun]] = field(default_factory=dict)
     all_data_run_ids: dict[str, str] = field(default_factory=dict)
     failures: list[RunFailure] = field(default_factory=list)
+    completed_run_ids_path: Path | None = None
     inference_run_ids_path: Path | None = None
+
+
+def _claim_results_root(results_root: Path) -> None:
+    """Atomically reserve a new output root for exactly one training sweep."""
+
+    try:
+        results_root.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise FileExistsError(
+            f"Results root already exists: {results_root}. "
+            "Use a new --results-root for every independently launched training job."
+        ) from error
+
+
+def _json_sha256(value) -> str:
+    canonical = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _make_training_contracts(
+    model_configs: dict[str, TrainingModelConfig],
+    train_df: pd.DataFrame,
+    experiment: ExperimentConfig,
+    patch_config: PatchConfig,
+    preprocessing_manifest: str | Path,
+) -> dict[str, dict]:
+    """Build fold-independent scientific contracts for safe cross-job merging."""
+
+    required = {"case_id", "fold"}
+    missing = sorted(required - set(train_df.columns))
+    if missing:
+        raise ValueError(f"Training data is missing contract columns: {missing}")
+    if train_df[["case_id", "fold"]].isna().any().any():
+        raise ValueError("Training contract case_id and fold values must be present")
+
+    assignments = [
+        {"case_id": str(case_id), "fold": int(fold)}
+        for case_id, fold in (
+            train_df[["case_id", "fold"]]
+            .sort_values(["case_id", "fold"], kind="stable")
+            .itertuples(index=False, name=None)
+        )
+    ]
+    manifest_path = Path(preprocessing_manifest).expanduser()
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Preprocessing manifest not found: {manifest_path}")
+
+    experiment_payload = asdict(experiment)
+    for field_name in ("model_keys", "folds", "continue_on_error"):
+        experiment_payload.pop(field_name)
+    shared_payload = {
+        "experiment": experiment_payload,
+        "fold_assignments_sha256": _json_sha256(assignments),
+        "patch_config": patch_config_to_dict(patch_config),
+        "preprocessing_manifest_sha256": hashlib.sha256(
+            manifest_path.read_bytes()
+        ).hexdigest(),
+        "training_case_count": len(assignments),
+        "training_workflow_revision": VS_TRAINING_WORKFLOW_REVISION,
+    }
+
+    contracts = {}
+    for model_key, model_config in model_configs.items():
+        contracts[model_key] = make_training_contract(
+            {
+                **shared_payload,
+                "loss_factory": (
+                    f"{model_config.make_loss.__module__}."
+                    f"{model_config.make_loss.__qualname__}"
+                ),
+                "loss_spec": model_config.loss_spec,
+                "model_key": model_key,
+                "model_spec": model_config.model_spec,
+                "supports_compile": model_config.supports_compile,
+            }
+        )
+    return contracts
+
+
+def _selection_models(
+    sweep: TrainingSweep,
+    experiment: ExperimentConfig,
+    *,
+    complete_only: bool,
+) -> dict:
+    models = {}
+    canonical_folds = set(CROSS_VALIDATION_FOLDS)
+    for model_key in experiment.model_keys:
+        roles = {}
+        fold_runs = sweep.fold_runs.get(model_key, {})
+        folds_complete = set(fold_runs) == canonical_folds
+        fold_order = (
+            CROSS_VALIDATION_FOLDS
+            if complete_only and folds_complete
+            else experiment.folds
+        )
+        completed_folds = [fold for fold in fold_order if fold in fold_runs]
+        if (
+            experiment.run_cross_validation
+            and completed_folds
+            and (folds_complete or not complete_only)
+        ):
+            roles["best"] = {
+                f"fold_{fold}": fold_runs[fold].run_id for fold in completed_folds
+            }
+        if experiment.train_all_data and model_key in sweep.all_data_run_ids:
+            roles["final"] = {"all_data": sweep.all_data_run_ids[model_key]}
+        if roles:
+            models[model_key] = roles
+    return models
+
+
+def _write_run_ids(
+    *,
+    models: dict,
+    training_contracts: dict[str, dict],
+    results_root: Path,
+    filename: str,
+    manifest_kind: str,
+) -> Path:
+    manifest = {
+        "schema_version": INFERENCE_RUN_IDS_SCHEMA,
+        "manifest_kind": manifest_kind,
+        "run_group": results_root.name,
+        "training_contracts": {
+            model_key: training_contracts[model_key] for model_key in models
+        },
+        "models": models,
+    }
+    destination = results_root / filename
+    temporary = destination.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(destination)
+    return destination
+
+
+def _write_completed_run_ids(
+    sweep: TrainingSweep,
+    experiment: ExperimentConfig,
+    results_root: Path,
+    training_contracts: dict[str, dict],
+) -> Path:
+    """Persist every completed fold so interrupted subset jobs remain mergeable."""
+
+    return _write_run_ids(
+        models=_selection_models(sweep, experiment, complete_only=False),
+        training_contracts=training_contracts,
+        results_root=results_root,
+        filename=COMPLETED_RUN_IDS_FILENAME,
+        manifest_kind=COMPLETED_REGISTRY_KIND,
+    )
 
 
 def _write_inference_run_ids(
     sweep: TrainingSweep,
     experiment: ExperimentConfig,
     results_root: Path,
-) -> Path:
-    """Persist exact MLflow runs for each fully completed inference role."""
+    training_contracts: dict[str, dict],
+) -> Path | None:
+    """Persist only canonical five-fold or all-data inference roles."""
 
-    models = {}
-    requested_folds = set(experiment.folds)
-    for model_key in experiment.model_keys:
-        roles = {}
-        fold_runs = sweep.fold_runs.get(model_key, {})
-        if experiment.run_cross_validation and set(fold_runs) == requested_folds:
-            roles["best"] = {
-                f"fold_{fold}": fold_runs[fold].run_id for fold in experiment.folds
-            }
-        if experiment.train_all_data and model_key in sweep.all_data_run_ids:
-            roles["final"] = {"all_data": sweep.all_data_run_ids[model_key]}
-        if roles:
-            models[model_key] = roles
-
-    manifest = {
-        "schema_version": INFERENCE_RUN_IDS_SCHEMA,
-        "run_group": results_root.name,
-        "models": models,
-    }
-    results_root.mkdir(parents=True, exist_ok=True)
-    destination = results_root / INFERENCE_RUN_IDS_FILENAME
-    temporary = destination.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(destination)
-    return destination
+    models = _selection_models(sweep, experiment, complete_only=True)
+    if not models:
+        return None
+    return _write_run_ids(
+        models=models,
+        training_contracts=training_contracts,
+        results_root=results_root,
+        filename=INFERENCE_RUN_IDS_FILENAME,
+        manifest_kind=INFERENCE_SELECTION_KIND,
+    )
 
 
 def _mark_failed(callback) -> None:
@@ -138,11 +289,15 @@ def _gpu_augmentations_json(gpu_augmentation) -> str:
 def _component_counts(prediction, ground_truth_path: str | Path) -> dict[str, int]:
     """Count predicted regions and regions with no ground-truth overlap."""
 
-    prediction_array = np.asarray(
-        prediction.detach().cpu()
-        if isinstance(prediction, torch.Tensor)
-        else prediction
-    ).squeeze().astype(bool)
+    prediction_array = (
+        np.asarray(
+            prediction.detach().cpu()
+            if isinstance(prediction, torch.Tensor)
+            else prediction
+        )
+        .squeeze()
+        .astype(bool)
+    )
     ground_truth = (
         np.asarray(tio.LabelMap(ground_truth_path).data).squeeze().astype(bool)
     )
@@ -203,15 +358,11 @@ def evaluate_fold(
             for prediction, mask_path in zip(predictions, mask_paths)
         ]
     )
-    results = pd.concat(
-        [results.reset_index(drop=True), component_metrics], axis=1
-    )
+    results = pd.concat([results.reset_index(drop=True), component_metrics], axis=1)
     results.insert(1, "image", [Path(path).name for path in image_paths])
     results.to_csv(fold_dir / "results.csv", index=False)
 
-    numeric = results.select_dtypes(include="number").replace(
-        [np.inf, -np.inf], np.nan
-    )
+    numeric = results.select_dtypes(include="number").replace([np.inf, -np.inf], np.nan)
     mlflow_callback.log_metrics_table(results, display=False)
     mlflow_callback.log_metrics(
         {f"val_{metric}": numeric[metric].mean() for metric in numeric.columns}
@@ -219,7 +370,9 @@ def evaluate_fold(
     mlflow_callback.log_dataframe(results)
 
     print(f"[Fold {fold}] Results saved to {fold_dir / 'results.csv'}")
-    print(f"[Fold {fold}] DSC: {results['dsc'].mean():.4f} +/- {results['dsc'].std():.4f}")
+    print(
+        f"[Fold {fold}] DSC: {results['dsc'].mean():.4f} +/- {results['dsc'].std():.4f}"
+    )
     return results
 
 
@@ -236,6 +389,8 @@ def train_one_fold(
     """Train a fresh model and evaluate it on exactly one held-out fold."""
 
     _set_training_seed(experiment.training_seed)
+    fold_dir = Path(results_dir) / f"fold_{fold}"
+    fold_dir.mkdir(parents=True, exist_ok=False)
     fold_df = train_df.copy()
     fold_df["is_val"] = fold_df["fold"] == fold
     gpu_augmentation = make_gpu_augmentation(experiment)
@@ -267,6 +422,8 @@ def train_one_fold(
             model,
             loss_func=model_config.make_loss(),
             metrics=[AccumulatedDice(n_classes=2)],
+            path=fold_dir,
+            model_dir="checkpoints",
         ).to_bf16()
         save_best = EMACheckpoint(
             monitor="accumulated_dice",
@@ -311,7 +468,7 @@ def train_one_fold(
             model_key=model_config.key,
             fold=fold,
             run_id=mlflow_callback.run_id,
-            results_dir=Path(results_dir) / f"fold_{fold}",
+            results_dir=fold_dir,
             results=results,
         )
     except Exception:
@@ -328,7 +485,7 @@ def train_all_data_model(
     experiment: ExperimentConfig,
     patch_config: PatchConfig,
     preprocessing_manifest: str | Path,
-    run_group: str,
+    results_dir: str | Path,
 ) -> str:
     """Train every case, duplicating one stable case only for internal monitoring."""
 
@@ -337,6 +494,8 @@ def train_all_data_model(
         raise ValueError("No cases are available for all-data training")
     if "case_id" not in train_df.columns or train_df["case_id"].isna().any():
         raise ValueError("case_id is required for stable all-data monitoring")
+    all_data_dir = Path(results_dir) / "all_data"
+    all_data_dir.mkdir(parents=True, exist_ok=False)
     monitor_df = train_df.sort_values("case_id", kind="stable").iloc[[0]].copy()
     monitor_case_id = str(monitor_df.iloc[0]["case_id"])
     print(
@@ -369,6 +528,8 @@ def train_all_data_model(
             model,
             loss_func=model_config.make_loss(),
             metrics=[AccumulatedDice(n_classes=2)],
+            path=all_data_dir,
+            model_dir="checkpoints",
         ).to_bf16()
         mlflow_callback = create_mlflow_callback(
             learn,
@@ -376,7 +537,7 @@ def train_all_data_model(
             run_name="all_data",
             extra_tags={
                 "training_scope": "all_data",
-                "run_group": run_group,
+                "run_group": Path(results_dir).parent.name,
                 "monitor_case_id": monitor_case_id,
                 "monitor_is_training_duplicate": "true",
             },
@@ -417,6 +578,14 @@ def run_training_sweep(
     """Run every requested fold and/or all-data model with structured failures."""
 
     results_root = Path(results_root)
+    training_contracts = _make_training_contracts(
+        model_configs,
+        train_df,
+        experiment,
+        patch_config,
+        preprocessing_manifest,
+    )
+    _claim_results_root(results_root)
     sweep = TrainingSweep()
 
     for model_key, model_config in model_configs.items():
@@ -436,6 +605,12 @@ def run_training_sweep(
                         results_dir=model_results_dir,
                     )
                     sweep.fold_runs[model_key][fold] = run
+                    sweep.completed_run_ids_path = _write_completed_run_ids(
+                        sweep,
+                        experiment,
+                        results_root,
+                        training_contracts,
+                    )
                 except Exception as error:
                     sweep.failures.append(
                         RunFailure(
@@ -462,7 +637,13 @@ def run_training_sweep(
                     experiment=experiment,
                     patch_config=patch_config,
                     preprocessing_manifest=preprocessing_manifest,
-                    run_group=results_root.name,
+                    results_dir=model_results_dir,
+                )
+                sweep.completed_run_ids_path = _write_completed_run_ids(
+                    sweep,
+                    experiment,
+                    results_root,
+                    training_contracts,
                 )
                 print(
                     f"[{model_key}] all-data MLflow run: "
@@ -477,17 +658,29 @@ def run_training_sweep(
                         message=str(error),
                     )
                 )
-                print(
-                    f"[FAILED] {model_key} all_data: "
-                    f"{type(error).__name__}: {error}"
-                )
+                print(f"[FAILED] {model_key} all_data: {type(error).__name__}: {error}")
                 traceback.print_exc()
                 if not experiment.continue_on_error:
                     raise
 
-    sweep.inference_run_ids_path = _write_inference_run_ids(
-        sweep, experiment, results_root
+    sweep.completed_run_ids_path = _write_completed_run_ids(
+        sweep,
+        experiment,
+        results_root,
+        training_contracts,
     )
-    print(f"Inference run selection: {sweep.inference_run_ids_path}")
+    sweep.inference_run_ids_path = _write_inference_run_ids(
+        sweep,
+        experiment,
+        results_root,
+        training_contracts,
+    )
+    if sweep.inference_run_ids_path is None:
+        print(
+            "Inference run selection not written; merge completed fold registries "
+            "to create one."
+        )
+    else:
+        print(f"Inference run selection: {sweep.inference_run_ids_path}")
     print("\nSweep complete.")
     return sweep

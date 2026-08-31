@@ -16,7 +16,7 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config.model_keys, ("unet", "dynunet", "segmamba"))
         self.assertEqual(config.folds, (1, 2, 3, 4, 5))
         self.assertEqual(config.target_spacing, (0.4102, 0.4102, 1.5))
-        self.assertEqual(config.patch_size, (192, 192, 48))
+        self.assertEqual(config.patch_size, (256, 256, 48))
         self.assertEqual(config.epochs, 500)
         self.assertEqual(config.batch_size, 4)
         self.assertEqual(config.training_seed, 42)
@@ -44,7 +44,7 @@ class ExperimentConfigTests(unittest.TestCase):
             {"model_keys": ("unet",), "epochs": 0},
             {"model_keys": ("unet",), "training_seed": -1},
             {"model_keys": ("unet",), "training_seed": True},
-            {"model_keys": ("unet",), "patch_size": (192, 192, 0)},
+            {"model_keys": ("unet",), "patch_size": (256, 256, 0)},
             {
                 "model_keys": ("unet",),
                 "foreground_sampling_probability": 0,
@@ -62,7 +62,7 @@ class ExperimentConfigTests(unittest.TestCase):
         config = ExperimentConfig(model_keys=("unet",))
         normalization = [ZNormalization(masking_method="foreground")]
         patch = make_patch_config(config, normalization)
-        self.assertEqual(patch.patch_size, [192, 192, 48])
+        self.assertEqual(patch.patch_size, [256, 256, 48])
         self.assertEqual(patch.target_spacing, [0.4102, 0.4102, 1.5])
         self.assertEqual(patch.label_probabilities, {0: 0.2, 1: 0.8})
         self.assertTrue(patch.preprocessed)
