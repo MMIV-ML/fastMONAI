@@ -5,10 +5,10 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from vestibular_schwannoma import merge_inference_manifests
+from vestibular_schwannoma import merge_parallel_folds
 
 
-class MergeInferenceManifestsCliTests(unittest.TestCase):
+class MergeParallelFoldsCliTests(unittest.TestCase):
     def test_main_passes_resolved_inputs_to_fixed_fold_merger(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -18,13 +18,13 @@ class MergeInferenceManifestsCliTests(unittest.TestCase):
             destination = output_root / "inference_run_ids.json"
             with (
                 patch.object(
-                    merge_inference_manifests,
+                    merge_parallel_folds,
                     "merge_fold_run_selections",
                     return_value=destination,
                 ) as merge,
                 redirect_stdout(StringIO()),
             ):
-                status = merge_inference_manifests.main(
+                status = merge_parallel_folds.main(
                     [
                         str(first),
                         str(second),
@@ -47,7 +47,7 @@ class MergeInferenceManifestsCliTests(unittest.TestCase):
             redirect_stderr(StringIO()),
             self.assertRaises(SystemExit),
         ):
-            merge_inference_manifests._parser().parse_args(
+            merge_parallel_folds._parser().parse_args(
                 [
                     "fold_1/completed_run_ids.json",
                     "--model",

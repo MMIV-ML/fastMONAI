@@ -1,14 +1,10 @@
 # Data layout
 
-Medical images and masks are not distributed with this repository.
+Images and masks are not included. Prepare the source datasets in the layout referenced
+by `ml_dataset.csv`; a reproducible preprocessing workflow is still in development.
 
-A reproducible workflow for preprocessing the downloaded public datasets is in progress.
-Until that workflow is available, users must prepare the source datasets themselves in the
-layout referenced by the index.
-
-`ml_dataset.csv` is the current research index used by the training notebook. Paths are
-resolved from the project root; the current index expects the private image tree under
-`../nii_data/`.
+Paths resolve from the `vestibular_schwannoma/` directory. The current index expects data
+under `../nii_data/`.
 
 ## Columns
 
@@ -20,4 +16,5 @@ resolved from the project root; the current index expects the private image tree
 | `fold` | Required fixed cross-validation fold. |
 | `volume_mm3` | Optional tumor volume derived from the reference mask. |
 | `quartile_label` | Optional zero-based volume-quartile label. |
-Only `case_id`, the two paths, and `fold` are required by the current training workflow.
+
+Only `case_id`, both paths, and `fold` are required.

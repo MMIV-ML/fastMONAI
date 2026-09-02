@@ -1,17 +1,15 @@
 # Vestibular Schwannoma ROR/PACS Container
 
-This directory builds the CE-T1w vestibular schwannoma segmentation container.
-It can ship `unet`, `dynunet`, or both. One Safetensors member is a single model;
-multiple members form an ensemble and are evaluated sequentially. Eight-flip TTA
-is enabled by default.
+Build the CE-T1w vestibular schwannoma container with `unet`, `dynunet`, or both.
+Multiple Safetensors members form a sequential ensemble. Eight-flip TTA is enabled by default.
 
 See [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md)
 for the general build, qualification, export, and handoff workflow.
 
 ## Prepare model bundles
 
-Use fastMONAI 0.10.1 or the pinned `fastmonai` environment from
-`requirements.yml`. Supply complete MLflow run IDs.
+Use fastMONAI 0.10.1 or the environment pinned in `requirements.yml`. Provide complete
+MLflow run IDs.
 
 One model trained on all data:
 
@@ -35,13 +33,12 @@ python prepare_model_bundle.py \
   --artifact-role best
 ```
 
-Repeat `--run MEMBER=RUN_ID` for other ensemble sizes. For an existing local
-artifact, use `--artifact MEMBER=/path/model.safetensors`. The builder validates
-and strict-loads every member, then writes the ignored
-`model_bundles/<model-type>/` directory.
+Repeat `--run MEMBER=RUN_ID` for other ensemble sizes, or use
+`--artifact MEMBER=/path/model.safetensors` for a local artifact. The builder validates and
+strict-loads each member into the ignored `model_bundles/<model-type>/` directory.
 
-Derived DICOM UIDs use deterministic `2.25` UIDs by default. A site that owns a
-registered prefix reserved for this application can bind it at bundle creation:
+Derived DICOM UIDs use deterministic `2.25` values by default. To use a registered
+application-specific prefix:
 
 ```bash
 python prepare_model_bundle.py ... --dicom-uid-prefix "<registered-prefix>"
@@ -87,13 +84,11 @@ ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
 - `model-type`: `unet` (default) or `dynunet`.
 - `tta`: JSON Boolean, default `true`.
 
-Unknown keys and invalid values fail before inference. A header-only preflight
-then rejects inconsistent Study, Series, SOP, modality, or geometry information.
-Nonstandard source UID syntax and missing optional Frame of Reference metadata
-produce aggregated warnings instead of repeated per-slice warnings.
+Unknown keys and invalid values fail before inference. Header preflight rejects
+inconsistent Study, Series, SOP, modality, or geometry data; nonstandard source UIDs and
+missing optional Frame of Reference metadata produce aggregated warnings.
 
-The runtime writes `mask` and intermediate `vote_map` DICOM series. Fiona's
-`pr2mask` tools then create `fused`, `fused_vote_map`, and `reports`; `vote_map`
-is not published. Probability values are stored as `round(probability x 65535)`
-for the vote-map reader. Existing `mask`, `fused`, `fused_vote_map`, and
-`reports` directories are rejected to avoid overwriting previous results.
+The runtime writes `mask` and intermediate `vote_map` DICOM series. Fiona's `pr2mask` creates
+`fused`, `fused_vote_map`, and `reports`; `vote_map` is not published. Vote-map probabilities
+are `round(probability x 65535)`. Existing `mask`, `fused`, `fused_vote_map`, and `reports`
+directories are rejected to prevent overwrites.

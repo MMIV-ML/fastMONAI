@@ -21,8 +21,8 @@ from vestibular_schwannoma.workflow.run_selection import (  # noqa: E402
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Validate and merge disjoint fold inference manifests produced by "
-            "independently launched training jobs."
+            "Validate and merge disjoint fold manifests produced by parallel "
+            "training jobs."
         )
     )
     parser.add_argument(
