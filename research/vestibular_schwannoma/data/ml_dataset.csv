@@ -175,7 +175,6 @@ vs_gk_54,1592.2794342041016,../nii_data/queen_square_data/vs_gk_54/vs_gk_54_t1_r
 crossmoda2022_etz_85,248.3048658370972,../nii_data/tilburg_data/crossmoda2022_etz_85/crossmoda2022_etz_85_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_85/crossmoda2022_etz_85_Label.nii.gz,5,0
 vs_gk_72,3547.931671142578,../nii_data/queen_square_data/vs_gk_72/vs_gk_72_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_72/vs_gk_72_seg_refT1.nii.gz,2,3
 vs_gk_175,672.7443695068359,../nii_data/queen_square_data/vs_gk_175/vs_gk_175_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_175/vs_gk_175_seg_refT1.nii.gz,3,0
-vs_gk_131,1472.6692199707031,../nii_data/queen_square_data/vs_gk_131/vs_gk_131_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_131/vs_gk_131_seg_refT1.nii.gz,3,2
 vs_gk_65,434.5333099365234,../nii_data/queen_square_data/vs_gk_65/vs_gk_65_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_65/vs_gk_65_seg_refT1.nii.gz,5,0
 vs_gk_137,1936.978912353516,../nii_data/queen_square_data/vs_gk_137/vs_gk_137_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_137/vs_gk_137_seg_refT1.nii.gz,3,2
 vs_gk_200,626.0610580444336,../nii_data/queen_square_data/vs_gk_200/vs_gk_200_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_200/vs_gk_200_seg_refT1.nii.gz,1,0
@@ -292,7 +291,6 @@ vs_gk_186,2341.231155395508,../nii_data/queen_square_data/vs_gk_186/vs_gk_186_t1
 vs_gk_206,4790.717124938965,../nii_data/queen_square_data/vs_gk_206/vs_gk_206_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_206/vs_gk_206_seg_refT1.nii.gz,1,3
 vs_gk_105,907.6749801635742,../nii_data/queen_square_data/vs_gk_105/vs_gk_105_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_105/vs_gk_105_seg_refT1.nii.gz,1,1
 crossmoda2022_etz_103,8508.979797363281,../nii_data/tilburg_data/crossmoda2022_etz_103/crossmoda2022_etz_103_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_103/crossmoda2022_etz_103_Label.nii.gz,5,3
-vs_gk_8,1063.8748168945312,../nii_data/queen_square_data/vs_gk_8/vs_gk_8_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_8/vs_gk_8_seg_refT1.nii.gz,2,1
 vs_gk_30,7943.228530883789,../nii_data/queen_square_data/vs_gk_30/vs_gk_30_t1_refT1.nii.gz,../nii_data/queen_square_data/vs_gk_30/vs_gk_30_seg_refT1.nii.gz,5,3
 crossmoda2022_etz_44,2093.4310913085938,../nii_data/tilburg_data/crossmoda2022_etz_44/crossmoda2022_etz_44_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_44/crossmoda2022_etz_44_Label.nii.gz,4,2
 crossmoda2022_etz_12,802.4482727050781,../nii_data/tilburg_data/crossmoda2022_etz_12/crossmoda2022_etz_12_ceT1.nii.gz,../nii_data/tilburg_data/crossmoda2022_etz_12/crossmoda2022_etz_12_Label.nii.gz,5,1
