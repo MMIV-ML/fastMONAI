@@ -13,6 +13,7 @@ import torchio as tio
 import pandas as pd
 import numpy as np
 import warnings
+import copy as _copy
 import matplotlib.pyplot as plt
 from pathlib import Path
 from contextlib import nullcontext
@@ -67,6 +68,163 @@ def normalize_patch_transforms(tfms: list) -> list:
         return None
     return [_extract_tio_transform(t) for t in tfms]
 
+
+def _required_patch_padding(spatial_shape, patch_size):
+    """Return TorchIO padding bounds and slices that recover the original data."""
+    spatial_shape = tuple(int(size) for size in spatial_shape)
+    patch_size = tuple(int(size) for size in patch_size)
+    if len(spatial_shape) != 3 or len(patch_size) != 3:
+        raise ValueError("spatial_shape and patch_size must contain three dimensions")
+
+    padding = []
+    valid_slices = []
+    for size, minimum_size in zip(spatial_shape, patch_size):
+        missing = max(minimum_size - size, 0)
+        before = missing // 2
+        after = missing - before
+        padding.extend((before, after))
+        valid_slices.append(slice(before, before + size))
+    return tuple(padding), tuple(valid_slices)
+
+
+def _pad_subject_to_patch_size(subject, patch_size, padding_mode=0):
+    """Pad only undersized axes and return exact slices for removing the padding."""
+    padding, valid_slices = _required_patch_padding(
+        subject.spatial_shape, patch_size
+    )
+    if not any(padding):
+        return subject, padding, valid_slices
+
+    all_images = subject.get_images_dict(intensity_only=False)
+    intensity_images = subject.get_images_dict(intensity_only=True)
+    intensity_names = list(intensity_images)
+    label_names = [name for name in all_images if name not in intensity_images]
+
+    if intensity_names:
+        subject = tio.Pad(
+            padding, padding_mode=padding_mode, include=intensity_names, copy=False
+        )(subject)
+    if label_names:
+        subject = tio.Pad(
+            padding, padding_mode=0, include=label_names, copy=False
+        )(subject)
+    return subject, padding, valid_slices
+
+
+class _PadToPatchSize:
+    """Run existing preprocessing, then pad undersized images before sampling."""
+    def __init__(self, patch_size, padding_mode=0, pre_transform=None):
+        self.patch_size = tuple(int(size) for size in patch_size)
+        self.padding_mode = padding_mode
+        self.pre_transform = pre_transform
+
+    @property
+    def transforms(self):
+        """Expose ordered stages for inspection without changing execution semantics."""
+        if self.pre_transform is None:
+            return [self]
+        previous = getattr(self.pre_transform, "transforms", None)
+        if previous is None:
+            previous = [self.pre_transform]
+        return [*list(previous), self]
+
+    def __call__(self, subject):
+        if self.pre_transform is not None:
+            subject = self.pre_transform(subject)
+        subject, _, _ = _pad_subject_to_patch_size(
+            subject, self.patch_size, self.padding_mode
+        )
+        return subject
+
+
+def _set_dataset_patch_padding(subjects_dataset, patch_size, padding_mode):
+    """Return a loader-local dataset that pads after its original preprocessing."""
+    existing = getattr(subjects_dataset, "_transform", None)
+    if isinstance(existing, _PadToPatchSize):
+        existing = existing.pre_transform
+    transform = _PadToPatchSize(
+        patch_size, padding_mode, pre_transform=existing
+    )
+    local_dataset = _copy.copy(subjects_dataset)
+    local_dataset.set_transform(transform)
+    return local_dataset
+
+
+def _project_mask_to_valid_centers(mask, exact_axes, patch_size):
+    """Project class presence onto the only legal center of exact-size axes."""
+    projected = mask
+    for axis in sorted(exact_axes, reverse=True):
+        projected = projected.any(dim=axis + 1)
+    result = torch.zeros_like(mask, dtype=torch.bool)
+    center_index = [slice(None)]
+    center_index.extend(
+        int(patch_size[axis] // 2) if axis in exact_axes else slice(None)
+        for axis in range(3)
+    )
+    result[tuple(center_index)] = projected
+    return result
+
+
+class _PatchLabelSampler(tio.LabelSampler):
+    """Keep label-biased sampling meaningful when an axis equals patch size."""
+    def get_probability_map(self, subject):
+        label_image = self.get_probability_map_image(subject)
+        spatial_shape = np.asarray(label_image.spatial_shape)
+        exact_axes = [
+            axis
+            for axis, (size, patch) in enumerate(zip(spatial_shape, self.patch_size))
+            if size == patch
+        ]
+        if not exact_axes:
+            return super().get_probability_map(subject)
+
+        label_map = label_image.data.float()
+        if self.label_probabilities_dict is None:
+            foreground = label_map > 0
+            if foreground.shape[0] > 1:
+                foreground = foreground.any(dim=0, keepdim=True)
+            return _project_mask_to_valid_centers(
+                foreground, exact_axes, self.patch_size
+            )
+
+        probability_map = torch.zeros(
+            (1, *spatial_shape.tolist()),
+            dtype=torch.float32,
+            device=label_map.device,
+        )
+        crop_ini = self.patch_size // 2
+        crop_fin = (self.patch_size - 1) // 2
+        valid_slices = tuple(
+            slice(int(start), int(size - end))
+            for start, size, end in zip(crop_ini, spatial_shape, crop_fin)
+        )
+        valid_index = (slice(None), *valid_slices)
+        label_probabilities = torch.tensor(
+            list(self.label_probabilities_dict.values()),
+            dtype=torch.float32, device=label_map.device,
+        )
+        label_probabilities /= label_probabilities.sum()
+        multichannel = label_map.shape[0] > 1
+        items = zip(
+            self.label_probabilities_dict, label_probabilities, strict=True
+        )
+        for label, label_probability in items:
+            if multichannel:
+                class_mask = label_map[label:label + 1].bool()
+            else:
+                class_mask = label_map == label
+            class_mask = _project_mask_to_valid_centers(
+                class_mask, exact_axes, self.patch_size
+            )
+            valid_mask = class_mask[valid_index]
+            label_size = valid_mask.sum()
+            if not label_size:
+                continue
+            probability_map[valid_index] += (
+                label_probability / label_size * valid_mask
+            )
+        return probability_map
+
 # %% ../nbs/10_vision_patch.ipynb #cell-5
 _UNET_DIVISOR = 16  # U-Net-style encoders require patch dims divisible by 2^4
 
@@ -96,8 +254,10 @@ class PatchConfig:
             pre_patch_tfms (e.g., normalization) since they were already applied.
             Inference is unaffected and always applies pre_inference_tfms to raw
             images. Defaults to False.
-        padding_mode: Padding mode for CropOrPad when image < patch_size. Default is 0 (zero padding).
-          Can be int, float, or string (e.g., 'minimum', 'mean').
+        padding_mode: Padding mode for intensity images on axes smaller than patch_size,
+            during both training and inference. Masks are always padded with background 0.
+            Padding is removed from inference outputs before native-space restoration.
+            Can be int, float, or string (e.g., 'minimum', 'mean'). Defaults to 0.
         keep_largest_component: If True, keep only the largest connected component
             in binary segmentation predictions. Only applies during inference when
             return_probabilities=False. Defaults to False. Binary-only: for multi-class
@@ -345,7 +505,7 @@ def create_patch_sampler(config: PatchConfig) -> tio.data.PatchSampler:
         return tio.UniformSampler(patch_size)
     
     elif config.sampler_type == 'label':
-        return tio.LabelSampler(
+        return _PatchLabelSampler(
             patch_size,
             label_name='mask',
             label_probabilities=config.label_probabilities
@@ -395,6 +555,9 @@ class MedPatchDataLoader:
         if batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
 
+        subjects_dataset = _set_dataset_patch_padding(
+            subjects_dataset, config.patch_size, config.padding_mode
+        )
         self.subjects_dataset = subjects_dataset
         self.config = config
         self.bs = batch_size
@@ -1050,6 +1213,8 @@ class _PreparedSubject:
     org_img: tio.Image
     input_img: tio.Image
     org_size: tuple
+    padding: tuple
+    valid_slices: tuple
     grid_sampler: tio.GridSampler
     aggregator: tio.GridAggregator
     patch_loader: DataLoader
@@ -1174,19 +1339,23 @@ class PatchInferenceEngine:
         if self.pre_inference_tfms is not None:
             subject = self.pre_inference_tfms(subject)
 
-        # Pad dimensions smaller than patch_size, keep larger dimensions intact
-        img_shape = subject['image'].shape[1:]  # Exclude channel dim
-        target_size = [max(s, p) for s, p in zip(img_shape, self.config.patch_size)]
+        # Pad only undersized dimensions and retain exact slices for restoration.
+        img_shape = tuple(subject['image'].spatial_shape)
+        subject, padding, valid_slices = _pad_subject_to_patch_size(
+            subject, self.config.patch_size, self.config.padding_mode
+        )
 
-        if any(s < p for s, p in zip(img_shape, self.config.patch_size)):
-            padded_dims = [f"dim{i}: {s}<{p}" for i, (s, p) in enumerate(zip(img_shape, self.config.patch_size)) if s < p]
+        if any(padding):
+            padded_dims = [
+                f"dim{i}: {size}<{patch}"
+                for i, (size, patch) in enumerate(zip(img_shape, self.config.patch_size))
+                if size < patch
+            ]
             warnings.warn(
                 f"Image size {list(img_shape)} smaller than patch_size {self.config.patch_size} "
                 f"in {padded_dims}. Padding with mode={self.config.padding_mode}. "
                 "Ensure training data covered similar sizes to avoid artifacts."
             )
-
-        subject = tio.CropOrPad(target_size, padding_mode=self.config.padding_mode)(subject)
 
         patch_overlap = _normalize_patch_overlap(self.config.patch_overlap, self.config.patch_size)
 
@@ -1200,8 +1369,9 @@ class PatchInferenceEngine:
 
         return _PreparedSubject(
             subject=subject, org_img=org_img, input_img=input_img,
-            org_size=org_size, grid_sampler=grid_sampler,
-            aggregator=aggregator, patch_loader=patch_loader
+            org_size=org_size, padding=padding, valid_slices=valid_slices,
+            grid_sampler=grid_sampler, aggregator=aggregator,
+            patch_loader=patch_loader
         )
 
     def _run_inference(self, prepared: _PreparedSubject, tta: bool = False) -> torch.Tensor:
@@ -1243,6 +1413,16 @@ class PatchInferenceEngine:
         return_probabilities keeps the probability map and restores it with linear
         interpolation. Decoded labels are restored with nearest-neighbor interpolation.
         """
+        valid_slices = getattr(prepared, "valid_slices", None)
+        if valid_slices is not None:
+            output = output[(slice(None), *valid_slices)]
+        expected_shape = tuple(prepared.input_img.spatial_shape)
+        if tuple(output.shape[1:]) != expected_shape:
+            raise RuntimeError(
+                f"Restored inference shape {tuple(output.shape[1:])} does not match "
+                f"the pre-padding shape {expected_shape}"
+            )
+
         if return_probabilities:
             result = output
         else:

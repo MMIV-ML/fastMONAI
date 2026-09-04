@@ -121,6 +121,8 @@ def _make_dynunet_spec(filters: list[int]) -> dict:
 
 
 DYNUNET_SPEC = _make_dynunet_spec([32, 64, 128, 256, 320])
+DYNUNET_SMALL_SPEC = _make_dynunet_spec([16, 32, 64, 128, 160])
+DYNUNET_XS_SPEC = _make_dynunet_spec([8, 16, 32, 64, 80])
 
 SEGMAMBA_SPEC = make_model_spec(
     "segmamba.v2",
@@ -128,8 +130,8 @@ SEGMAMBA_SPEC = make_model_spec(
         "in_chans": 1,
         "out_chans": 2,
         "depths": [2, 2, 2, 2],
-        "feat_size": [48, 96, 192, 384],
-        "hidden_size": 768,
+        "feat_size": [32, 64, 128, 256],
+        "hidden_size": 320,
         "mamba_backend": "mamba_ssm",
     },
 )
@@ -146,11 +148,27 @@ TRAINING_MODEL_CONFIGS = {
     ),
     "dynunet": TrainingModelConfig(
         key="dynunet",
-        display_name="DynUNet Small (32-320)",
+        display_name="DynUNet",
         model_spec=DYNUNET_SPEC,
         loss_spec=DYNUNET_LOSS_SPEC,
         make_loss=_make_dynunet_loss,
         experiment_name="vestibular_schwannoma_dynunet",
+    ),
+    "dynunet_small": TrainingModelConfig(
+        key="dynunet_small",
+        display_name="DynUNet Small (16-160)",
+        model_spec=DYNUNET_SMALL_SPEC,
+        loss_spec=DYNUNET_LOSS_SPEC,
+        make_loss=_make_dynunet_loss,
+        experiment_name="vestibular_schwannoma_dynunet_small",
+    ),
+    "dynunet_xs": TrainingModelConfig(
+        key="dynunet_xs",
+        display_name="DynUNet XS (8-80)",
+        model_spec=DYNUNET_XS_SPEC,
+        loss_spec=DYNUNET_LOSS_SPEC,
+        make_loss=_make_dynunet_loss,
+        experiment_name="vestibular_schwannoma_dynunet_xs",
     ),
     "segmamba": TrainingModelConfig(
         key="segmamba",

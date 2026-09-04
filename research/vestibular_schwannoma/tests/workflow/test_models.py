@@ -7,11 +7,16 @@ from vestibular_schwannoma.workflow import models
 class TrainingModelConfigTests(unittest.TestCase):
     def test_specs_are_the_single_architecture_declaration(self):
         self.assertEqual(models.UNET_SPEC["arch_id"], "monai.unet")
-        self.assertEqual(models.DYNUNET_SPEC["arch_id"], "monai.dynunet")
-        self.assertEqual(
-            models.DYNUNET_SPEC["wrapper_spec"][0]["wrapper_id"],
-            "fastmonai.dynunet_ds_adapter",
-        )
+        for spec in (
+            models.DYNUNET_SPEC,
+            models.DYNUNET_SMALL_SPEC,
+            models.DYNUNET_XS_SPEC,
+        ):
+            self.assertEqual(spec["arch_id"], "monai.dynunet")
+            self.assertEqual(
+                spec["wrapper_spec"][0]["wrapper_id"],
+                "fastmonai.dynunet_ds_adapter",
+            )
         self.assertEqual(
             models.UNET_SPEC["arch_kwargs"]["channels"],
             [32, 64, 128, 256, 320],
@@ -20,12 +25,28 @@ class TrainingModelConfigTests(unittest.TestCase):
             models.DYNUNET_SPEC["arch_kwargs"]["filters"],
             [32, 64, 128, 256, 320],
         )
+        self.assertEqual(
+            models.DYNUNET_SMALL_SPEC["arch_kwargs"]["filters"],
+            [16, 32, 64, 128, 160],
+        )
+        self.assertEqual(
+            models.DYNUNET_XS_SPEC["arch_kwargs"]["filters"],
+            [8, 16, 32, 64, 80],
+        )
         self.assertEqual(models.SEGMAMBA_SPEC["arch_id"], "segmamba.v2")
+        self.assertEqual(
+            models.SEGMAMBA_SPEC["arch_kwargs"]["feat_size"],
+            [32, 64, 128, 256],
+        )
+        self.assertEqual(
+            models.SEGMAMBA_SPEC["arch_kwargs"]["hidden_size"],
+            320,
+        )
 
     def test_registry_contains_only_supported_architectures(self):
         self.assertEqual(
             set(models.TRAINING_MODEL_CONFIGS),
-            {"unet", "dynunet", "segmamba"},
+            {"unet", "dynunet", "dynunet_small", "dynunet_xs", "segmamba"},
         )
 
     def test_loss_specs_declare_scientifically_relevant_parameters(self):
@@ -41,18 +62,26 @@ class TrainingModelConfigTests(unittest.TestCase):
                 },
             },
         )
-        self.assertEqual(
-            models.TRAINING_MODEL_CONFIGS["dynunet"].loss_spec,
-            {
-                "loss_id": "monai.deep_supervision",
-                "kwargs": {"weight_mode": "exp"},
-                "base_loss": models.DICE_CE_LOSS_SPEC,
-            },
-        )
+        expected = {
+            "loss_id": "monai.deep_supervision",
+            "kwargs": {"weight_mode": "exp"},
+            "base_loss": models.DICE_CE_LOSS_SPEC,
+        }
+        for key in ("dynunet", "dynunet_small", "dynunet_xs"):
+            with self.subTest(key=key):
+                self.assertEqual(
+                    models.TRAINING_MODEL_CONFIGS[key].loss_spec,
+                    expected,
+                )
 
     def test_declared_order_is_preserved(self):
-        configs = models.get_training_model_configs(("dynunet", "unet"))
-        self.assertEqual(list(configs), ["dynunet", "unet"])
+        configs = models.get_training_model_configs(
+            ("dynunet_xs", "dynunet_small", "dynunet", "unet")
+        )
+        self.assertEqual(
+            list(configs),
+            ["dynunet_xs", "dynunet_small", "dynunet", "unet"],
+        )
 
     def test_registry_keys_and_conventional_names_are_consistent(self):
         for key, config in models.TRAINING_MODEL_CONFIGS.items():

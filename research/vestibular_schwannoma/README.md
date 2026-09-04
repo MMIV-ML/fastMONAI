@@ -32,11 +32,17 @@ Use the CLI for unattended training:
 ```bash
 python train_5fold.py --models unet --folds 1 --epochs 5 --no-compile
 python train_5fold.py --models unet  # One model, all five folds
+python train_5fold.py --models dynunet_small dynunet_xs
 python train_5fold.py --skip-unavailable
 ```
 
 The default is three models, five folds, and 500 epochs. Models and folds run sequentially
 within a launcher. Run `python train_5fold.py --help` for all options.
+
+DynUNet variants use the same architecture, deep supervision, patch size, and training
+settings. They differ only in channel widths: the existing `dynunet` uses
+`[32, 64, 128, 256, 320]`, `dynunet_small` uses `[16, 32, 64, 128, 160]`, and
+`dynunet_xs` uses `[8, 16, 32, 64, 80]`.
 
 For one process per GPU, assign one visible GPU and a new `--results-root` to each process:
 
