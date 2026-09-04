@@ -18,6 +18,13 @@ class FiveFoldLauncherTests(unittest.TestCase):
 
         self.assertEqual(args.foreground_probability, 0.7)
 
+    def test_smaller_dynunet_variants_are_selectable(self):
+        args = train_5fold._parser().parse_args(
+            ["--models", "dynunet_small", "dynunet_xs"]
+        )
+
+        self.assertEqual(args.models, ["dynunet_small", "dynunet_xs"])
+
 
 if __name__ == "__main__":
     unittest.main()
