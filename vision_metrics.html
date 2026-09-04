@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Vision metrics – fastMONAI</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Vision metrics – fastMONAI">
+<meta property="og:description" content="fastMONAI library">
+<meta property="og:site_name" content="fastMONAI">
+<meta name="twitter:title" content="Vision metrics – fastMONAI">
+<meta name="twitter:description" content="fastMONAI library">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">fastMONAI</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./vision_metrics.html">Vision metrics</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overview</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision plot</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_augment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Data augmentation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_loss_functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom loss functions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_metrics.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Vision metrics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision inference</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dataset_info.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset information</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./external_data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">External data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_patch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-based training</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tutorials</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_beginner_video.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started video</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_classification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_binary_segmentation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary semantic segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_multiclass_segmentation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-class semantic segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference with a safe model artifact</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_training.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Binary Segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_cross_validation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Cross-Validation and Final Model Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Inference: Deploying on New Scans</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#calculate_dsc" id="toc-calculate_dsc" class="nav-link active" data-scroll-target="#calculate_dsc">calculate_dsc</a></li>
+  <li><a href="#calculate_haus" id="toc-calculate_haus" class="nav-link" data-scroll-target="#calculate_haus">calculate_haus</a></li>
+  <li><a href="#calculate_hd95" id="toc-calculate_hd95" class="nav-link" data-scroll-target="#calculate_hd95">calculate_hd95</a></li>
+  <li><a href="#binary_dice_score" id="toc-binary_dice_score" class="nav-link" data-scroll-target="#binary_dice_score">binary_dice_score</a></li>
+  <li><a href="#multi_dice_score" id="toc-multi_dice_score" class="nav-link" data-scroll-target="#multi_dice_score">multi_dice_score</a></li>
+  <li><a href="#sensitivity-and-precision" id="toc-sensitivity-and-precision" class="nav-link" data-scroll-target="#sensitivity-and-precision">Sensitivity and Precision</a>
+  <ul class="collapse">
+  <li><a href="#calculate_confusion_metrics" id="toc-calculate_confusion_metrics" class="nav-link" data-scroll-target="#calculate_confusion_metrics">calculate_confusion_metrics</a></li>
+  <li><a href="#binary_sensitivity" id="toc-binary_sensitivity" class="nav-link" data-scroll-target="#binary_sensitivity">binary_sensitivity</a></li>
+  <li><a href="#multi_sensitivity" id="toc-multi_sensitivity" class="nav-link" data-scroll-target="#multi_sensitivity">multi_sensitivity</a></li>
+  <li><a href="#binary_precision" id="toc-binary_precision" class="nav-link" data-scroll-target="#binary_precision">binary_precision</a></li>
+  <li><a href="#multi_precision" id="toc-multi_precision" class="nav-link" data-scroll-target="#multi_precision">multi_precision</a></li>
+  </ul></li>
+  <li><a href="#lesion-detection-rate" id="toc-lesion-detection-rate" class="nav-link" data-scroll-target="#lesion-detection-rate">Lesion Detection Rate</a>
+  <ul class="collapse">
+  <li><a href="#calculate_lesion_detection_rate" id="toc-calculate_lesion_detection_rate" class="nav-link" data-scroll-target="#calculate_lesion_detection_rate">calculate_lesion_detection_rate</a></li>
+  <li><a href="#binary_lesion_detection_rate" id="toc-binary_lesion_detection_rate" class="nav-link" data-scroll-target="#binary_lesion_detection_rate">binary_lesion_detection_rate</a></li>
+  <li><a href="#multi_lesion_detection_rate" id="toc-multi_lesion_detection_rate" class="nav-link" data-scroll-target="#multi_lesion_detection_rate">multi_lesion_detection_rate</a></li>
+  </ul></li>
+  <li><a href="#signed-relative-volume-error-rve" id="toc-signed-relative-volume-error-rve" class="nav-link" data-scroll-target="#signed-relative-volume-error-rve">Signed Relative Volume Error (RVE)</a>
+  <ul class="collapse">
+  <li><a href="#calculate_signed_rve" id="toc-calculate_signed_rve" class="nav-link" data-scroll-target="#calculate_signed_rve">calculate_signed_rve</a></li>
+  <li><a href="#binary_signed_rve" id="toc-binary_signed_rve" class="nav-link" data-scroll-target="#binary_signed_rve">binary_signed_rve</a></li>
+  <li><a href="#multi_signed_rve" id="toc-multi_signed_rve" class="nav-link" data-scroll-target="#multi_signed_rve">multi_signed_rve</a></li>
+  </ul></li>
+  <li><a href="#surface-distance-benchmark-metrics-monai-grid-based-mm" id="toc-surface-distance-benchmark-metrics-monai-grid-based-mm" class="nav-link" data-scroll-target="#surface-distance-benchmark-metrics-monai-grid-based-mm">Surface Distance Benchmark Metrics (MONAI grid-based, mm)</a>
+  <ul class="collapse">
+  <li><a href="#calculate_surface_metrics" id="toc-calculate_surface_metrics" class="nav-link" data-scroll-target="#calculate_surface_metrics">calculate_surface_metrics</a></li>
+  </ul></li>
+  <li><a href="#full-metric-panel-per-case-and-batch" id="toc-full-metric-panel-per-case-and-batch" class="nav-link" data-scroll-target="#full-metric-panel-per-case-and-batch">Full metric panel (per-case and batch)</a>
+  <ul class="collapse">
+  <li><a href="#calculate_all_metrics" id="toc-calculate_all_metrics" class="nav-link" data-scroll-target="#calculate_all_metrics">calculate_all_metrics</a></li>
+  <li><a href="#evaluate_segmentations" id="toc-evaluate_segmentations" class="nav-link" data-scroll-target="#evaluate_segmentations">evaluate_segmentations</a></li>
+  </ul></li>
+  <li><a href="#accumulated-dice-metrics-nnu-net-style" id="toc-accumulated-dice-metrics-nnu-net-style" class="nav-link" data-scroll-target="#accumulated-dice-metrics-nnu-net-style">Accumulated Dice Metrics (nnU-Net Style)</a>
+  <ul class="collapse">
+  <li><a href="#accumulateddice" id="toc-accumulateddice" class="nav-link" data-scroll-target="#accumulateddice">AccumulatedDice</a></li>
+  <li><a href="#accumulatedmultidice" id="toc-accumulatedmultidice" class="nav-link" data-scroll-target="#accumulatedmultidice">AccumulatedMultiDice</a></li>
+  </ul></li>
+  <li><a href="#ema-model-checkpoint" id="toc-ema-model-checkpoint" class="nav-link" data-scroll-target="#ema-model-checkpoint">EMA Model Checkpoint</a>
+  <ul class="collapse">
+  <li><a href="#emacheckpoint" id="toc-emacheckpoint" class="nav-link" data-scroll-target="#emacheckpoint">EMACheckpoint</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Vision metrics</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L24" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="calculate_dsc" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_dsc">calculate_dsc</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_dsc(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    pred:Tensor, targ:Tensor</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate Dice score using MONAI’s compute_dice.</em></p>
+<p>Accepts tensors of various shapes and automatically reshapes to 5D format.</p>
+<p>Args: pred: Binary prediction tensor. Accepts: - [D, H, W] single 3D volume - [C, D, H, W] single volume with channel - [B, C, D, H, W] batched volumes targ: Binary target tensor (same shape options as pred).</p>
+<p>Returns: Dice score(s). Single value for 3D/4D input, tensor of values for 5D batch.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L94" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="calculate_haus" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_haus">calculate_haus</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_haus(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    pred:Tensor, targ:Tensor, spacing:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Deprecated alias for :func:<a href="https://fastmonai.no/vision_metrics.html#calculate_hd95"><code>calculate_hd95</code></a> (renamed after 0.8.x).</em></p>
+<p>Kept so existing calls keep working; forwards to :func:<a href="https://fastmonai.no/vision_metrics.html#calculate_hd95"><code>calculate_hd95</code></a> and will be removed in a future release.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L49" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="calculate_hd95" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_hd95">calculate_hd95</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_hd95(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    pred:Tensor, targ:Tensor, spacing:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Compute the 95th percentile Hausdorff distance (HD95) using MONAI.</em></p>
+<p>HD95 is more robust than the maximum Hausdorff distance because it ignores the top 5% of outlier distances. Accepts tensors shaped [D,H,W], [C,D,H,W] or [B,C,D,H,W]; they are reshaped to 5D automatically.</p>
+<p>Args: pred: Binary prediction tensor. targ: Binary target tensor (same shape options as pred). spacing: Voxel spacing forwarded to MONAI. <code>None</code> (default) returns HD95 in VOXELS, not millimetres; pass the per-case voxel size for mm. It must match the spatial-dim order of the input (MONAI only checks its length, so a permuted tuple silently changes the result).</p>
+<p>.. note:: This is the same MONAI HD95 computation as :func:<a href="https://fastmonai.no/vision_metrics.html#calculate_surface_metrics"><code>calculate_surface_metrics</code></a>, exposed as a single voxel-or-mm value. For canonical spacing-aware HD95 in mm together with ASSD and NSD (and empty-mask guards), use :func:<a href="https://fastmonai.no/vision_metrics.html#calculate_surface_metrics"><code>calculate_surface_metrics</code></a>.</p>
+<p>Returns: HD95 value(s): a single value for 3D/4D input, a tensor for a 5D batch.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L108" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binary_dice_score" class="level3">
+<h3 class="anchored" data-anchor-id="binary_dice_score">binary_dice_score</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> binary_dice_score(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculates the mean Dice score for binary semantic segmentation tasks.</em></p>
+<p>Args: act: Activation tensor with dimensions [B, C, W, H, D]. targ: Target masks with dimensions [B, C, W, H, D].</p>
+<p>Returns: Mean Dice score (empty-target samples are ignored).</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L124" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="multi_dice_score" class="level3">
+<h3 class="anchored" data-anchor-id="multi_dice_score">multi_dice_score</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> multi_dice_score(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate the mean Dice score for each class in multi-class semantic </em> segmentation tasks.</p>
+<p>Args: act: Activation tensor with dimensions [B, C, W, H, D]. targ: Target masks with dimensions [B, C, W, H, D].</p>
+<p>Returns: Mean Dice score for each class.</p>
+</section>
+<section id="sensitivity-and-precision" class="level2">
+<h2 class="anchored" data-anchor-id="sensitivity-and-precision">Sensitivity and Precision</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L146" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="calculate_confusion_metrics" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_confusion_metrics">calculate_confusion_metrics</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_confusion_metrics(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    pred:Tensor, targ:Tensor, metric_name:<span class="bu">str</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate confusion matrix-based metric using MONAI.</em></p>
+<p>Args: pred: Binary prediction tensor [B, C, W, H, D]. targ: Binary target tensor [B, C, W, H, D]. metric_name: One of “sensitivity”, “precision”, “specificity”, “f1 score”.</p>
+<p>Returns: Metric values for each sample in batch.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L163" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binary_sensitivity" class="level3">
+<h3 class="anchored" data-anchor-id="binary_sensitivity">binary_sensitivity</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> binary_sensitivity(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean sensitivity (recall) for binary segmentation.</em></p>
+<p>Sensitivity = TP / (TP + FN) - measures the proportion of actual positives that are correctly identified.</p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D].</p>
+<p>Returns: Mean sensitivity score.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L181" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="multi_sensitivity" class="level3">
+<h3 class="anchored" data-anchor-id="multi_sensitivity">multi_sensitivity</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> multi_sensitivity(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean sensitivity for each class in multi-class segmentation.</em></p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D].</p>
+<p>Returns: Mean sensitivity for each class.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L203" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binary_precision" class="level3">
+<h3 class="anchored" data-anchor-id="binary_precision">binary_precision</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> binary_precision(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean precision for binary segmentation.</em></p>
+<p>Precision = TP / (TP + FP) - measures the proportion of positive predictions that are actually correct.</p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D].</p>
+<p>Returns: Mean precision score.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L221" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="multi_precision" class="level3">
+<h3 class="anchored" data-anchor-id="multi_precision">multi_precision</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> multi_precision(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean precision for each class in multi-class segmentation.</em></p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D].</p>
+<p>Returns: Mean precision for each class.</p>
+</section>
+</section>
+<section id="lesion-detection-rate" class="level2">
+<h2 class="anchored" data-anchor-id="lesion-detection-rate">Lesion Detection Rate</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L243" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="calculate_lesion_detection_rate" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_lesion_detection_rate">calculate_lesion_detection_rate</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_lesion_detection_rate(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    pred:Tensor, targ:Tensor, threshold:<span class="bu">float</span><span class="op">=</span><span class="fl">0.0</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate lesion-wise detection rate.</em></p>
+<p>For each connected component (lesion) in the target, check if it is detected by the prediction. Detection criteria depends on threshold: - threshold=0: any overlap counts as detected - threshold&gt;0: per-lesion Dice score must exceed threshold</p>
+<p>Args: pred: Binary prediction tensor [B, C, W, H, D]. targ: Binary target tensor [B, C, W, H, D]. threshold: Minimum Dice score for a lesion to be considered detected. Default 0.0 means any overlap counts as detected.</p>
+<p>Returns: Detection rate (detected lesions / total lesions) for each sample.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L298" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binary_lesion_detection_rate" class="level3">
+<h3 class="anchored" data-anchor-id="binary_lesion_detection_rate">binary_lesion_detection_rate</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> binary_lesion_detection_rate(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor, threshold:<span class="bu">float</span><span class="op">=</span><span class="fl">0.0</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean lesion detection rate for binary segmentation.</em></p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D]. threshold: Minimum Dice score for a lesion to be considered detected. Default 0.0 means any overlap counts as detected.</p>
+<p>Returns: Mean lesion detection rate.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L315" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="multi_lesion_detection_rate" class="level3">
+<h3 class="anchored" data-anchor-id="multi_lesion_detection_rate">multi_lesion_detection_rate</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> multi_lesion_detection_rate(</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor, threshold:<span class="bu">float</span><span class="op">=</span><span class="fl">0.0</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean lesion detection rate for each class in multi-class segmentation.</em></p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D]. threshold: Minimum Dice score for a lesion to be considered detected. Default 0.0 means any overlap counts as detected.</p>
+<p>Returns: Mean lesion detection rate for each class.</p>
+</section>
+</section>
+<section id="signed-relative-volume-error-rve" class="level2">
+<h2 class="anchored" data-anchor-id="signed-relative-volume-error-rve">Signed Relative Volume Error (RVE)</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L339" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="calculate_signed_rve" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_signed_rve">calculate_signed_rve</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_signed_rve(</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    pred:Tensor, targ:Tensor</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate signed Relative Volume Error.</em></p>
+<p>RVE = (pred_volume - targ_volume) / targ_volume</p>
+<p>Positive values indicate over-segmentation (model predicts too large), negative values indicate under-segmentation (model predicts too small).</p>
+<p>Args: pred: Binary prediction tensor [B, C, W, H, D]. targ: Binary target tensor [B, C, W, H, D].</p>
+<p>Returns: Signed RVE for each sample in batch.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L369" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binary_signed_rve" class="level3">
+<h3 class="anchored" data-anchor-id="binary_signed_rve">binary_signed_rve</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> binary_signed_rve(</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean signed RVE for binary segmentation.</em></p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D].</p>
+<p>Returns: Mean signed RVE.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L384" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="multi_signed_rve" class="level3">
+<h3 class="anchored" data-anchor-id="multi_signed_rve">multi_signed_rve</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> multi_signed_rve(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    act:Tensor, targ:Tensor</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Tensor:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Calculate mean signed RVE for each class in multi-class segmentation.</em></p>
+<p>Args: act: Activation tensor [B, C, W, H, D]. targ: Target masks [B, C, W, H, D].</p>
+<p>Returns: Mean signed RVE for each class.</p>
+</section>
+</section>
+<section id="surface-distance-benchmark-metrics-monai-grid-based-mm" class="level2">
+<h2 class="anchored" data-anchor-id="surface-distance-benchmark-metrics-monai-grid-based-mm">Surface Distance Benchmark Metrics (MONAI grid-based, mm)</h2>
+<p>Canonical, spacing-aware boundary metrics for final benchmark reporting (NOT the training loop): symmetric ASSD, HD95, and Normalized Surface Dice (NSD) at one or more tolerances, all in millimetres, computed with MONAI’s grid-based surface metrics (<code>monai.metrics</code>). Unlike <a href="https://fastmonai.no/vision_metrics.html#calculate_hd95"><code>calculate_hd95</code></a> (MONAI, voxel units by default), these report a single reference implementation with explicit voxel spacing and tolerance, for reproducible benchmarking aligned with <code>arxiv:2410.02630</code>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L440" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="calculate_surface_metrics" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_surface_metrics">calculate_surface_metrics</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_surface_metrics(</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    pred, targ, spacing_mm, nsd_tolerances_mm:<span class="bu">tuple</span><span class="op">=</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">2.0</span>), hd_percentile:<span class="bu">int</span><span class="op">=</span><span class="dv">95</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">dict</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Canonical spacing-aware surface metrics for one 3D case (benchmark reporting only).</em></p>
+<p>Computes symmetric ASSD, HD95 and Normalized Surface Dice (NSD) at the given tolerance(s), all in millimetres, using MONAI’s grid-based surface metrics (<code>monai.metrics</code>). Intended for final benchmark evaluation, NOT inside the training loop (CPU, per-case).</p>
+<p>Args: pred: Predicted mask (binary / argmax label). torch.Tensor or np.ndarray, shaped [W,H,D], [C,W,H,D] or [B,C,W,H,D] with singleton batch/channel. targ: Ground-truth mask (same shape options as pred). spacing_mm: Sequence of 3 positive floats, voxel size in mm, in the SAME axis order as the (squeezed) mask array. Derive per case from the image affine/header - do NOT hard-code; a permuted spacing silently corrupts every distance. nsd_tolerances_mm: NSD tolerance(s) in mm; each yields an <code>nsd_tau{t}_mm</code> key (the tolerance is float-formatted, so 1 and 1.0 both give <code>nsd_tau1.0_mm</code>). hd_percentile: Percentile for the robust Hausdorff distance (default 95 -&gt; HD95).</p>
+<p>Returns: dict with <code>assd_mm</code>, <code>hd{p}_mm</code> (<code>hd95_mm</code> by default), one <code>nsd_tau{t}_mm</code> per tolerance, and provenance <code>surface_distance_source</code>, <code>tau_mm</code>, <code>spacing_mm</code>, <code>status</code> (“ok” | “both_empty” | “one_empty”). Empty cases are scored by a guard (both empty -&gt; 0/0/NSD 1.0; exactly one empty -&gt; inf/inf/NSD 0.0) and never enter the backend, keeping inf/nan out of it.</p>
+</section>
+</section>
+<section id="full-metric-panel-per-case-and-batch" class="level2">
+<h2 class="anchored" data-anchor-id="full-metric-panel-per-case-and-batch">Full metric panel (per-case and batch)</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L513" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="calculate_all_metrics" class="level3">
+<h3 class="anchored" data-anchor-id="calculate_all_metrics">calculate_all_metrics</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> calculate_all_metrics(</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    pred, targ, spacing_mm, nsd_tolerances_mm:<span class="bu">tuple</span><span class="op">=</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">2.0</span>), binary:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">dict</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Full per-case metric panel for one segmentation vs its ground truth.</em></p>
+<p>Orchestrates the individual <code>calculate_*</code> functions into one dict: Dice, sensitivity, precision, lesion detection rate, signed RVE, and the spacing-aware surface metrics (ASSD / HD95 / NSD in mm). For a whole dataset, use <code>[</code>evaluate_segmentations<code>](https://fastmonai.no/vision_metrics.html#evaluate_segmentations)</code>.</p>
+<p>Args: pred: predicted mask (binary / argmax label). torch.Tensor or np.ndarray, shaped [W,H,D], [C,W,H,D] or [B,C,W,H,D] with singleton batch/channel dims. targ: ground-truth mask, same shape convention, on the SAME voxel grid as <code>pred</code>. spacing_mm: voxel spacing in mm in array-axis (i,j,k) order matching <code>targ</code>. Pass it explicitly (read from the GT file); a permuted spacing silently corrupts the surface distances. nsd_tolerances_mm: NSD tolerance(s) in mm, forwarded to <code>[</code>calculate_surface_metrics<code>](https://fastmonai.no/vision_metrics.html#calculate_surface_metrics)</code>. binary: single-foreground-class segmentation (the only mode supported). The confusion metrics run on the single label channel – MONAI keeps a size-1 channel when <code>include_background=False</code>, so a single-channel input is scored correctly.</p>
+<p>Returns: dict: <code>dsc</code>, <code>sensitivity</code>, <code>precision</code>, <code>ldr</code>, <code>rve</code>, the <code>nsd_tau*_mm</code> values, <code>assd_mm</code>, <code>hd95_mm</code>, <code>surface_status</code> and <code>spacing_mm</code>.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L564" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="evaluate_segmentations" class="level3">
+<h3 class="anchored" data-anchor-id="evaluate_segmentations">evaluate_segmentations</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> evaluate_segmentations(</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    preds, gt_paths, case_ids:NoneType<span class="op">=</span><span class="va">None</span>, nsd_tolerances_mm:<span class="bu">tuple</span><span class="op">=</span>(<span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="fl">2.0</span>), binary:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Score a batch of predictions against ground-truth masks into a per-case DataFrame.</em></p>
+<p>For each (prediction, ground-truth) pair, the GT mask AND its voxel spacing are read from a SINGLE object, so the array and its spacing can never disagree – reading spacing from a separately-loaded file is a silent source of axis-permutation errors that corrupt the surface metrics. Predictions may be tensors (as returned by <code>[</code>patch_inference<code>](https://fastmonai.no/vision_patch.html#patch_inference)</code>) or paths to saved masks, so predictions written with <code>patch_inference(save_dir=...)</code> can be re-scored without re-running inference.</p>
+<p>Args: preds: sequence of predicted masks – torch.Tensor / np.ndarray, or paths to mask files. gt_paths: sequence of ground-truth mask file paths (one per prediction, same voxel grid). case_ids: optional row labels; default is each GT file’s name stem. nsd_tolerances_mm: NSD tolerance(s) in mm, forwarded to the surface metrics. binary: binary (single foreground class) segmentation only.</p>
+<p>Returns: pandas.DataFrame with one row per case: <code>case_id</code> plus the columns from <code>[</code>calculate_all_metrics<code>](https://fastmonai.no/vision_metrics.html#calculate_all_metrics)</code>.</p>
+</section>
+</section>
+<section id="accumulated-dice-metrics-nnu-net-style" class="level2">
+<h2 class="anchored" data-anchor-id="accumulated-dice-metrics-nnu-net-style">Accumulated Dice Metrics (nnU-Net Style)</h2>
+<p>These metrics accumulate true positives, false positives, and false negatives across all validation batches before computing Dice. This is more statistically robust than averaging per-batch Dice scores, especially for patch-based training where patches have variable foreground ratios.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L604" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="accumulateddice" class="level3">
+<h3 class="anchored" data-anchor-id="accumulateddice">AccumulatedDice</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> AccumulatedDice(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    n_classes:<span class="bu">int</span><span class="op">=</span><span class="dv">2</span>, include_background:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>nnU-Net-style accumulated Dice metric for reliable pseudo dice during training.</em></p>
+<p>Instead of averaging per-batch Dice scores, this metric accumulates true positives, false positives, and false negatives across ALL validation batches, then computes Dice from the totals. This gives more weight to batches with more foreground voxels and is more statistically robust.</p>
+<p>Args: n_classes: Number of classes including background (default: 2 for binary). include_background: Whether to include background in metric (default: False).</p>
+<p>Example: ```python learn = Learner(dls, model, loss_func=loss_func, metrics=[AccumulatedDice(n_classes=2)])</p>
+<pre><code># For checkpoint selection based on accumulated dice:
+save_best = SaveModelCallback(
+    monitor='accumulated_dice',
+    comp=np.greater,  # Higher dice is better
+    fname='best_model'
+)
+```</code></pre>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L672" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="accumulatedmultidice" class="level3">
+<h3 class="anchored" data-anchor-id="accumulatedmultidice">AccumulatedMultiDice</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> AccumulatedMultiDice(</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    n_classes:<span class="bu">int</span><span class="op">=</span><span class="dv">2</span>, include_background:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Multi-class version of AccumulatedDice that returns per-class Dice scores.</em></p>
+<p>Instead of returning a single mean Dice, this returns a tensor with the Dice score for each foreground class. Useful for monitoring per-class performance during training.</p>
+<p>Example: <code>python     # For 3-class segmentation (background + 2 foreground classes)     learn = Learner(dls, model, loss_func=loss_func,                    metrics=[AccumulatedMultiDice(n_classes=3)])</code></p>
+</section>
+</section>
+<section id="ema-model-checkpoint" class="level2">
+<h2 class="anchored" data-anchor-id="ema-model-checkpoint">EMA Model Checkpoint</h2>
+<p>Exponential Moving Average (EMA) based model selection, inspired by nnU-Net’s approach of using smoothed Dice scores rather than noisy per-epoch values for checkpoint selection.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_metrics.py#L697" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="emacheckpoint" class="level3">
+<h3 class="anchored" data-anchor-id="emacheckpoint">EMACheckpoint</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> EMACheckpoint(</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>    monitor:<span class="bu">str</span><span class="op">=</span><span class="st">'accumulated_dice'</span>, momentum:<span class="bu">float</span><span class="op">=</span><span class="fl">0.9</span>, comp:ufunc<span class="op">=</span>greater, fname:<span class="bu">str</span><span class="op">=</span><span class="st">'best_model'</span>,</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>    with_opt:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Save model checkpoint based on EMA of a monitored metric (nnU-Net style).</em></p>
+<p>Instead of saving the best model based on a single (noisy) epoch metric, this tracks the exponential moving average and saves when the EMA improves. More robust for patch-based training where per-epoch metrics fluctuate.</p>
+<p>Formula: ema = momentum * previous_ema + (1 - momentum) * current_value</p>
+<p>Unlike SaveModelCallback, this does NOT auto-load the best model after training. Load explicitly with <code>learn.load(fname)</code>.</p>
+<p>Args: monitor: Metric name to track (default: ‘accumulated_dice’). momentum: EMA momentum (default: 0.9, matching nnU-Net). Higher momentum = more smoothing. Range: (0, 1). nnU-Net uses 0.9 (keeps 90% of history, adds 10% of current epoch). comp: Comparison function (default: np.greater for higher-is-better). fname: Model save filename (default: ‘best_model’). with_opt: Whether to save optimizer state (default: False).</p>
+<p>Example: ```python save_best = EMACheckpoint( monitor=‘accumulated_dice’, momentum=0.9, fname=‘best_model’ ) learn.fit_one_cycle(30, lr, cbs=[save_best])</p>
+<pre><code># Load best model after training:
+learn.load('best_model')
+
+# Access EMA history for plotting:
+save_best.ema_history
+```</code></pre>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/fastmonai\.no\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

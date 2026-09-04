@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="description" content="Patch-based training and inference for 3D medical image segmentation using TorchIO’s Queue mechanism.">
+
+<title>Patch-based training – fastMONAI</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Patch-based training – fastMONAI">
+<meta property="og:description" content="Patch-based training and inference for 3D medical image segmentation using TorchIO’s Queue mechanism.">
+<meta property="og:site_name" content="fastMONAI">
+<meta name="twitter:title" content="Patch-based training – fastMONAI">
+<meta name="twitter:description" content="Patch-based training and inference for 3D medical image segmentation using TorchIO’s Queue mechanism.">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">fastMONAI</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./vision_patch.html">Patch-based training</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overview</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision plot</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_augment.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Data augmentation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_loss_functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom loss functions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_metrics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision metrics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision inference</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dataset_info.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset information</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./external_data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">External data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_patch.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Patch-based training</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tutorials</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_beginner_video.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started video</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_classification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_binary_segmentation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary semantic segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_multiclass_segmentation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-class semantic segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference with a safe model artifact</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_training.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Binary Segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_cross_validation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Cross-Validation and Final Model Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Inference: Deploying on New Scans</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#normalize_patch_transforms" id="toc-normalize_patch_transforms" class="nav-link active" data-scroll-target="#normalize_patch_transforms">normalize_patch_transforms</a></li>
+  <li><a href="#configuration" id="toc-configuration" class="nav-link" data-scroll-target="#configuration">Configuration</a>
+  <ul class="collapse">
+  <li><a href="#patchconfig" id="toc-patchconfig" class="nav-link" data-scroll-target="#patchconfig">PatchConfig</a></li>
+  </ul></li>
+  <li><a href="#subject-conversion" id="toc-subject-conversion" class="nav-link" data-scroll-target="#subject-conversion">Subject conversion</a>
+  <ul class="collapse">
+  <li><a href="#med_to_subject" id="toc-med_to_subject" class="nav-link" data-scroll-target="#med_to_subject">med_to_subject</a></li>
+  <li><a href="#create_subjects_dataset" id="toc-create_subjects_dataset" class="nav-link" data-scroll-target="#create_subjects_dataset">create_subjects_dataset</a></li>
+  </ul></li>
+  <li><a href="#sampler-creation" id="toc-sampler-creation" class="nav-link" data-scroll-target="#sampler-creation">Sampler creation</a>
+  <ul class="collapse">
+  <li><a href="#create_patch_sampler" id="toc-create_patch_sampler" class="nav-link" data-scroll-target="#create_patch_sampler">create_patch_sampler</a></li>
+  </ul></li>
+  <li><a href="#patch-dataloaders" id="toc-patch-dataloaders" class="nav-link" data-scroll-target="#patch-dataloaders">Patch DataLoaders</a>
+  <ul class="collapse">
+  <li><a href="#medpatchdataloader" id="toc-medpatchdataloader" class="nav-link" data-scroll-target="#medpatchdataloader">MedPatchDataLoader</a></li>
+  <li><a href="#medpatchdataloaders" id="toc-medpatchdataloaders" class="nav-link" data-scroll-target="#medpatchdataloaders">MedPatchDataLoaders</a></li>
+  </ul></li>
+  <li><a href="#patch-based-inference" id="toc-patch-based-inference" class="nav-link" data-scroll-target="#patch-based-inference">Patch-based Inference</a>
+  <ul class="collapse">
+  <li><a href="#patchinferenceengine" id="toc-patchinferenceengine" class="nav-link" data-scroll-target="#patchinferenceengine">PatchInferenceEngine</a></li>
+  <li><a href="#patch_inference" id="toc-patch_inference" class="nav-link" data-scroll-target="#patch_inference">patch_inference</a></li>
+  <li><a href="#prediction_filename" id="toc-prediction_filename" class="nav-link" data-scroll-target="#prediction_filename">prediction_filename</a></li>
+  </ul></li>
+  <li><a href="#export" id="toc-export" class="nav-link" data-scroll-target="#export">Export</a></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Patch-based training</h1>
+</div>
+
+<div>
+  <div class="description">
+    Patch-based training and inference for 3D medical image segmentation using TorchIO’s Queue mechanism.
+  </div>
+</div>
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L53" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="normalize_patch_transforms" class="level3">
+<h3 class="anchored" data-anchor-id="normalize_patch_transforms">normalize_patch_transforms</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> normalize_patch_transforms(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    tfms:<span class="bu">list</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">list</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Extract raw TorchIO transforms from a list of fastMONAI wrappers (raw TorchIO transforms pass through).</em></p>
+<p>Lets the same transform syntax work in both standard and patch-based workflows.</p>
+<p>Args: tfms: List of fastMONAI wrappers or raw TorchIO transforms.</p>
+<p>Returns: List of raw TorchIO transforms suitable for tio.Compose().</p>
+<p>Example: &gt;&gt;&gt; patch_tfms = normalize_patch_transforms([RandomAffine(degrees=10), RandomGamma(p=0.5)])</p>
+<div id="qsw5iqkzqlh" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Test _extract_tio_transform and normalize_patch_transforms</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastMONAI.vision_augmentation <span class="im">import</span> RandomAffine, RandomGamma, RandomFlip, RandomNoise</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>wrapped_affine <span class="op">=</span> RandomAffine(degrees<span class="op">=</span><span class="dv">10</span>)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>extracted <span class="op">=</span> _extract_tio_transform(wrapped_affine)</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(extracted), tio.RandomAffine)</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>wrapped_gamma <span class="op">=</span> RandomGamma(p<span class="op">=</span><span class="fl">0.5</span>)</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>extracted <span class="op">=</span> _extract_tio_transform(wrapped_gamma)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(extracted), tio.RandomGamma)</span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>raw_affine <span class="op">=</span> tio.RandomAffine(degrees<span class="op">=</span><span class="dv">10</span>)</span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>extracted <span class="op">=</span> _extract_tio_transform(raw_affine)</span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>test_eq(extracted, raw_affine)  <span class="co"># Should be the exact same object</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>raw_flip <span class="op">=</span> tio.RandomFlip(p<span class="op">=</span><span class="fl">0.5</span>)</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>extracted <span class="op">=</span> _extract_tio_transform(raw_flip)</span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>test_eq(extracted, raw_flip)</span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> [RandomAffine(degrees<span class="op">=</span><span class="dv">5</span>), RandomGamma(p<span class="op">=</span><span class="fl">0.5</span>), RandomNoise(p<span class="op">=</span><span class="fl">0.3</span>)]</span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>normalized <span class="op">=</span> normalize_patch_transforms(tfms)</span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(normalized), <span class="dv">3</span>)</span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(normalized[<span class="dv">0</span>]), tio.RandomAffine)</span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(normalized[<span class="dv">1</span>]), tio.RandomGamma)</span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(normalized[<span class="dv">2</span>]), tio.RandomNoise)</span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a><span class="co"># Mixed list (wrappers + raw TorchIO)</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a>mixed_tfms <span class="op">=</span> [RandomAffine(degrees<span class="op">=</span><span class="dv">5</span>), tio.RandomGamma(p<span class="op">=</span><span class="fl">0.5</span>)]</span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>normalized <span class="op">=</span> normalize_patch_transforms(mixed_tfms)</span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(normalized), <span class="dv">2</span>)</span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(normalized[<span class="dv">0</span>]), tio.RandomAffine)</span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(normalized[<span class="dv">1</span>]), tio.RandomGamma)</span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>test_eq(normalize_patch_transforms(<span class="va">None</span>), <span class="va">None</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="configuration" class="level2">
+<h2 class="anchored" data-anchor-id="configuration">Configuration</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L233" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="patchconfig" class="level3">
+<h3 class="anchored" data-anchor-id="patchconfig">PatchConfig</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> PatchConfig(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    patch_size:<span class="bu">list</span><span class="op">=&lt;</span>factory<span class="op">&gt;</span>, patch_overlap:<span class="bu">int</span> <span class="op">|</span> <span class="bu">float</span> <span class="op">|</span> <span class="bu">list</span><span class="op">=</span><span class="dv">0</span>, samples_per_volume:<span class="bu">int</span><span class="op">=</span><span class="dv">8</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    sampler_type:<span class="bu">str</span><span class="op">=</span><span class="st">'uniform'</span>, label_probabilities:<span class="bu">dict</span><span class="op">=</span><span class="va">None</span>, queue_length:<span class="bu">int</span><span class="op">=</span><span class="dv">300</span>, queue_num_workers:<span class="bu">int</span><span class="op">=</span><span class="dv">4</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    aggregation_mode:<span class="bu">str</span><span class="op">=</span><span class="st">'hann'</span>, apply_reorder:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, target_spacing:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>, preprocessed:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    padding_mode:<span class="bu">int</span> <span class="op">|</span> <span class="bu">float</span> <span class="op">|</span> <span class="bu">str</span><span class="op">=</span><span class="dv">0</span>, keep_largest_component:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, binary_threshold:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span>,</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    normalization:<span class="bu">list</span><span class="op">=</span><span class="va">None</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="va">None</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Configuration for patch-based training and inference.</em></p>
+<p>Args: patch_size: Size of patches [x, y, z]. patch_overlap: Overlap for inference GridSampler (int, float 0-1, or list). - Float 0-1: fraction of patch_size (e.g., 0.5 = 50% overlap) - Int &gt;= 1: pixel overlap (e.g., 48 = 48 pixel overlap) - List: per-dimension overlap in pixels samples_per_volume: Number of patches to extract per volume during training. sampler_type: Type of sampler (‘uniform’, ‘label’, ‘weighted’). label_probabilities: For LabelSampler, dict mapping label values to probabilities. queue_length: Maximum number of patches to store in queue. queue_num_workers: Number of workers for parallel patch extraction. aggregation_mode: For inference, how to combine overlapping patches (‘crop’, ‘average’, ‘hann’). apply_reorder: Whether to reorder to RAS+ canonical orientation. Must match between training and inference. Defaults to True (the common case). target_spacing: Target voxel spacing [x, y, z] for resampling. Must match between training and inference. preprocessed: If True, data has been preprocessed externally (e.g., via preprocess_dataset()). Training will skip reorder, resample, AND pre_patch_tfms (e.g., normalization) since they were already applied. Inference is unaffected and always applies pre_inference_tfms to raw images. Defaults to False. padding_mode: Padding mode for intensity images on axes smaller than patch_size, during both training and inference. Masks are always padded with background 0. Padding is removed from inference outputs before native-space restoration. Can be int, float, or string (e.g., ‘minimum’, ‘mean’). Defaults to 0. keep_largest_component: If True, keep only the largest connected component in binary segmentation predictions. Only applies during inference when return_probabilities=False. Defaults to False. Binary-only: for multi-class output (more than 2 classes) it is skipped with a warning, since it would otherwise merge all classes into one blob and collapse the labels. binary_threshold: Decision boundary for single-channel (sigmoid) masks; a voxel is foreground when probability &gt;= binary_threshold (matches MONAI AsDiscrete). Only applies when return_probabilities=False and n_classes == 1. Defaults to 0.5. normalization: Single source of truth for pre-patch / pre-inference intensity normalization. A list of fastMONAI transforms (e.g. [ZNormalization(masking_method=‘foreground’)]) or JSON spec dicts; coerced to specs and persisted with the config. Read by both MedPatchDataLoaders.from_df (training) and PatchInferenceEngine (inference). The manual pre_patch_tfms / pre_inference_tfms args override this when provided.</p>
+<p>Example: &gt;&gt;&gt; config = PatchConfig( … patch_size=[96, 96, 96], … samples_per_volume=16, … sampler_type=‘label’, … label_probabilities={0: 0.1, 1: 0.9}, … target_spacing=[0.5, 0.5, 0.5] … )</p>
+<div id="cell-6" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>], samples_per_volume<span class="op">=</span><span class="dv">16</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>test_eq(config.patch_size, [<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>])</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>test_eq(config.samples_per_volume, <span class="dv">16</span>)</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>test_eq(config.sampler_type, <span class="st">'uniform'</span>)</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>test_eq(config.apply_reorder, <span class="va">True</span>)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>test_eq(config.target_spacing, <span class="va">None</span>)</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>test_eq(config.preprocessed, <span class="va">False</span>)</span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>test_eq(config.padding_mode, <span class="dv">0</span>)</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>config2 <span class="op">=</span> PatchConfig(</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    patch_size<span class="op">=</span>[<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>],</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    apply_reorder<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>    target_spacing<span class="op">=</span>[<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>],</span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>    padding_mode<span class="op">=</span><span class="dv">0</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>test_eq(config2.apply_reorder, <span class="va">True</span>)</span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>test_eq(config2.target_spacing, [<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>])</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessed=True with preprocessing params: no warning</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>config3 <span class="op">=</span> PatchConfig(</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>    patch_size<span class="op">=</span>[<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>],</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    apply_reorder<span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>    target_spacing<span class="op">=</span>[<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>],</span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>    preprocessed<span class="op">=</span><span class="va">True</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>test_eq(config3.preprocessed, <span class="va">True</span>)</span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>test_eq(config3.apply_reorder, <span class="va">True</span>)</span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>test_eq(config3.target_spacing, [<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>])</span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a><span class="co"># preprocessed=True without preprocessing params does NOT warn</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a><span class="co"># (preprocessed=True still has effect: skips pre_patch_tfms during training)</span></span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> warnings.catch_warnings(record<span class="op">=</span><span class="va">True</span>) <span class="im">as</span> w:</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    warnings.simplefilter(<span class="st">"always"</span>)</span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>    config4 <span class="op">=</span> PatchConfig(</span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>        patch_size<span class="op">=</span>[<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>],</span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>        apply_reorder<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>        target_spacing<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>        preprocessed<span class="op">=</span><span class="va">True</span></span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>    preprocessed_warns <span class="op">=</span> [x <span class="cf">for</span> x <span class="kw">in</span> w <span class="cf">if</span> <span class="st">'preprocessed'</span> <span class="kw">in</span> <span class="bu">str</span>(x.message).lower()]</span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(preprocessed_warns), <span class="dv">0</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+<section id="subject-conversion" class="level2">
+<h2 class="anchored" data-anchor-id="subject-conversion">Subject conversion</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L408" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="med_to_subject" class="level3">
+<h3 class="anchored" data-anchor-id="med_to_subject">med_to_subject</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> med_to_subject(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    img:pathlib.Path <span class="op">|</span> <span class="bu">str</span>, mask:pathlib.Path <span class="op">|</span> <span class="bu">str</span><span class="op">=</span><span class="va">None</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>Subject:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Create a TorchIO Subject with LAZY loading (stores paths only, no tensors).</em></p>
+<p>Storing only paths lets TorchIO’s Queue workers load volumes on-demand during training, keeping RAM usage low.</p>
+<p>Args: img: Path to image file. mask: Path to mask file (optional).</p>
+<p>Returns: TorchIO Subject with ‘image’ and optionally ‘mask’ keys (lazy loaded).</p>
+<p>Example: &gt;&gt;&gt; subject = med_to_subject(‘image.nii.gz’, ‘mask.nii.gz’) &gt;&gt;&gt; data = subject[‘image’].data # volume loaded only now</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L438" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="create_subjects_dataset" class="level3">
+<h3 class="anchored" data-anchor-id="create_subjects_dataset">create_subjects_dataset</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> create_subjects_dataset(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    df:DataFrame, img_col:<span class="bu">str</span>, mask_col:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, pre_tfms:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>, ensure_affine_consistency:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>SubjectsDataset:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Build a TorchIO SubjectsDataset with LAZY loading from a DataFrame.</em></p>
+<p>Stores only file paths (not tensors); volumes are loaded on-demand by Queue workers, keeping memory usage constant regardless of dataset size.</p>
+<p>Args: df: DataFrame with image (and optionally mask) paths. img_col: Column name containing image paths. mask_col: Column name containing mask paths (optional). pre_tfms: List of TorchIO transforms to apply before patch extraction. Use tio.ToCanonical() for reordering and tio.Resample() for resampling. ensure_affine_consistency: If True and mask_col is provided, automatically prepends tio.CopyAffine(target=‘image’) to ensure spatial metadata consistency between image and mask. This prevents “More than one value for direction found” errors. Defaults to True.</p>
+<p>Returns: TorchIO SubjectsDataset with lazy-loaded subjects.</p>
+<p>Example: &gt;&gt;&gt; pre_tfms = [tio.ToCanonical(), tio.Resample([0.5, 0.5, 0.5]), tio.ZNormalization()] &gt;&gt;&gt; dataset = create_subjects_dataset(df, img_col=‘image’, mask_col=‘label’, pre_tfms=pre_tfms)</p>
+</section>
+</section>
+<section id="sampler-creation" class="level2">
+<h2 class="anchored" data-anchor-id="sampler-creation">Sampler creation</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L489" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="create_patch_sampler" class="level3">
+<h3 class="anchored" data-anchor-id="create_patch_sampler">create_patch_sampler</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> create_patch_sampler(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    config:PatchConfig</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span>PatchSampler:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Create appropriate TorchIO sampler based on config.</em></p>
+<p>Args: config: PatchConfig with sampler settings.</p>
+<p>Returns: TorchIO PatchSampler instance.</p>
+<p>Example: &gt;&gt;&gt; config = PatchConfig(patch_size=[96, 96, 96], sampler_type=‘label’) &gt;&gt;&gt; sampler = create_patch_sampler(config)</p>
+<div id="cell-12" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>config <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>], sampler_type<span class="op">=</span><span class="st">'uniform'</span>)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>sampler <span class="op">=</span> create_patch_sampler(config)</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(sampler), tio.UniformSampler)</span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="co"># WeightedSampler raises NotImplementedError</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastcore.test <span class="im">import</span> test_fail</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>config_weighted <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>], sampler_type<span class="op">=</span><span class="st">'weighted'</span>)</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: create_patch_sampler(config_weighted), contains<span class="op">=</span><span class="st">'WeightedSampler'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="4bx398g1hs2" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>device <span class="op">=</span> _get_default_device()</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(device), torch.device)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># _warn_config_override: no warning when values match or one is None</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> warnings</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> warnings.catch_warnings(record<span class="op">=</span><span class="va">True</span>) <span class="im">as</span> w:</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>    warnings.simplefilter(<span class="st">"always"</span>)</span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    _warn_config_override(<span class="st">'test_param'</span>, <span class="va">True</span>, <span class="va">True</span>)  <span class="co"># Same values - no warning</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    _warn_config_override(<span class="st">'test_param'</span>, <span class="va">True</span>, <span class="va">None</span>)  <span class="co"># Explicit is None - no warning</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    _warn_config_override(<span class="st">'test_param'</span>, <span class="va">None</span>, <span class="va">True</span>)  <span class="co"># Config is None - no warning</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(w), <span class="dv">0</span>)</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="co"># _warn_config_override warns when values differ</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> warnings.catch_warnings(record<span class="op">=</span><span class="va">True</span>) <span class="im">as</span> w:</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>    warnings.simplefilter(<span class="st">"always"</span>)</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>    _warn_config_override(<span class="st">'test_param'</span>, <span class="va">True</span>, <span class="va">False</span>)  <span class="co"># Different values - warning</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(w), <span class="dv">1</span>)</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">'mismatch'</span> <span class="kw">in</span> <span class="bu">str</span>(w[<span class="dv">0</span>].message)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+<section id="patch-dataloaders" class="level2">
+<h2 class="anchored" data-anchor-id="patch-dataloaders">Patch DataLoaders</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L524" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="medpatchdataloader" class="level3">
+<h3 class="anchored" data-anchor-id="medpatchdataloader">MedPatchDataLoader</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> MedPatchDataLoader(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    subjects_dataset:SubjectsDataset, config:PatchConfig, batch_size:<span class="bu">int</span><span class="op">=</span><span class="dv">4</span>, patch_tfms:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    gpu_augmentation:NoneType<span class="op">=</span><span class="va">None</span>, shuffle:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, drop_last:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>DataLoader wrapper for patch-based training with TorchIO Queue.</em></p>
+<p>This class wraps a TorchIO Queue to provide a fastai-compatible DataLoader interface for patch-based training.</p>
+<p>Args: subjects_dataset: TorchIO SubjectsDataset. config: PatchConfig with queue and sampler settings. batch_size: Number of patches per batch. Must be positive. patch_tfms: Transforms to apply to extracted patches (training only). Accepts both fastMONAI wrappers (e.g., RandomAffine, RandomGamma) and raw TorchIO transforms. fastMONAI wrappers are automatically normalized to raw TorchIO for internal use. Mutually exclusive with gpu_augmentation. gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation. Operates on [B,C,D,H,W] tensors already on GPU, avoiding per-sample CPU overhead. Mutually exclusive with patch_tfms. Training only. shuffle: Whether to shuffle subjects and patches. drop_last: Whether to drop last incomplete batch.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L748" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="medpatchdataloaders" class="level3">
+<h3 class="anchored" data-anchor-id="medpatchdataloaders">MedPatchDataLoaders</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> MedPatchDataLoaders(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    train_dl:MedPatchDataLoader, valid_dl:MedPatchDataLoader, device:device<span class="op">=</span><span class="va">None</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>fastai-compatible DataLoaders for patch-based training with LAZY loading.</em></p>
+<p>This class provides train and validation DataLoaders that work with fastai’s Learner for patch-based training on 3D medical images.</p>
+<p>Memory-efficient: Volumes are loaded on-demand by Queue workers, keeping memory usage constant (~150 MB) regardless of dataset size.</p>
+<p>Note: Validation uses the same sampling as training (pseudo Dice). For true validation metrics, use PatchInferenceEngine with GridSampler for full-volume sliding window inference.</p>
+<p>Example: &gt;&gt;&gt; config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.5, 0.5, 0.5]) &gt;&gt;&gt; dls = MedPatchDataLoaders.from_df( … df, img_col=‘image’, mask_col=‘label’, valid_pct=0.2, … patch_config=config, pre_patch_tfms=[tio.ZNormalization()], bs=4 … ) &gt;&gt;&gt; learn = Learner(dls, model, loss_func=DiceLoss())</p>
+<div id="nltdqti8c0t" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastMONAI.vision_augmentation <span class="im">import</span> GpuPatchAugmentation</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Both gpu_augmentation and patch_tfms -&gt; ValueError</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>test_fail(</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="kw">lambda</span>: MedPatchDataLoaders.from_df(</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>        pd.DataFrame({<span class="st">'img'</span>: [<span class="st">'fake.nii'</span>], <span class="st">'mask'</span>: [<span class="st">'fake.nii'</span>]}),</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>        img_col<span class="op">=</span><span class="st">'img'</span>, mask_col<span class="op">=</span><span class="st">'mask'</span>,</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>        patch_tfms<span class="op">=</span>[tio.RandomFlip()],</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>        gpu_augmentation<span class="op">=</span>GpuPatchAugmentation(flip<span class="op">=</span>{<span class="st">'axes'</span>: (<span class="dv">0</span>,), <span class="st">'p'</span>: <span class="fl">0.5</span>}),</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    contains<span class="op">=</span><span class="st">'Cannot use both'</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Verify gpu_augmentation is stored on train_dl but not valid_dl</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a><span class="co"># (We can't fully instantiate from_df without real files, so test MedPatchDataLoader directly)</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>test_eq(MedPatchDataLoader.<span class="fu">__init__</span>.__code__.co_varnames[:<span class="dv">8</span>],</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>        (<span class="st">'self'</span>, <span class="st">'subjects_dataset'</span>, <span class="st">'config'</span>, <span class="st">'batch_size'</span>,</span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>         <span class="st">'patch_tfms'</span>, <span class="st">'gpu_augmentation'</span>, <span class="st">'shuffle'</span>, <span class="st">'drop_last'</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+</section>
+<section id="patch-based-inference" class="level2">
+<h2 class="anchored" data-anchor-id="patch-based-inference">Patch-based Inference</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L1223" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="patchinferenceengine" class="level3">
+<h3 class="anchored" data-anchor-id="patchinferenceengine">PatchInferenceEngine</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> PatchInferenceEngine(</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    learner, config:PatchConfig, apply_reorder:<span class="bu">bool</span><span class="op">=</span><span class="va">None</span>, target_spacing:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>    sw_batch_size:<span class="bu">int</span><span class="op">=</span><span class="dv">1</span>, <span class="co"># Memory-safe for large 3D patches; tune upward after benchmarking.</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>    pre_inference_tfms:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>, amp:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Patch-based inference with automatic volume reconstruction.</em></p>
+<p>Uses TorchIO’s GridSampler to extract overlapping patches and GridAggregator to reconstruct the full volume from predictions.</p>
+<p>Args: learner: fastai Learner or PyTorch model (nn.Module), or a list of them for soft-vote ensembling (per-patch probabilities are averaged before argmax/ threshold). When passing a raw PyTorch model, load weights first with model.load_state_dict(). A torch.compile’d model is unwrapped for inference; the caller’s wrapper object is left in place. config: PatchConfig with inference settings. Preprocessing params (apply_reorder, target_spacing, padding_mode) can be set here for DRY usage. apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value. target_spacing: Target voxel spacing. If None, uses config value. sw_batch_size: Number of patches to predict at once. Defaults to 1 as the memory-safe choice for large 3D patches; benchmark higher values for the target accelerator. Must be positive. pre_inference_tfms: Optional override for config.normalization. If None, normalization is read from config.normalization (the default source of truth, set at training time). Provide this only to override the config (e.g.&nbsp;for non-serializable transforms). Accepts both fastMONAI wrappers and raw TorchIO transforms. amp: If True, use automatic mixed precision (bfloat16) for the forward pass. Only supported on CUDA devices; ignored with a warning on CPU/MPS. Defaults to False.</p>
+<p>Example: &gt;&gt;&gt; # normalization is read from config.normalization; amp=True for faster GPU &gt;&gt;&gt; config = PatchConfig(patch_size=[96, 96, 96], normalization=[ZNormalization(masking_method=‘foreground’)]) &gt;&gt;&gt; engine = PatchInferenceEngine(learn, config) &gt;&gt;&gt; pred = engine.predict(‘image.nii.gz’)</p>
+<div id="arkvibla6s7" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co"># PatchInferenceEngine must store a raw model as-is, not its internal .model</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.nets <span class="im">import</span> UNet</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.layers <span class="im">import</span> Norm</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>test_model <span class="op">=</span> UNet(</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    spatial_dims<span class="op">=</span><span class="dv">3</span>, in_channels<span class="op">=</span><span class="dv">1</span>, out_channels<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    channels<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">32</span>), strides<span class="op">=</span>(<span class="dv">2</span>,), num_res_units<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>    norm<span class="op">=</span>Norm.INSTANCE</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>test_config <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>])</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="co"># MONAI UNet has a .model attribute (the bug scenario)</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">hasattr</span>(test_model, <span class="st">'model'</span>), <span class="va">True</span>)</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(test_model.model).<span class="va">__name__</span>, <span class="st">'Sequential'</span>)  <span class="co"># It's an internal Sequential</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Raw model -&gt; engine.model is the UNet, NOT unet.model</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>engine <span class="op">=</span> PatchInferenceEngine(test_model, test_config)</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(engine.model), UNet)  <span class="co"># Should be UNet, not Sequential</span></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"PatchInferenceEngine raw model detection test passed!"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>PatchInferenceEngine raw model detection test passed!</code></pre>
+</div>
+</div>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L1578" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="patch_inference" class="level3">
+<h3 class="anchored" data-anchor-id="patch_inference">patch_inference</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> patch_inference(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    learner, config:PatchConfig, file_paths:<span class="bu">list</span>, apply_reorder:<span class="bu">bool</span><span class="op">=</span><span class="va">None</span>, target_spacing:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>    sw_batch_size:<span class="bu">int</span><span class="op">=</span><span class="dv">1</span>, <span class="co"># Memory-safe for large 3D patches; tune upward after benchmarking.</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    return_probabilities:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, progress:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, save_dir:<span class="bu">str</span><span class="op">=</span><span class="va">None</span>, pre_inference_tfms:<span class="bu">list</span><span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>    tta:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, prefetch:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, amp:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">list</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Batch patch-based inference on multiple volumes.</em></p>
+<p>When prefetch=True (default), overlaps I/O with compute: while the current image is being inferred, the next image is loaded and preprocessed in a background thread, and the previous result is saved in the background. This eliminates most I/O idle time, especially on GPU where CPU prep and GPU compute use different hardware.</p>
+<p>Args: learner: PyTorch model or fastai Learner, or a list of them to soft-vote ensemble (per-patch probabilities are averaged before argmax/threshold). config: PatchConfig with inference settings. Preprocessing params (apply_reorder, target_spacing) can be set here for DRY usage. file_paths: List of image paths. apply_reorder: Whether to reorder to RAS+ orientation. If None, uses config value. target_spacing: Target voxel spacing. If None, uses config value. sw_batch_size: Patches per batch. Defaults to 1 as the memory-safe choice for large 3D patches; benchmark higher values for the target accelerator. return_probabilities: Return probability maps. progress: Show progress bar. save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved. pre_inference_tfms: Optional override for config.normalization. If None, normalization is read from config.normalization (the source of truth set at training time). Provide this only to override the config (e.g.&nbsp;for non-serializable transforms). tta: If True, mirror TTA (8 flip combinations). prefetch: If True (default), overlap I/O with compute using a background thread for preparation and saving. Holds two subjects in memory simultaneously (current + next). Set to False for memory-constrained environments processing very large volumes. amp: If True, use automatic mixed precision (bfloat16) for the forward pass. Only supported on CUDA devices; ignored with a warning on CPU/MPS.</p>
+<p>Returns: List of predicted tensors.</p>
+<p>Example: &gt;&gt;&gt; config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.4102, 0.4102, 1.5], … normalization=[ZNormalization(masking_method=‘foreground’)]) &gt;&gt;&gt; predictions = patch_inference( # normalization auto-applied from config … learner=learn, config=config, file_paths=val_paths, … save_dir=‘predictions/patch_based’, amp=True … )</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_patch.py#L1543" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="prediction_filename" class="level3">
+<h3 class="anchored" data-anchor-id="prediction_filename">prediction_filename</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> prediction_filename(</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    input_path:<span class="bu">str</span> <span class="op">|</span> pathlib.Path</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>)<span class="op">-&gt;</span><span class="bu">str</span>:</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Return the filename used by patch inference for a saved prediction.</em></p>
+<div id="mva8n5dv9q" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Test _TTA_FLIP_AXES and _predict_patch_tta</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> itertools <span class="im">import</span> combinations</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>test_eq(prediction_filename(<span class="st">'/data/case.nii.gz'</span>), <span class="st">'case_pred.nii.gz'</span>)</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>test_eq(prediction_filename(<span class="st">'/data/case.nii'</span>), <span class="st">'case_pred.nii'</span>)</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>test_eq(prediction_filename(<span class="st">'/data/case.mha'</span>), <span class="st">'case_pred.nii.gz'</span>)</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a><span class="co"># _TTA_FLIP_AXES has exactly 8 entries (2^3 combinations for 3 axes)</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(_TTA_FLIP_AXES), <span class="dv">8</span>)</span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a><span class="co"># All 2^3 combinations present (each axis in {2,3,4} independently on/off)</span></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>expected_combos <span class="op">=</span> <span class="bu">set</span>()</span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>axes <span class="op">=</span> [<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">4</span>]</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> r <span class="kw">in</span> <span class="bu">range</span>(<span class="bu">len</span>(axes) <span class="op">+</span> <span class="dv">1</span>):</span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> combo <span class="kw">in</span> combinations(axes, r):</span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>        expected_combos.add(combo)</span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>actual_combos <span class="op">=</span> <span class="bu">set</span>(<span class="bu">tuple</span>(<span class="bu">sorted</span>(a)) <span class="cf">for</span> a <span class="kw">in</span> _TTA_FLIP_AXES)</span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>test_eq(actual_combos, expected_combos)</span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a><span class="co"># _predict_patch_tta output shape and probability range</span></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> torch.nn <span class="im">as</span> nn</span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> _SimpleConv(nn.Module):</span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a>    <span class="co">"""Minimal model for TTA testing."""</span></span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, out_channels):</span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>        <span class="bu">super</span>().<span class="fu">__init__</span>()</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.conv <span class="op">=</span> nn.Conv3d(<span class="dv">1</span>, out_channels, <span class="dv">1</span>)</span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> forward(<span class="va">self</span>, x):</span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="va">self</span>.conv(x)</span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a><span class="co"># Binary case (1 output channel -&gt; sigmoid)</span></span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>model_bin <span class="op">=</span> _SimpleConv(<span class="dv">1</span>).<span class="bu">eval</span>()</span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>dummy_input <span class="op">=</span> torch.randn(<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">8</span>, <span class="dv">8</span>, <span class="dv">8</span>)  <span class="co"># [B=2, C=1, D, H, W]</span></span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> torch.no_grad():</span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a>    tta_out <span class="op">=</span> _predict_patch_tta(model_bin, dummy_input)</span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a>test_eq(tta_out.shape, torch.Size([<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">8</span>, <span class="dv">8</span>, <span class="dv">8</span>]))</span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> tta_out.<span class="bu">min</span>() <span class="op">&gt;=</span> <span class="fl">0.0</span> <span class="kw">and</span> tta_out.<span class="bu">max</span>() <span class="op">&lt;=</span> <span class="fl">1.0</span>, <span class="ss">f"Probabilities out of range: [</span><span class="sc">{</span>tta_out<span class="sc">.</span><span class="bu">min</span>()<span class="sc">}</span><span class="ss">, </span><span class="sc">{</span>tta_out<span class="sc">.</span><span class="bu">max</span>()<span class="sc">}</span><span class="ss">]"</span></span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a><span class="co"># Multi-class case (3 output channels -&gt; softmax)</span></span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a>model_mc <span class="op">=</span> _SimpleConv(<span class="dv">3</span>).<span class="bu">eval</span>()</span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> torch.no_grad():</span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a>    tta_out_mc <span class="op">=</span> _predict_patch_tta(model_mc, dummy_input)</span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a>test_eq(tta_out_mc.shape, torch.Size([<span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">8</span>, <span class="dv">8</span>, <span class="dv">8</span>]))</span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> tta_out_mc.<span class="bu">min</span>() <span class="op">&gt;=</span> <span class="fl">0.0</span> <span class="kw">and</span> tta_out_mc.<span class="bu">max</span>() <span class="op">&lt;=</span> <span class="fl">1.0</span></span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a><span class="co"># TTA on constant input matches single forward pass</span></span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a><span class="co"># A constant tensor is invariant to flipping, so TTA should equal single pass</span></span>
+<span id="cb18-48"><a href="#cb18-48" aria-hidden="true" tabindex="-1"></a>const_input <span class="op">=</span> torch.ones(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">8</span>, <span class="dv">8</span>, <span class="dv">8</span>) <span class="op">*</span> <span class="fl">0.5</span></span>
+<span id="cb18-49"><a href="#cb18-49" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> torch.no_grad():</span>
+<span id="cb18-50"><a href="#cb18-50" aria-hidden="true" tabindex="-1"></a>    single_logits <span class="op">=</span> model_bin(const_input)</span>
+<span id="cb18-51"><a href="#cb18-51" aria-hidden="true" tabindex="-1"></a>    single_probs <span class="op">=</span> torch.sigmoid(single_logits).cpu()</span>
+<span id="cb18-52"><a href="#cb18-52" aria-hidden="true" tabindex="-1"></a>    tta_probs <span class="op">=</span> _predict_patch_tta(model_bin, const_input)</span>
+<span id="cb18-53"><a href="#cb18-53" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> torch.allclose(single_probs, tta_probs, atol<span class="op">=</span><span class="fl">1e-6</span>), <span class="st">"TTA on constant input should match single forward pass"</span></span>
+<span id="cb18-54"><a href="#cb18-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-55"><a href="#cb18-55" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"TTA tests passed!"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>TTA tests passed!</code></pre>
+</div>
+</div>
+<div id="9jwnjpeb5qa" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Test _PreparedSubject and decomposed predict path</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tempfile, os, nibabel <span class="im">as</span> nib</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.nets <span class="im">import</span> UNet</span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.layers <span class="im">import</span> Norm</span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Create a small synthetic NIfTI file for testing</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>_test_data <span class="op">=</span> np.random.randn(<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>).astype(np.float32)</span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>_test_affine <span class="op">=</span> np.eye(<span class="dv">4</span>)</span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>_test_nii <span class="op">=</span> nib.Nifti1Image(_test_data, _test_affine)</span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> tempfile.TemporaryDirectory() <span class="im">as</span> tmpdir:</span>
+<span id="cb20-12"><a href="#cb20-12" aria-hidden="true" tabindex="-1"></a>    img_path <span class="op">=</span> os.path.join(tmpdir, <span class="st">'test_img.nii.gz'</span>)</span>
+<span id="cb20-13"><a href="#cb20-13" aria-hidden="true" tabindex="-1"></a>    nib.save(_test_nii, img_path)</span>
+<span id="cb20-14"><a href="#cb20-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-15"><a href="#cb20-15" aria-hidden="true" tabindex="-1"></a>    _model <span class="op">=</span> UNet(</span>
+<span id="cb20-16"><a href="#cb20-16" aria-hidden="true" tabindex="-1"></a>        spatial_dims<span class="op">=</span><span class="dv">3</span>, in_channels<span class="op">=</span><span class="dv">1</span>, out_channels<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb20-17"><a href="#cb20-17" aria-hidden="true" tabindex="-1"></a>        channels<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">32</span>), strides<span class="op">=</span>(<span class="dv">2</span>,), num_res_units<span class="op">=</span><span class="dv">1</span>,</span>
+<span id="cb20-18"><a href="#cb20-18" aria-hidden="true" tabindex="-1"></a>        norm<span class="op">=</span>Norm.INSTANCE</span>
+<span id="cb20-19"><a href="#cb20-19" aria-hidden="true" tabindex="-1"></a>    ).<span class="bu">eval</span>()</span>
+<span id="cb20-20"><a href="#cb20-20" aria-hidden="true" tabindex="-1"></a>    _config <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>])</span>
+<span id="cb20-21"><a href="#cb20-21" aria-hidden="true" tabindex="-1"></a>    _engine <span class="op">=</span> PatchInferenceEngine(_model, _config, apply_reorder<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb20-22"><a href="#cb20-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-23"><a href="#cb20-23" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Test 1: _prepare_subject returns _PreparedSubject with expected attributes</span></span>
+<span id="cb20-24"><a href="#cb20-24" aria-hidden="true" tabindex="-1"></a>    prepared <span class="op">=</span> _engine._prepare_subject(img_path)</span>
+<span id="cb20-25"><a href="#cb20-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(prepared, _PreparedSubject), <span class="st">"Should return _PreparedSubject"</span></span>
+<span id="cb20-26"><a href="#cb20-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(prepared.subject, tio.Subject)</span>
+<span id="cb20-27"><a href="#cb20-27" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(prepared.grid_sampler, tio.GridSampler)</span>
+<span id="cb20-28"><a href="#cb20-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(prepared.aggregator, tio.GridAggregator)</span>
+<span id="cb20-29"><a href="#cb20-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(prepared.patch_loader, DataLoader)</span>
+<span id="cb20-30"><a href="#cb20-30" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> prepared.org_size <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span></span>
+<span id="cb20-31"><a href="#cb20-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-32"><a href="#cb20-32" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Test 2: Decomposed path equals predict() output</span></span>
+<span id="cb20-33"><a href="#cb20-33" aria-hidden="true" tabindex="-1"></a>    pred_decomposed, affine_decomposed <span class="op">=</span> _engine._postprocess(</span>
+<span id="cb20-34"><a href="#cb20-34" aria-hidden="true" tabindex="-1"></a>        _engine._run_inference(</span>
+<span id="cb20-35"><a href="#cb20-35" aria-hidden="true" tabindex="-1"></a>            _engine._prepare_subject(img_path)</span>
+<span id="cb20-36"><a href="#cb20-36" aria-hidden="true" tabindex="-1"></a>        ),</span>
+<span id="cb20-37"><a href="#cb20-37" aria-hidden="true" tabindex="-1"></a>        _engine._prepare_subject(img_path)</span>
+<span id="cb20-38"><a href="#cb20-38" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-39"><a href="#cb20-39" aria-hidden="true" tabindex="-1"></a>    pred_predict, affine_predict <span class="op">=</span> _engine.predict(img_path, return_affine<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb20-40"><a href="#cb20-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-41"><a href="#cb20-41" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> torch.equal(pred_decomposed, pred_predict), <span class="st">"Decomposed path should match predict()"</span></span>
+<span id="cb20-42"><a href="#cb20-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> np.array_equal(affine_decomposed, affine_predict), <span class="st">"Affine should match"</span></span>
+<span id="cb20-43"><a href="#cb20-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-44"><a href="#cb20-44" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Test 3: prefetch=True produces identical results to prefetch=False</span></span>
+<span id="cb20-45"><a href="#cb20-45" aria-hidden="true" tabindex="-1"></a>    paths <span class="op">=</span> [img_path, img_path]  <span class="co"># Two copies to trigger pipeline path</span></span>
+<span id="cb20-46"><a href="#cb20-46" aria-hidden="true" tabindex="-1"></a>    preds_prefetch <span class="op">=</span> patch_inference(</span>
+<span id="cb20-47"><a href="#cb20-47" aria-hidden="true" tabindex="-1"></a>        _model, _config, paths, apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>, prefetch<span class="op">=</span><span class="va">True</span></span>
+<span id="cb20-48"><a href="#cb20-48" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-49"><a href="#cb20-49" aria-hidden="true" tabindex="-1"></a>    preds_sequential <span class="op">=</span> patch_inference(</span>
+<span id="cb20-50"><a href="#cb20-50" aria-hidden="true" tabindex="-1"></a>        _model, _config, paths, apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>, prefetch<span class="op">=</span><span class="va">False</span></span>
+<span id="cb20-51"><a href="#cb20-51" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-52"><a href="#cb20-52" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(preds_prefetch) <span class="op">==</span> <span class="bu">len</span>(preds_sequential) <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb20-53"><a href="#cb20-53" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> p1, p2 <span class="kw">in</span> <span class="bu">zip</span>(preds_prefetch, preds_sequential):</span>
+<span id="cb20-54"><a href="#cb20-54" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> torch.equal(p1, p2), <span class="st">"prefetch=True should produce identical results"</span></span>
+<span id="cb20-55"><a href="#cb20-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-56"><a href="#cb20-56" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Test 4: Error propagation -- file-not-found raises (not silently swallowed)</span></span>
+<span id="cb20-57"><a href="#cb20-57" aria-hidden="true" tabindex="-1"></a>    test_fail(</span>
+<span id="cb20-58"><a href="#cb20-58" aria-hidden="true" tabindex="-1"></a>        <span class="kw">lambda</span>: patch_inference(</span>
+<span id="cb20-59"><a href="#cb20-59" aria-hidden="true" tabindex="-1"></a>            _model, _config, [<span class="st">'/nonexistent/file.nii.gz'</span>],</span>
+<span id="cb20-60"><a href="#cb20-60" aria-hidden="true" tabindex="-1"></a>            apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>, prefetch<span class="op">=</span><span class="va">True</span></span>
+<span id="cb20-61"><a href="#cb20-61" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb20-62"><a href="#cb20-62" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-63"><a href="#cb20-63" aria-hidden="true" tabindex="-1"></a>    test_fail(</span>
+<span id="cb20-64"><a href="#cb20-64" aria-hidden="true" tabindex="-1"></a>        <span class="kw">lambda</span>: patch_inference(</span>
+<span id="cb20-65"><a href="#cb20-65" aria-hidden="true" tabindex="-1"></a>            _model, _config, [img_path, <span class="st">'/nonexistent/file.nii.gz'</span>],</span>
+<span id="cb20-66"><a href="#cb20-66" aria-hidden="true" tabindex="-1"></a>            apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>, prefetch<span class="op">=</span><span class="va">True</span></span>
+<span id="cb20-67"><a href="#cb20-67" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb20-68"><a href="#cb20-68" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-69"><a href="#cb20-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-70"><a href="#cb20-70" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Test 5: Save pipeline works correctly with prefetch=True</span></span>
+<span id="cb20-71"><a href="#cb20-71" aria-hidden="true" tabindex="-1"></a>    save_dir <span class="op">=</span> os.path.join(tmpdir, <span class="st">'preds'</span>)</span>
+<span id="cb20-72"><a href="#cb20-72" aria-hidden="true" tabindex="-1"></a>    preds_saved <span class="op">=</span> patch_inference(</span>
+<span id="cb20-73"><a href="#cb20-73" aria-hidden="true" tabindex="-1"></a>        _model, _config, paths, apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>,</span>
+<span id="cb20-74"><a href="#cb20-74" aria-hidden="true" tabindex="-1"></a>        save_dir<span class="op">=</span>save_dir, prefetch<span class="op">=</span><span class="va">True</span></span>
+<span id="cb20-75"><a href="#cb20-75" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb20-76"><a href="#cb20-76" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(preds_saved) <span class="op">==</span> <span class="dv">2</span></span>
+<span id="cb20-77"><a href="#cb20-77" aria-hidden="true" tabindex="-1"></a>    saved_files <span class="op">=</span> <span class="bu">list</span>(Path(save_dir).glob(<span class="st">'*.nii.gz'</span>))</span>
+<span id="cb20-78"><a href="#cb20-78" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">len</span>(saved_files) <span class="op">==</span> <span class="dv">1</span>, <span class="ss">f"Expected 1 unique file (same input), got </span><span class="sc">{</span><span class="bu">len</span>(saved_files)<span class="sc">}</span><span class="ss">"</span></span>
+<span id="cb20-79"><a href="#cb20-79" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Verify the saved file is valid NIfTI</span></span>
+<span id="cb20-80"><a href="#cb20-80" aria-hidden="true" tabindex="-1"></a>    saved_nii <span class="op">=</span> nib.load(<span class="bu">str</span>(saved_files[<span class="dv">0</span>]))</span>
+<span id="cb20-81"><a href="#cb20-81" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> saved_nii.shape <span class="kw">is</span> <span class="kw">not</span> <span class="va">None</span></span>
+<span id="cb20-82"><a href="#cb20-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb20-83"><a href="#cb20-83" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Pipeline inference tests passed!"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Pipeline inference tests passed!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>apply_reorder mismatch: explicit=False, config=True. Using explicit argument.</code></pre>
+</div>
+</div>
+<div id="safety-net-tests-t1-t4" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Safety-net tests (added before refactor to characterize current behavior)</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tempfile <span class="im">as</span> _tempfile, os <span class="im">as</span> _os, nibabel <span class="im">as</span> _nib</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.nets <span class="im">import</span> UNet <span class="im">as</span> _UNet</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.layers <span class="im">import</span> Norm <span class="im">as</span> _Norm</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a><span class="co"># --- T1: _normalize_patch_overlap covers zero / fraction / odd / int / list / numpy ---</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>test_eq(_normalize_patch_overlap(<span class="dv">0</span>, [<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>]), (<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>))</span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>test_eq(_normalize_patch_overlap(<span class="fl">0.5</span>, [<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>]), (<span class="dv">48</span>, <span class="dv">48</span>, <span class="dv">48</span>))</span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>test_eq(_normalize_patch_overlap(<span class="fl">0.5</span>, [<span class="dv">98</span>, <span class="dv">98</span>, <span class="dv">98</span>]), (<span class="dv">48</span>, <span class="dv">48</span>, <span class="dv">48</span>))   <span class="co"># 49 coerced down to even 48</span></span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>test_eq(_normalize_patch_overlap(<span class="dv">47</span>, [<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>]), (<span class="dv">46</span>, <span class="dv">46</span>, <span class="dv">46</span>))    <span class="co"># odd int coerced even</span></span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a>test_eq(_normalize_patch_overlap([<span class="dv">10</span>, <span class="dv">11</span>, <span class="dv">12</span>], [<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>]), (<span class="dv">10</span>, <span class="dv">10</span>, <span class="dv">12</span>))</span>
+<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a>test_eq(_normalize_patch_overlap(np.int64(<span class="dv">48</span>), [<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>]), (<span class="dv">48</span>, <span class="dv">48</span>, <span class="dv">48</span>))</span>
+<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a><span class="co"># --- T2: PatchConfig.__post_init__ validation + divisibility warning ---</span></span>
+<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(sampler_type<span class="op">=</span><span class="st">'bogus'</span>), contains<span class="op">=</span><span class="st">'sampler_type must be one of'</span>)</span>
+<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(aggregation_mode<span class="op">=</span><span class="st">'bogus'</span>), contains<span class="op">=</span><span class="st">'aggregation_mode must be one of'</span>)</span>
+<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(patch_overlap<span class="op">=-</span><span class="dv">1</span>), contains<span class="op">=</span><span class="st">'cannot be negative'</span>)</span>
+<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(patch_overlap<span class="op">=</span>[<span class="op">-</span><span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>]), contains<span class="op">=</span><span class="st">'cannot be negative'</span>)</span>
+<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(patch_size<span class="op">=</span>[<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>], patch_overlap<span class="op">=</span><span class="dv">64</span>), contains<span class="op">=</span><span class="st">'must be less than patch_size'</span>)</span>
+<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(patch_size<span class="op">=</span>[<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>], patch_overlap<span class="op">=</span>[<span class="dv">10</span>, <span class="dv">10</span>, <span class="dv">64</span>]), contains<span class="op">=</span><span class="st">'must be less than patch_size'</span>)</span>
+<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a>_ok <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">96</span>, <span class="dv">96</span>, <span class="dv">96</span>], patch_overlap<span class="op">=</span><span class="fl">0.5</span>, sampler_type<span class="op">=</span><span class="st">'label'</span>, aggregation_mode<span class="op">=</span><span class="st">'hann'</span>)</span>
+<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a>test_eq(_ok.sampler_type, <span class="st">'label'</span>)</span>
+<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> warnings.catch_warnings(record<span class="op">=</span><span class="va">True</span>) <span class="im">as</span> _w:</span>
+<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a>    warnings.simplefilter(<span class="st">'always'</span>)</span>
+<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a>    PatchConfig(patch_size<span class="op">=</span>[<span class="dv">90</span>, <span class="dv">90</span>, <span class="dv">90</span>])</span>
+<span id="cb23-26"><a href="#cb23-26" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">any</span>(<span class="st">'divisible by 16'</span> <span class="kw">in</span> <span class="bu">str</span>(_x.message) <span class="cf">for</span> _x <span class="kw">in</span> _w), <span class="va">True</span>)</span>
+<span id="cb23-27"><a href="#cb23-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-28"><a href="#cb23-28" aria-hidden="true" tabindex="-1"></a><span class="co"># --- T3: return_probabilities=True returns a float probability map (production path, was untested) ---</span></span>
+<span id="cb23-29"><a href="#cb23-29" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> _tempfile.TemporaryDirectory() <span class="im">as</span> _tmp:</span>
+<span id="cb23-30"><a href="#cb23-30" aria-hidden="true" tabindex="-1"></a>    _ip <span class="op">=</span> _os.path.join(_tmp, <span class="st">'img.nii.gz'</span>)</span>
+<span id="cb23-31"><a href="#cb23-31" aria-hidden="true" tabindex="-1"></a>    _nib.save(_nib.Nifti1Image(np.random.randn(<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>).astype(np.float32), np.eye(<span class="dv">4</span>)), _ip)</span>
+<span id="cb23-32"><a href="#cb23-32" aria-hidden="true" tabindex="-1"></a>    _net <span class="op">=</span> _UNet(spatial_dims<span class="op">=</span><span class="dv">3</span>, in_channels<span class="op">=</span><span class="dv">1</span>, out_channels<span class="op">=</span><span class="dv">2</span>, channels<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">32</span>),</span>
+<span id="cb23-33"><a href="#cb23-33" aria-hidden="true" tabindex="-1"></a>                 strides<span class="op">=</span>(<span class="dv">2</span>,), num_res_units<span class="op">=</span><span class="dv">1</span>, norm<span class="op">=</span>_Norm.INSTANCE).<span class="bu">eval</span>()</span>
+<span id="cb23-34"><a href="#cb23-34" aria-hidden="true" tabindex="-1"></a>    _eng <span class="op">=</span> PatchInferenceEngine(_net, PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>]), apply_reorder<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-35"><a href="#cb23-35" aria-hidden="true" tabindex="-1"></a>    _prob <span class="op">=</span> _eng.predict(_ip, return_probabilities<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb23-36"><a href="#cb23-36" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> _prob.shape[<span class="dv">0</span>] <span class="op">==</span> <span class="dv">2</span>, <span class="ss">f'expected 2 prob channels, got </span><span class="sc">{</span><span class="bu">tuple</span>(_prob.shape)<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb23-37"><a href="#cb23-37" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> _prob.dtype.is_floating_point, _prob.dtype</span>
+<span id="cb23-38"><a href="#cb23-38" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">float</span>(_prob.<span class="bu">min</span>()) <span class="op">&gt;=</span> <span class="fl">0.0</span> <span class="kw">and</span> <span class="bu">float</span>(_prob.<span class="bu">max</span>()) <span class="op">&lt;=</span> <span class="fl">1.0</span></span>
+<span id="cb23-39"><a href="#cb23-39" aria-hidden="true" tabindex="-1"></a>    _mask <span class="op">=</span> _eng.predict(_ip, return_probabilities<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-40"><a href="#cb23-40" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> _mask.shape[<span class="dv">0</span>] <span class="op">==</span> <span class="dv">1</span>, <span class="ss">f'expected 1 mask channel, got </span><span class="sc">{</span><span class="bu">tuple</span>(_mask.shape)<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb23-41"><a href="#cb23-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-42"><a href="#cb23-42" aria-hidden="true" tabindex="-1"></a><span class="co"># --- T4: from_df happy path (split, metadata contract, preprocessed skip) ---</span></span>
+<span id="cb23-43"><a href="#cb23-43" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _tfm_names(ds):</span>
+<span id="cb23-44"><a href="#cb23-44" aria-hidden="true" tabindex="-1"></a>    t <span class="op">=</span> <span class="bu">getattr</span>(ds, <span class="st">'transform'</span>, <span class="va">None</span>)</span>
+<span id="cb23-45"><a href="#cb23-45" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> t <span class="kw">is</span> <span class="va">None</span>: t <span class="op">=</span> <span class="bu">getattr</span>(ds, <span class="st">'_transform'</span>, <span class="va">None</span>)</span>
+<span id="cb23-46"><a href="#cb23-46" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> t <span class="kw">is</span> <span class="va">None</span>: <span class="cf">return</span> []</span>
+<span id="cb23-47"><a href="#cb23-47" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> [<span class="bu">type</span>(x).<span class="va">__name__</span> <span class="cf">for</span> x <span class="kw">in</span> <span class="bu">getattr</span>(t, <span class="st">'transforms'</span>, [t])]</span>
+<span id="cb23-48"><a href="#cb23-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-49"><a href="#cb23-49" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> _tempfile.TemporaryDirectory() <span class="im">as</span> _tmp:</span>
+<span id="cb23-50"><a href="#cb23-50" aria-hidden="true" tabindex="-1"></a>    _rows <span class="op">=</span> []</span>
+<span id="cb23-51"><a href="#cb23-51" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">4</span>):</span>
+<span id="cb23-52"><a href="#cb23-52" aria-hidden="true" tabindex="-1"></a>        _ipath <span class="op">=</span> _os.path.join(_tmp, <span class="ss">f'img_</span><span class="sc">{</span>_i<span class="sc">}</span><span class="ss">.nii.gz'</span>)</span>
+<span id="cb23-53"><a href="#cb23-53" aria-hidden="true" tabindex="-1"></a>        _mpath <span class="op">=</span> _os.path.join(_tmp, <span class="ss">f'msk_</span><span class="sc">{</span>_i<span class="sc">}</span><span class="ss">.nii.gz'</span>)</span>
+<span id="cb23-54"><a href="#cb23-54" aria-hidden="true" tabindex="-1"></a>        _nib.save(_nib.Nifti1Image(np.random.randn(<span class="dv">24</span>, <span class="dv">24</span>, <span class="dv">24</span>).astype(np.float32), np.eye(<span class="dv">4</span>)), _ipath)</span>
+<span id="cb23-55"><a href="#cb23-55" aria-hidden="true" tabindex="-1"></a>        _nib.save(_nib.Nifti1Image((np.random.rand(<span class="dv">24</span>, <span class="dv">24</span>, <span class="dv">24</span>) <span class="op">&gt;</span> <span class="fl">0.5</span>).astype(np.uint8), np.eye(<span class="dv">4</span>)), _mpath)</span>
+<span id="cb23-56"><a href="#cb23-56" aria-hidden="true" tabindex="-1"></a>        _rows.append({<span class="st">'img'</span>: _ipath, <span class="st">'mask'</span>: _mpath, <span class="st">'is_val'</span>: _i <span class="op">&gt;=</span> <span class="dv">2</span>})</span>
+<span id="cb23-57"><a href="#cb23-57" aria-hidden="true" tabindex="-1"></a>    _df <span class="op">=</span> pd.DataFrame(_rows)</span>
+<span id="cb23-58"><a href="#cb23-58" aria-hidden="true" tabindex="-1"></a>    _cfg <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>], samples_per_volume<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb23-59"><a href="#cb23-59" aria-hidden="true" tabindex="-1"></a>                       sampler_type<span class="op">=</span><span class="st">'label'</span>, label_probabilities<span class="op">=</span>{<span class="dv">0</span>: <span class="fl">0.5</span>, <span class="dv">1</span>: <span class="fl">0.5</span>},</span>
+<span id="cb23-60"><a href="#cb23-60" aria-hidden="true" tabindex="-1"></a>                       queue_num_workers<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb23-61"><a href="#cb23-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-62"><a href="#cb23-62" aria-hidden="true" tabindex="-1"></a>    _dls <span class="op">=</span> MedPatchDataLoaders.from_df(_df, img_col<span class="op">=</span><span class="st">'img'</span>, mask_col<span class="op">=</span><span class="st">'mask'</span>,</span>
+<span id="cb23-63"><a href="#cb23-63" aria-hidden="true" tabindex="-1"></a>                                       valid_pct<span class="op">=</span><span class="fl">0.5</span>, patch_config<span class="op">=</span>_cfg, seed<span class="op">=</span><span class="dv">0</span>, bs<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb23-64"><a href="#cb23-64" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_dls.split_df), <span class="dv">4</span>)</span>
+<span id="cb23-65"><a href="#cb23-65" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_dls._train_source_df), <span class="dv">2</span>)</span>
+<span id="cb23-66"><a href="#cb23-66" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_dls._valid_source_df), <span class="dv">2</span>)</span>
+<span id="cb23-67"><a href="#cb23-67" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(_dls.train, MedPatchDataLoader) <span class="kw">and</span> <span class="bu">isinstance</span>(_dls.valid, MedPatchDataLoader)</span>
+<span id="cb23-68"><a href="#cb23-68" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _a <span class="kw">in</span> [<span class="st">'_img_col'</span>, <span class="st">'_mask_col'</span>, <span class="st">'_pre_patch_tfms'</span>, <span class="st">'_apply_reorder'</span>, <span class="st">'_target_spacing'</span>,</span>
+<span id="cb23-69"><a href="#cb23-69" aria-hidden="true" tabindex="-1"></a>               <span class="st">'_ensure_affine_consistency'</span>, <span class="st">'_patch_config'</span>, <span class="st">'_train_source_df'</span>, <span class="st">'_valid_source_df'</span>]:</span>
+<span id="cb23-70"><a href="#cb23-70" aria-hidden="true" tabindex="-1"></a>        <span class="cf">assert</span> <span class="bu">hasattr</span>(_dls, _a), <span class="ss">f'from_df must set </span><span class="sc">{</span>_a<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb23-71"><a href="#cb23-71" aria-hidden="true" tabindex="-1"></a>    test_eq(_dls.patch_config <span class="kw">is</span> _cfg, <span class="va">True</span>)</span>
+<span id="cb23-72"><a href="#cb23-72" aria-hidden="true" tabindex="-1"></a>    test_eq(_dls.apply_reorder, <span class="va">True</span>)</span>
+<span id="cb23-73"><a href="#cb23-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-74"><a href="#cb23-74" aria-hidden="true" tabindex="-1"></a>    <span class="co"># valid_col split branch</span></span>
+<span id="cb23-75"><a href="#cb23-75" aria-hidden="true" tabindex="-1"></a>    _dls2 <span class="op">=</span> MedPatchDataLoaders.from_df(_df, img_col<span class="op">=</span><span class="st">'img'</span>, mask_col<span class="op">=</span><span class="st">'mask'</span>,</span>
+<span id="cb23-76"><a href="#cb23-76" aria-hidden="true" tabindex="-1"></a>                                        valid_col<span class="op">=</span><span class="st">'is_val'</span>, patch_config<span class="op">=</span>_cfg, bs<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb23-77"><a href="#cb23-77" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_dls2._train_source_df), <span class="dv">2</span>)</span>
+<span id="cb23-78"><a href="#cb23-78" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_dls2._valid_source_df), <span class="dv">2</span>)</span>
+<span id="cb23-79"><a href="#cb23-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-80"><a href="#cb23-80" aria-hidden="true" tabindex="-1"></a>    <span class="co"># preprocessed=True skips reorder/resample</span></span>
+<span id="cb23-81"><a href="#cb23-81" aria-hidden="true" tabindex="-1"></a>    _cfg_pp <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>], samples_per_volume<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb23-82"><a href="#cb23-82" aria-hidden="true" tabindex="-1"></a>                          preprocessed<span class="op">=</span><span class="va">True</span>, target_spacing<span class="op">=</span>[<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>],</span>
+<span id="cb23-83"><a href="#cb23-83" aria-hidden="true" tabindex="-1"></a>                          queue_num_workers<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb23-84"><a href="#cb23-84" aria-hidden="true" tabindex="-1"></a>    _dls3 <span class="op">=</span> MedPatchDataLoaders.from_df(_df, img_col<span class="op">=</span><span class="st">'img'</span>, mask_col<span class="op">=</span><span class="st">'mask'</span>,</span>
+<span id="cb23-85"><a href="#cb23-85" aria-hidden="true" tabindex="-1"></a>                                        valid_pct<span class="op">=</span><span class="fl">0.5</span>, patch_config<span class="op">=</span>_cfg_pp, seed<span class="op">=</span><span class="dv">0</span>, bs<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb23-86"><a href="#cb23-86" aria-hidden="true" tabindex="-1"></a>    _names_pp <span class="op">=</span> _tfm_names(_dls3.train_ds)</span>
+<span id="cb23-87"><a href="#cb23-87" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">'Resample'</span> <span class="kw">not</span> <span class="kw">in</span> _names_pp <span class="kw">and</span> <span class="st">'ToCanonical'</span> <span class="kw">not</span> <span class="kw">in</span> _names_pp, <span class="ss">f'preprocessed should skip, got </span><span class="sc">{</span>_names_pp<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb23-88"><a href="#cb23-88" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">'_PadToPatchSize'</span> <span class="kw">in</span> _names_pp, <span class="ss">f'preprocessed data still needs minimum-size padding, got </span><span class="sc">{</span>_names_pp<span class="sc">}</span><span class="ss">'</span></span>
+<span id="cb23-89"><a href="#cb23-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-90"><a href="#cb23-90" aria-hidden="true" tabindex="-1"></a>    <span class="co"># contrast: non-preprocessed WITH target_spacing includes Resample</span></span>
+<span id="cb23-91"><a href="#cb23-91" aria-hidden="true" tabindex="-1"></a>    _cfg_rs <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>], samples_per_volume<span class="op">=</span><span class="dv">2</span>,</span>
+<span id="cb23-92"><a href="#cb23-92" aria-hidden="true" tabindex="-1"></a>                          target_spacing<span class="op">=</span>[<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>], queue_num_workers<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb23-93"><a href="#cb23-93" aria-hidden="true" tabindex="-1"></a>    _dls4 <span class="op">=</span> MedPatchDataLoaders.from_df(_df, img_col<span class="op">=</span><span class="st">'img'</span>, mask_col<span class="op">=</span><span class="st">'mask'</span>,</span>
+<span id="cb23-94"><a href="#cb23-94" aria-hidden="true" tabindex="-1"></a>                                        valid_pct<span class="op">=</span><span class="fl">0.5</span>, patch_config<span class="op">=</span>_cfg_rs, seed<span class="op">=</span><span class="dv">0</span>, bs<span class="op">=</span><span class="dv">1</span>)</span>
+<span id="cb23-95"><a href="#cb23-95" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">'Resample'</span> <span class="kw">in</span> _tfm_names(_dls4.train_ds)</span>
+<span id="cb23-96"><a href="#cb23-96" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> _test_dls <span class="kw">in</span> (_dls, _dls2, _dls3, _dls4):</span>
+<span id="cb23-97"><a href="#cb23-97" aria-hidden="true" tabindex="-1"></a>        _test_dls.close()</span>
+<span id="cb23-98"><a href="#cb23-98" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-99"><a href="#cb23-99" aria-hidden="true" tabindex="-1"></a><span class="co"># --- TH: MedPatchDataLoader.__iter__ with patch_tfms yields (MedImage, MedMask) (guards _apply_patch_tfms) ---</span></span>
+<span id="cb23-100"><a href="#cb23-100" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> _tempfile.TemporaryDirectory() <span class="im">as</span> _tmp:</span>
+<span id="cb23-101"><a href="#cb23-101" aria-hidden="true" tabindex="-1"></a>    _ip <span class="op">=</span> _os.path.join(_tmp, <span class="st">'i.nii.gz'</span>)<span class="op">;</span> _mp <span class="op">=</span> _os.path.join(_tmp, <span class="st">'m.nii.gz'</span>)</span>
+<span id="cb23-102"><a href="#cb23-102" aria-hidden="true" tabindex="-1"></a>    _nib.save(_nib.Nifti1Image(np.random.randn(<span class="dv">20</span>, <span class="dv">20</span>, <span class="dv">20</span>).astype(np.float32), np.eye(<span class="dv">4</span>)), _ip)</span>
+<span id="cb23-103"><a href="#cb23-103" aria-hidden="true" tabindex="-1"></a>    _nib.save(_nib.Nifti1Image((np.random.rand(<span class="dv">20</span>, <span class="dv">20</span>, <span class="dv">20</span>) <span class="op">&gt;</span> <span class="fl">0.5</span>).astype(np.uint8), np.eye(<span class="dv">4</span>)), _mp)</span>
+<span id="cb23-104"><a href="#cb23-104" aria-hidden="true" tabindex="-1"></a>    _ds_h <span class="op">=</span> create_subjects_dataset(pd.DataFrame({<span class="st">'img'</span>: [_ip], <span class="st">'mask'</span>: [_mp]}), <span class="st">'img'</span>, <span class="st">'mask'</span>)</span>
+<span id="cb23-105"><a href="#cb23-105" aria-hidden="true" tabindex="-1"></a>    _cfg_h <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>], samples_per_volume<span class="op">=</span><span class="dv">2</span>, queue_length<span class="op">=</span><span class="dv">4</span>, queue_num_workers<span class="op">=</span><span class="dv">0</span>)</span>
+<span id="cb23-106"><a href="#cb23-106" aria-hidden="true" tabindex="-1"></a>    _dl_h <span class="op">=</span> MedPatchDataLoader(_ds_h, _cfg_h, batch_size<span class="op">=</span><span class="dv">2</span>, patch_tfms<span class="op">=</span>[tio.RandomFlip(flip_probability<span class="op">=</span><span class="fl">0.0</span>)])</span>
+<span id="cb23-107"><a href="#cb23-107" aria-hidden="true" tabindex="-1"></a>    _xb, _yb <span class="op">=</span> <span class="bu">next</span>(<span class="bu">iter</span>(_dl_h))</span>
+<span id="cb23-108"><a href="#cb23-108" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">isinstance</span>(_xb, MedImage) <span class="kw">and</span> <span class="bu">isinstance</span>(_yb, MedMask), (<span class="bu">type</span>(_xb), <span class="bu">type</span>(_yb))</span>
+<span id="cb23-109"><a href="#cb23-109" aria-hidden="true" tabindex="-1"></a>    test_eq(_xb.shape[<span class="dv">0</span>], <span class="dv">2</span>)</span>
+<span id="cb23-110"><a href="#cb23-110" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">tuple</span>(_xb.shape[<span class="op">-</span><span class="dv">3</span>:]), (<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>))</span>
+<span id="cb23-111"><a href="#cb23-111" aria-hidden="true" tabindex="-1"></a>    _dl_h.close()</span>
+<span id="cb23-112"><a href="#cb23-112" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-113"><a href="#cb23-113" aria-hidden="true" tabindex="-1"></a><span class="co"># --- TB: binary_threshold uses &gt;= (MONAI AsDiscrete semantics) and is configurable ---</span></span>
+<span id="cb23-114"><a href="#cb23-114" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> _tempfile.TemporaryDirectory() <span class="im">as</span> _tmp:</span>
+<span id="cb23-115"><a href="#cb23-115" aria-hidden="true" tabindex="-1"></a>    _ip <span class="op">=</span> _os.path.join(_tmp, <span class="st">'img.nii.gz'</span>)</span>
+<span id="cb23-116"><a href="#cb23-116" aria-hidden="true" tabindex="-1"></a>    _nib.save(_nib.Nifti1Image(np.zeros((<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>), dtype<span class="op">=</span>np.float32), np.eye(<span class="dv">4</span>)), _ip)</span>
+<span id="cb23-117"><a href="#cb23-117" aria-hidden="true" tabindex="-1"></a>    _net1 <span class="op">=</span> _UNet(spatial_dims<span class="op">=</span><span class="dv">3</span>, in_channels<span class="op">=</span><span class="dv">1</span>, out_channels<span class="op">=</span><span class="dv">1</span>, channels<span class="op">=</span>(<span class="dv">8</span>, <span class="dv">16</span>),</span>
+<span id="cb23-118"><a href="#cb23-118" aria-hidden="true" tabindex="-1"></a>                  strides<span class="op">=</span>(<span class="dv">2</span>,), num_res_units<span class="op">=</span><span class="dv">1</span>, norm<span class="op">=</span>_Norm.INSTANCE).<span class="bu">eval</span>()</span>
+<span id="cb23-119"><a href="#cb23-119" aria-hidden="true" tabindex="-1"></a>    <span class="co"># default threshold 0.5 with '&gt;=': probability exactly 0.5 is foreground (would be background under '&gt;')</span></span>
+<span id="cb23-120"><a href="#cb23-120" aria-hidden="true" tabindex="-1"></a>    _eng_d <span class="op">=</span> PatchInferenceEngine(_net1, PatchConfig(patch_size<span class="op">=</span>[<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>]), apply_reorder<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-121"><a href="#cb23-121" aria-hidden="true" tabindex="-1"></a>    _prep <span class="op">=</span> _eng_d._prepare_subject(_ip)</span>
+<span id="cb23-122"><a href="#cb23-122" aria-hidden="true" tabindex="-1"></a>    _sp <span class="op">=</span> _prep.input_img.spatial_shape</span>
+<span id="cb23-123"><a href="#cb23-123" aria-hidden="true" tabindex="-1"></a>    _res_half <span class="op">=</span> _eng_d._postprocess(torch.full((<span class="dv">1</span>, <span class="op">*</span>_sp), <span class="fl">0.5</span>), _prep, return_probabilities<span class="op">=</span><span class="va">False</span>)[<span class="dv">0</span>]</span>
+<span id="cb23-124"><a href="#cb23-124" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">int</span>(_res_half.<span class="bu">sum</span>()), _res_half.numel())   <span class="co"># all 0.5 &gt;= 0.5 -&gt; all foreground</span></span>
+<span id="cb23-125"><a href="#cb23-125" aria-hidden="true" tabindex="-1"></a>    <span class="co"># higher threshold makes 0.5 background, 0.7 foreground</span></span>
+<span id="cb23-126"><a href="#cb23-126" aria-hidden="true" tabindex="-1"></a>    _eng_h <span class="op">=</span> PatchInferenceEngine(_net1, PatchConfig(patch_size<span class="op">=</span>[<span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>], binary_threshold<span class="op">=</span><span class="fl">0.7</span>), apply_reorder<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb23-127"><a href="#cb23-127" aria-hidden="true" tabindex="-1"></a>    _prep_h <span class="op">=</span> _eng_h._prepare_subject(_ip)</span>
+<span id="cb23-128"><a href="#cb23-128" aria-hidden="true" tabindex="-1"></a>    _res_low <span class="op">=</span> _eng_h._postprocess(torch.full((<span class="dv">1</span>, <span class="op">*</span>_sp), <span class="fl">0.5</span>), _prep_h, return_probabilities<span class="op">=</span><span class="va">False</span>)[<span class="dv">0</span>]</span>
+<span id="cb23-129"><a href="#cb23-129" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">int</span>(_res_low.<span class="bu">sum</span>()), <span class="dv">0</span>)                     <span class="co"># 0.5 &lt; 0.7 -&gt; background</span></span>
+<span id="cb23-130"><a href="#cb23-130" aria-hidden="true" tabindex="-1"></a>    _res_at <span class="op">=</span> _eng_h._postprocess(torch.full((<span class="dv">1</span>, <span class="op">*</span>_sp), <span class="fl">0.7</span>), _prep_h, return_probabilities<span class="op">=</span><span class="va">False</span>)[<span class="dv">0</span>]</span>
+<span id="cb23-131"><a href="#cb23-131" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">int</span>(_res_at.<span class="bu">sum</span>()), _res_at.numel())        <span class="co"># 0.7 &gt;= 0.7 -&gt; foreground</span></span>
+<span id="cb23-132"><a href="#cb23-132" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchConfig(binary_threshold<span class="op">=</span><span class="fl">1.5</span>), contains<span class="op">=</span><span class="st">'binary_threshold'</span>)</span>
+<span id="cb23-133"><a href="#cb23-133" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-134"><a href="#cb23-134" aria-hidden="true" tabindex="-1"></a><span class="co"># Memory-safe public inference defaults; callers can tune upward for their accelerator.</span></span>
+<span id="cb23-135"><a href="#cb23-135" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> inspect <span class="im">as</span> _inspect</span>
+<span id="cb23-136"><a href="#cb23-136" aria-hidden="true" tabindex="-1"></a>test_eq(_inspect.signature(PatchInferenceEngine).parameters[<span class="st">'sw_batch_size'</span>].default, <span class="dv">1</span>)</span>
+<span id="cb23-137"><a href="#cb23-137" aria-hidden="true" tabindex="-1"></a>test_eq(_inspect.signature(patch_inference).parameters[<span class="st">'sw_batch_size'</span>].default, <span class="dv">1</span>)</span>
+<span id="cb23-138"><a href="#cb23-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-139"><a href="#cb23-139" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">'Safety-net tests (T1-T4, TH, TB) passed!'</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Safety-net tests (T1-T4, TH, TB) passed!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>apply_reorder mismatch: explicit=False, config=True. Using explicit argument.
+apply_reorder mismatch: explicit=False, config=True. Using explicit argument.</code></pre>
+</div>
+</div>
+<div id="ensemble-soft-voting-tests" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Ensemble (soft-voting): PatchInferenceEngine and patch_inference accept a list of models.</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Per-patch probabilities are averaged, then a single argmax/threshold is applied.</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> tempfile, os, nibabel <span class="im">as</span> nib</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.nets <span class="im">import</span> UNet</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> monai.networks.layers <span class="im">import</span> Norm</span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>_ens_data <span class="op">=</span> np.random.randn(<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>).astype(np.float32)</span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>_ens_nii <span class="op">=</span> nib.Nifti1Image(_ens_data, np.eye(<span class="dv">4</span>))</span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> _mk_ens_unet(out_channels<span class="op">=</span><span class="dv">2</span>):</span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> UNet(spatial_dims<span class="op">=</span><span class="dv">3</span>, in_channels<span class="op">=</span><span class="dv">1</span>, out_channels<span class="op">=</span>out_channels,</span>
+<span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a>                channels<span class="op">=</span>(<span class="dv">16</span>, <span class="dv">32</span>), strides<span class="op">=</span>(<span class="dv">2</span>,), num_res_units<span class="op">=</span><span class="dv">1</span>, norm<span class="op">=</span>Norm.INSTANCE).<span class="bu">eval</span>()</span>
+<span id="cb26-13"><a href="#cb26-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-14"><a href="#cb26-14" aria-hidden="true" tabindex="-1"></a><span class="cf">with</span> tempfile.TemporaryDirectory() <span class="im">as</span> tmpdir:</span>
+<span id="cb26-15"><a href="#cb26-15" aria-hidden="true" tabindex="-1"></a>    img_path <span class="op">=</span> os.path.join(tmpdir, <span class="st">'ens_img.nii.gz'</span>)</span>
+<span id="cb26-16"><a href="#cb26-16" aria-hidden="true" tabindex="-1"></a>    nib.save(_ens_nii, img_path)</span>
+<span id="cb26-17"><a href="#cb26-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-18"><a href="#cb26-18" aria-hidden="true" tabindex="-1"></a>    _cfg <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>])</span>
+<span id="cb26-19"><a href="#cb26-19" aria-hidden="true" tabindex="-1"></a>    _m1 <span class="op">=</span> _mk_ens_unet()</span>
+<span id="cb26-20"><a href="#cb26-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-21"><a href="#cb26-21" aria-hidden="true" tabindex="-1"></a>    <span class="co"># A single-element list is stored as .models; .model aliases the first model (back-compat)</span></span>
+<span id="cb26-22"><a href="#cb26-22" aria-hidden="true" tabindex="-1"></a>    _eng_list <span class="op">=</span> PatchInferenceEngine([_m1], _cfg, apply_reorder<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb26-23"><a href="#cb26-23" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_eng_list.models), <span class="dv">1</span>)</span>
+<span id="cb26-24"><a href="#cb26-24" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> _eng_list.model <span class="kw">is</span> _m1</span>
+<span id="cb26-25"><a href="#cb26-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-26"><a href="#cb26-26" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Ensembling a model with itself must equal single-model inference (identical probs -&gt; same argmax)</span></span>
+<span id="cb26-27"><a href="#cb26-27" aria-hidden="true" tabindex="-1"></a>    _pred_single <span class="op">=</span> PatchInferenceEngine(_m1, _cfg, apply_reorder<span class="op">=</span><span class="va">False</span>).predict(img_path)</span>
+<span id="cb26-28"><a href="#cb26-28" aria-hidden="true" tabindex="-1"></a>    _pred_dup <span class="op">=</span> PatchInferenceEngine([_m1, _m1], _cfg, apply_reorder<span class="op">=</span><span class="va">False</span>).predict(img_path)</span>
+<span id="cb26-29"><a href="#cb26-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> torch.equal(_pred_single, _pred_dup), <span class="st">"Ensembling identical models should equal single-model output"</span></span>
+<span id="cb26-30"><a href="#cb26-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-31"><a href="#cb26-31" aria-hidden="true" tabindex="-1"></a>    <span class="co"># A list of two different models runs and returns a valid label mask (labels subset of {0, 1})</span></span>
+<span id="cb26-32"><a href="#cb26-32" aria-hidden="true" tabindex="-1"></a>    _m2 <span class="op">=</span> _mk_ens_unet()</span>
+<span id="cb26-33"><a href="#cb26-33" aria-hidden="true" tabindex="-1"></a>    _eng_ens <span class="op">=</span> PatchInferenceEngine([_m1, _m2], _cfg, apply_reorder<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb26-34"><a href="#cb26-34" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_eng_ens.models), <span class="dv">2</span>)</span>
+<span id="cb26-35"><a href="#cb26-35" aria-hidden="true" tabindex="-1"></a>    _pred_ens <span class="op">=</span> _eng_ens.predict(img_path)</span>
+<span id="cb26-36"><a href="#cb26-36" aria-hidden="true" tabindex="-1"></a>    test_eq(_pred_ens.shape, _pred_single.shape)</span>
+<span id="cb26-37"><a href="#cb26-37" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">set</span>(torch.unique(_pred_ens).tolist()).issubset({<span class="dv">0</span>, <span class="dv">1</span>})</span>
+<span id="cb26-38"><a href="#cb26-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-39"><a href="#cb26-39" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Ensemble + TTA runs and returns the same shape</span></span>
+<span id="cb26-40"><a href="#cb26-40" aria-hidden="true" tabindex="-1"></a>    _pred_ens_tta <span class="op">=</span> _eng_ens.predict(img_path, tta<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb26-41"><a href="#cb26-41" aria-hidden="true" tabindex="-1"></a>    test_eq(_pred_ens_tta.shape, _pred_single.shape)</span>
+<span id="cb26-42"><a href="#cb26-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-43"><a href="#cb26-43" aria-hidden="true" tabindex="-1"></a>    <span class="co"># patch_inference accepts a list of models (batch ensemble)</span></span>
+<span id="cb26-44"><a href="#cb26-44" aria-hidden="true" tabindex="-1"></a>    _batch <span class="op">=</span> patch_inference([_m1, _m2], _cfg, [img_path], apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb26-45"><a href="#cb26-45" aria-hidden="true" tabindex="-1"></a>    test_eq(<span class="bu">len</span>(_batch), <span class="dv">1</span>)</span>
+<span id="cb26-46"><a href="#cb26-46" aria-hidden="true" tabindex="-1"></a>    test_eq(_batch[<span class="dv">0</span>].shape, _pred_single.shape)</span>
+<span id="cb26-47"><a href="#cb26-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-48"><a href="#cb26-48" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Ensembling identical models via patch_inference equals the single-model result</span></span>
+<span id="cb26-49"><a href="#cb26-49" aria-hidden="true" tabindex="-1"></a>    _batch_dup <span class="op">=</span> patch_inference([_m1, _m1], _cfg, [img_path], apply_reorder<span class="op">=</span><span class="va">False</span>, progress<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb26-50"><a href="#cb26-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> torch.equal(_batch_dup[<span class="dv">0</span>], _pred_single)</span>
+<span id="cb26-51"><a href="#cb26-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-52"><a href="#cb26-52" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Multi-class: keep_largest_component is binary-only, so it is skipped (with a warning) for &gt;2 classes</span></span>
+<span id="cb26-53"><a href="#cb26-53" aria-hidden="true" tabindex="-1"></a>    <span class="im">import</span> warnings <span class="im">as</span> _warnings</span>
+<span id="cb26-54"><a href="#cb26-54" aria-hidden="true" tabindex="-1"></a>    _mc <span class="op">=</span> _mk_ens_unet(out_channels<span class="op">=</span><span class="dv">3</span>)</span>
+<span id="cb26-55"><a href="#cb26-55" aria-hidden="true" tabindex="-1"></a>    _mc_klc <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>], keep_largest_component<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb26-56"><a href="#cb26-56" aria-hidden="true" tabindex="-1"></a>    _mc_off <span class="op">=</span> PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>], keep_largest_component<span class="op">=</span><span class="va">False</span>)</span>
+<span id="cb26-57"><a href="#cb26-57" aria-hidden="true" tabindex="-1"></a>    _p_off <span class="op">=</span> PatchInferenceEngine([_mc, _mc], _mc_off, apply_reorder<span class="op">=</span><span class="va">False</span>).predict(img_path)</span>
+<span id="cb26-58"><a href="#cb26-58" aria-hidden="true" tabindex="-1"></a>    <span class="cf">with</span> _warnings.catch_warnings(record<span class="op">=</span><span class="va">True</span>) <span class="im">as</span> _w:</span>
+<span id="cb26-59"><a href="#cb26-59" aria-hidden="true" tabindex="-1"></a>        _warnings.simplefilter(<span class="st">"always"</span>)</span>
+<span id="cb26-60"><a href="#cb26-60" aria-hidden="true" tabindex="-1"></a>        _p_klc <span class="op">=</span> PatchInferenceEngine([_mc, _mc], _mc_klc, apply_reorder<span class="op">=</span><span class="va">False</span>).predict(img_path)</span>
+<span id="cb26-61"><a href="#cb26-61" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> torch.equal(_p_klc, _p_off), <span class="st">"keep_largest_component must be skipped for multi-class output"</span></span>
+<span id="cb26-62"><a href="#cb26-62" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">any</span>(<span class="st">"binary-only"</span> <span class="kw">in</span> <span class="bu">str</span>(_wi.message) <span class="cf">for</span> _wi <span class="kw">in</span> _w), <span class="st">"expected a binary-only warning for multi-class"</span></span>
+<span id="cb26-63"><a href="#cb26-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">set</span>(torch.unique(_p_klc).tolist()).issubset({<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>})</span>
+<span id="cb26-64"><a href="#cb26-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-65"><a href="#cb26-65" aria-hidden="true" tabindex="-1"></a><span class="co"># An empty model list is rejected</span></span>
+<span id="cb26-66"><a href="#cb26-66" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: PatchInferenceEngine([], PatchConfig(patch_size<span class="op">=</span>[<span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>])))</span>
+<span id="cb26-67"><a href="#cb26-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-68"><a href="#cb26-68" aria-hidden="true" tabindex="-1"></a><span class="bu">print</span>(<span class="st">"Ensemble (soft-voting) tests passed!"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Ensemble (soft-voting) tests passed!</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>apply_reorder mismatch: explicit=False, config=True. Using explicit argument.</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="export" class="level2">
+<h2 class="anchored" data-anchor-id="export">Export</h2>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/fastmonai\.no\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>

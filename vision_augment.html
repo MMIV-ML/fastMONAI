@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Data augmentation – fastMONAI</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-d63a2c9c8df14b07662b36303925c8cc.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+<meta property="og:title" content="Data augmentation – fastMONAI">
+<meta property="og:description" content="fastMONAI library">
+<meta property="og:site_name" content="fastMONAI">
+<meta name="twitter:title" content="Data augmentation – fastMONAI">
+<meta name="twitter:description" content="fastMONAI library">
+<meta name="twitter:card" content="summary">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">fastMONAI</span>
+    </a>
+  </div>
+        <div class="quarto-navbar-tools tools-end">
+</div>
+          <div id="quarto-search" class="" title="Search"></div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./vision_augment.html">Data augmentation</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Overview</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_plot.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision plot</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_core.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision core</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_augment.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">Data augmentation</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_loss_functions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Custom loss functions</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_metrics.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision metrics</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Vision inference</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./utils.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Utils</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./dataset_info.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Dataset information</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./external_data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">External data</span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./vision_patch.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-based training</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Tutorials</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_beginner_video.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Getting started video</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_classification.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Classification</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_regression.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Regression</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_binary_segmentation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Binary semantic segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_multiclass_segmentation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Multi-class semantic segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Inference with a safe model artifact</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_training.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Binary Segmentation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_cross_validation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Cross-Validation and Final Model Training</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./tutorial_patch_inference.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Patch-Based Inference: Deploying on New Scans</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#transforms-wrapper" id="toc-transforms-wrapper" class="nav-link active" data-scroll-target="#transforms-wrapper">Transforms wrapper</a>
+  <ul class="collapse">
+  <li><a href="#customdicttransform" id="toc-customdicttransform" class="nav-link" data-scroll-target="#customdicttransform">CustomDictTransform</a></li>
+  </ul></li>
+  <li><a href="#vanilla-transforms" id="toc-vanilla-transforms" class="nav-link" data-scroll-target="#vanilla-transforms">Vanilla transforms</a>
+  <ul class="collapse">
+  <li><a href="#do_pad_or_crop" id="toc-do_pad_or_crop" class="nav-link" data-scroll-target="#do_pad_or_crop">do_pad_or_crop</a></li>
+  <li><a href="#padorcrop" id="toc-padorcrop" class="nav-link" data-scroll-target="#padorcrop">PadOrCrop</a></li>
+  <li><a href="#znormalization" id="toc-znormalization" class="nav-link" data-scroll-target="#znormalization">ZNormalization</a></li>
+  <li><a href="#rescaleintensity" id="toc-rescaleintensity" class="nav-link" data-scroll-target="#rescaleintensity">RescaleIntensity</a></li>
+  <li><a href="#normalizeintensity" id="toc-normalizeintensity" class="nav-link" data-scroll-target="#normalizeintensity">NormalizeIntensity</a></li>
+  <li><a href="#inference_transforms_to_specs" id="toc-inference_transforms_to_specs" class="nav-link" data-scroll-target="#inference_transforms_to_specs">inference_transforms_to_specs</a></li>
+  <li><a href="#transforms_from_specs" id="toc-transforms_from_specs" class="nav-link" data-scroll-target="#transforms_from_specs">transforms_from_specs</a></li>
+  <li><a href="#transforms_to_specs" id="toc-transforms_to_specs" class="nav-link" data-scroll-target="#transforms_to_specs">transforms_to_specs</a></li>
+  <li><a href="#build_transform_from_spec" id="toc-build_transform_from_spec" class="nav-link" data-scroll-target="#build_transform_from_spec">build_transform_from_spec</a></li>
+  <li><a href="#bratsmaskconverter" id="toc-bratsmaskconverter" class="nav-link" data-scroll-target="#bratsmaskconverter">BraTSMaskConverter</a></li>
+  <li><a href="#binaryconverter" id="toc-binaryconverter" class="nav-link" data-scroll-target="#binaryconverter">BinaryConverter</a></li>
+  <li><a href="#randomghosting" id="toc-randomghosting" class="nav-link" data-scroll-target="#randomghosting">RandomGhosting</a></li>
+  <li><a href="#randomspike" id="toc-randomspike" class="nav-link" data-scroll-target="#randomspike">RandomSpike</a></li>
+  <li><a href="#randomnoise" id="toc-randomnoise" class="nav-link" data-scroll-target="#randomnoise">RandomNoise</a></li>
+  <li><a href="#randombiasfield" id="toc-randombiasfield" class="nav-link" data-scroll-target="#randombiasfield">RandomBiasField</a></li>
+  <li><a href="#randomblur" id="toc-randomblur" class="nav-link" data-scroll-target="#randomblur">RandomBlur</a></li>
+  <li><a href="#randomgamma" id="toc-randomgamma" class="nav-link" data-scroll-target="#randomgamma">RandomGamma</a></li>
+  <li><a href="#randomintensityscale" id="toc-randomintensityscale" class="nav-link" data-scroll-target="#randomintensityscale">RandomIntensityScale</a></li>
+  <li><a href="#randommotion" id="toc-randommotion" class="nav-link" data-scroll-target="#randommotion">RandomMotion</a></li>
+  <li><a href="#randomanisotropy" id="toc-randomanisotropy" class="nav-link" data-scroll-target="#randomanisotropy">RandomAnisotropy</a></li>
+  <li><a href="#randomcutout" id="toc-randomcutout" class="nav-link" data-scroll-target="#randomcutout">RandomCutout</a></li>
+  </ul></li>
+  <li><a href="#dictionary-transforms" id="toc-dictionary-transforms" class="nav-link" data-scroll-target="#dictionary-transforms">Dictionary transforms</a>
+  <ul class="collapse">
+  <li><a href="#randomelasticdeformation" id="toc-randomelasticdeformation" class="nav-link" data-scroll-target="#randomelasticdeformation">RandomElasticDeformation</a></li>
+  <li><a href="#randomaffine" id="toc-randomaffine" class="nav-link" data-scroll-target="#randomaffine">RandomAffine</a></li>
+  <li><a href="#randomflip" id="toc-randomflip" class="nav-link" data-scroll-target="#randomflip">RandomFlip</a></li>
+  <li><a href="#oneof" id="toc-oneof" class="nav-link" data-scroll-target="#oneof">OneOf</a></li>
+  </ul></li>
+  <li><a href="#augmentation-suggestion" id="toc-augmentation-suggestion" class="nav-link" data-scroll-target="#augmentation-suggestion">Augmentation suggestion</a></li>
+  <li><a href="#gpu-patch-augmentation" id="toc-gpu-patch-augmentation" class="nav-link" data-scroll-target="#gpu-patch-augmentation">GPU patch augmentation</a>
+  <ul class="collapse">
+  <li><a href="#gpupatchaugmentation" id="toc-gpupatchaugmentation" class="nav-link" data-scroll-target="#gpupatchaugmentation">GpuPatchAugmentation</a></li>
+  <li><a href="#gpu_patch_augmentations" id="toc-gpu_patch_augmentations" class="nav-link" data-scroll-target="#gpu_patch_augmentations">gpu_patch_augmentations</a></li>
+  <li><a href="#suggest_patch_augmentations" id="toc-suggest_patch_augmentations" class="nav-link" data-scroll-target="#suggest_patch_augmentations">suggest_patch_augmentations</a></li>
+  </ul></li>
+  </ul>
+<div class="toc-actions"><ul><li><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Data augmentation</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<!-- WARNING: THIS FILE WAS AUTOGENERATED! DO NOT EDIT! -->
+<section id="transforms-wrapper" class="level2">
+<h2 class="anchored" data-anchor-id="transforms-wrapper">Transforms wrapper</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L21" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="customdicttransform" class="level3">
+<h3 class="anchored" data-anchor-id="customdicttransform">CustomDictTransform</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> CustomDictTransform(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>    aug</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>A class that serves as a wrapper to perform an identical transformation on both</em> the image and the target (if it’s a mask).</p>
+</section>
+</section>
+<section id="vanilla-transforms" class="level2">
+<h2 class="anchored" data-anchor-id="vanilla-transforms">Vanilla transforms</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L73" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="do_pad_or_crop" class="level3">
+<h3 class="anchored" data-anchor-id="do_pad_or_crop">do_pad_or_crop</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> do_pad_or_crop(</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>    o, target_shape, padding_mode, mask_name, dtype:_TensorMeta<span class="op">=</span>Tensor</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Call self as a function.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L78" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="padorcrop" class="level3">
+<h3 class="anchored" data-anchor-id="padorcrop">PadOrCrop</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> PadOrCrop(</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>    size, padding_mode:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, mask_name:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Resize image using TorchIO CropOrPad.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L115" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="znormalization" class="level3">
+<h3 class="anchored" data-anchor-id="znormalization">ZNormalization</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> ZNormalization(</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>    masking_method:NoneType<span class="op">=</span><span class="va">None</span>, channel_wise:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#znormalization"><code>ZNormalization</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L175" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="rescaleintensity" class="level3">
+<h3 class="anchored" data-anchor-id="rescaleintensity">RescaleIntensity</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RescaleIntensity(</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>    out_min_max:<span class="bu">tuple</span>, in_min_max:<span class="bu">tuple</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO RescaleIntensity for robust intensity scaling.</em></p>
+<p>Args: out_min_max (tuple[float, float]): Output intensity range (min, max) in_min_max (tuple[float, float]): Input intensity range (min, max)</p>
+<p>Example for CT images: # Normalize CT from air (-1000 HU) to bone (1000 HU) into range (-1, 1) transform = RescaleIntensity(out_min_max=(-1, 1), in_min_max=(-1000, 1000))</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L241" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="normalizeintensity" class="level3">
+<h3 class="anchored" data-anchor-id="normalizeintensity">NormalizeIntensity</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> NormalizeIntensity(</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    nonzero:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, channel_wise:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>, subtrahend:<span class="bu">float</span><span class="op">=</span><span class="va">None</span>, divisor:<span class="bu">float</span><span class="op">=</span><span class="va">None</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply MONAI NormalizeIntensity.</em></p>
+<p>Args: nonzero (bool): Only normalize non-zero values (default: True) channel_wise (bool): Apply normalization per channel (default: True) subtrahend (float, optional): Value to subtract<br>
+divisor (float, optional): Value to divide by</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L377" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="inference_transforms_to_specs" class="level3">
+<h3 class="anchored" data-anchor-id="inference_transforms_to_specs">inference_transforms_to_specs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> inference_transforms_to_specs(</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    tfms</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Serialize the ordered transforms that run for validation/inference.</em></p>
+<p>fastai transforms with split_idx == 0 are training-only and are omitted. Every remaining transform must be allow-listed and round-trippable, preventing a standard inference artifact from silently dropping preprocessing.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L366" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="transforms_from_specs" class="level3">
+<h3 class="anchored" data-anchor-id="transforms_from_specs">transforms_from_specs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> transforms_from_specs(</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    specs</span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Reconstruct live transforms from JSON spec dicts.</em></p>
+<p>Accepts spec dicts (rebuilt via build_transform_from_spec), pass-through live transforms, and None.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L338" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="transforms_to_specs" class="level3">
+<h3 class="anchored" data-anchor-id="transforms_to_specs">transforms_to_specs</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> transforms_to_specs(</span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>    tfms</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Convert transforms (or specs) to JSON-serializable spec dicts.</em></p>
+<p>Accepts fastMONAI transform wrappers (via .to_spec()), pass-through spec dicts, and None. Raises TypeError if a transform cannot be serialized (e.g.&nbsp;a custom callable); pass such transforms via the pre_inference_tfms / pre_patch_tfms override instead of the config.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L325" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="build_transform_from_spec" class="level3">
+<h3 class="anchored" data-anchor-id="build_transform_from_spec">build_transform_from_spec</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> build_transform_from_spec(</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    spec</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Reconstruct an allow-listed transform from a JSON spec dict.</em></p>
+<p>spec must contain a name key naming a registered transform; remaining keys are passed as constructor kwargs.</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L393" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="bratsmaskconverter" class="level3">
+<h3 class="anchored" data-anchor-id="bratsmaskconverter">BraTSMaskConverter</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> BraTSMaskConverter(</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>    enc:NoneType<span class="op">=</span><span class="va">None</span>, dec:NoneType<span class="op">=</span><span class="va">None</span>, split_idx:NoneType<span class="op">=</span><span class="va">None</span>, order:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Convert BraTS masks.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L405" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="binaryconverter" class="level3">
+<h3 class="anchored" data-anchor-id="binaryconverter">BinaryConverter</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> BinaryConverter(</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>    enc:NoneType<span class="op">=</span><span class="va">None</span>, dec:NoneType<span class="op">=</span><span class="va">None</span>, split_idx:NoneType<span class="op">=</span><span class="va">None</span>, order:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Convert to binary mask.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L418" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomghosting" class="level3">
+<h3 class="anchored" data-anchor-id="randomghosting">RandomGhosting</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomGhosting(</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>    intensity:<span class="bu">tuple</span><span class="op">=</span>(<span class="fl">0.5</span>, <span class="dv">1</span>), p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomghosting"><code>RandomGhosting</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L438" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomspike" class="level3">
+<h3 class="anchored" data-anchor-id="randomspike">RandomSpike</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomSpike(</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    num_spikes:<span class="bu">int</span><span class="op">=</span><span class="dv">1</span>, intensity:<span class="bu">tuple</span><span class="op">=</span>(<span class="dv">1</span>, <span class="dv">3</span>), p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomspike"><code>RandomSpike</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L458" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomnoise" class="level3">
+<h3 class="anchored" data-anchor-id="randomnoise">RandomNoise</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomNoise(</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    mean:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, std:<span class="bu">tuple</span><span class="op">=</span>(<span class="dv">0</span>, <span class="fl">0.25</span>), p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomnoise"><code>RandomNoise</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L478" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randombiasfield" class="level3">
+<h3 class="anchored" data-anchor-id="randombiasfield">RandomBiasField</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomBiasField(</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>    coefficients:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span>, order:<span class="bu">int</span><span class="op">=</span><span class="dv">3</span>, p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randombiasfield"><code>RandomBiasField</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L498" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomblur" class="level3">
+<h3 class="anchored" data-anchor-id="randomblur">RandomBlur</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomBlur(</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>    std:<span class="bu">tuple</span><span class="op">=</span>(<span class="dv">0</span>, <span class="dv">2</span>), p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomblur"><code>RandomBlur</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L518" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomgamma" class="level3">
+<h3 class="anchored" data-anchor-id="randomgamma">RandomGamma</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomGamma(</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>    log_gamma:<span class="bu">tuple</span><span class="op">=</span>(<span class="op">-</span><span class="fl">0.3</span>, <span class="fl">0.3</span>), p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomgamma"><code>RandomGamma</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L557" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomintensityscale" class="level3">
+<h3 class="anchored" data-anchor-id="randomintensityscale">RandomIntensityScale</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomIntensityScale(</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    scale_range:<span class="bu">tuple</span><span class="op">=</span>(<span class="fl">0.5</span>, <span class="fl">2.0</span>), p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Randomly scale image intensities by a multiplicative factor.</em></p>
+<p>Useful for domain generalization across different acquisition protocols with varying intensity ranges.</p>
+<p>Args: scale_range (tuple[float, float]): Range of scale factors (min, max). Values &gt; 1 increase intensity, &lt; 1 decrease intensity. p (float): Probability of applying the transform (default: 0.5)</p>
+<p>Example: # Scale intensities randomly between 0.5x and 2.0x transform = RandomIntensityScale(scale_range=(0.5, 2.0), p=0.3)</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L597" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randommotion" class="level3">
+<h3 class="anchored" data-anchor-id="randommotion">RandomMotion</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomMotion(</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>    degrees:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, translation:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, num_transforms:<span class="bu">int</span><span class="op">=</span><span class="dv">2</span>, image_interpolation:<span class="bu">str</span><span class="op">=</span><span class="st">'linear'</span>, p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randommotion"><code>RandomMotion</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L630" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomanisotropy" class="level3">
+<h3 class="anchored" data-anchor-id="randomanisotropy">RandomAnisotropy</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomAnisotropy(</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>    axes:<span class="bu">tuple</span><span class="op">=</span>(<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>), downsampling:<span class="bu">tuple</span><span class="op">=</span>(<span class="fl">1.5</span>, <span class="dv">5</span>), image_interpolation:<span class="bu">str</span><span class="op">=</span><span class="st">'linear'</span>, scalars_only:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>    p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomanisotropy"><code>RandomAnisotropy</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L756" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomcutout" class="level3">
+<h3 class="anchored" data-anchor-id="randomcutout">RandomCutout</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb22"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomCutout(</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>    holes:<span class="bu">int</span><span class="op">=</span><span class="dv">1</span>, max_holes:<span class="bu">int</span><span class="op">=</span><span class="dv">3</span>, spatial_size:<span class="bu">int</span><span class="op">=</span><span class="dv">8</span>, max_spatial_size:<span class="bu">int</span><span class="op">=</span><span class="dv">16</span>, fill:<span class="bu">str</span><span class="op">=</span><span class="st">'min'</span>, mask_only:<span class="bu">bool</span><span class="op">=</span><span class="va">True</span>,</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>    p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.2</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Randomly erase spherical regions in 3D medical images with mask-aware placement.</em></p>
+<p>Simulates post-operative surgical cavities by filling random ellipsoid volumes with specified values. When mask_only=True (default), cutouts only affect voxels inside the segmentation mask, ensuring no healthy tissue is modified.</p>
+<p>Args: holes: Minimum number of cutout regions. Default: 1. max_holes: Maximum number of regions. Default: 3. spatial_size: Minimum cutout diameter in voxels. Default: 8. max_spatial_size: Maximum cutout diameter. Default: 16. fill: Fill value - ‘min’, ‘mean’, ‘random’, or float. Default: ‘min’. mask_only: If True, cutouts only affect mask-positive voxels (tumor tissue). If False, cutouts can affect any voxel (original behavior). Default: True. p: Probability of applying transform. Default: 0.2.</p>
+<p>Example: &gt;&gt;&gt; # Simulate post-op cavities only within tumor regions &gt;&gt;&gt; tfm = RandomCutout(holes=1, max_holes=2, spatial_size=10, … max_spatial_size=25, fill=‘min’, mask_only=True, p=0.2)</p>
+<pre><code>&gt;&gt;&gt; # Original behavior - cutouts anywhere in the volume
+&gt;&gt;&gt; tfm = RandomCutout(mask_only=False, p=0.2)</code></pre>
+</section>
+</section>
+<section id="dictionary-transforms" class="level2">
+<h2 class="anchored" data-anchor-id="dictionary-transforms">Dictionary transforms</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L887" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="randomelasticdeformation" class="level3">
+<h3 class="anchored" data-anchor-id="randomelasticdeformation">RandomElasticDeformation</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb24"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomElasticDeformation(</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>    num_control_points:<span class="bu">int</span><span class="op">=</span><span class="dv">7</span>, max_displacement:<span class="bu">float</span><span class="op">=</span><span class="fl">7.5</span>, image_interpolation:<span class="bu">str</span><span class="op">=</span><span class="st">'linear'</span>, p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomelasticdeformation"><code>RandomElasticDeformation</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L900" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomaffine" class="level3">
+<h3 class="anchored" data-anchor-id="randomaffine">RandomAffine</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb25"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomAffine(</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a>    scales:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, degrees:<span class="bu">int</span><span class="op">=</span><span class="dv">10</span>, translation:<span class="bu">int</span><span class="op">=</span><span class="dv">0</span>, isotropic:<span class="bu">bool</span><span class="op">=</span><span class="va">False</span>, image_interpolation:<span class="bu">str</span><span class="op">=</span><span class="st">'linear'</span>,</span>
+<span id="cb25-3"><a href="#cb25-3" aria-hidden="true" tabindex="-1"></a>    default_pad_value:<span class="bu">float</span><span class="op">=</span><span class="fl">0.0</span>, p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb25-4"><a href="#cb25-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomaffine"><code>RandomAffine</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L916" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="randomflip" class="level3">
+<h3 class="anchored" data-anchor-id="randomflip">RandomFlip</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb26"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> RandomFlip(</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>    axes:<span class="bu">str</span><span class="op">=</span><span class="st">'LRAPIS'</span>, p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply TorchIO <a href="https://fastmonai.no/vision_augment.html#randomflip"><code>RandomFlip</code></a>.</em></p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L923" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="oneof" class="level3">
+<h3 class="anchored" data-anchor-id="oneof">OneOf</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> OneOf(</span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a>    transform_dict, p:<span class="bu">int</span><span class="op">=</span><span class="dv">1</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Apply only one of the given transforms using TorchIO <a href="https://fastmonai.no/vision_augment.html#oneof"><code>OneOf</code></a>.</em></p>
+</section>
+</section>
+<section id="augmentation-suggestion" class="level2">
+<h2 class="anchored" data-anchor-id="augmentation-suggestion">Augmentation suggestion</h2>
+</section>
+<section id="gpu-patch-augmentation" class="level2">
+<h2 class="anchored" data-anchor-id="gpu-patch-augmentation">GPU patch augmentation</h2>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L1014" target="_blank" style="float:right; font-size:smaller">source</a></p>
+<section id="gpupatchaugmentation" class="level3">
+<h3 class="anchored" data-anchor-id="gpupatchaugmentation">GpuPatchAugmentation</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb28"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> GpuPatchAugmentation(</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>    affine:NoneType<span class="op">=</span><span class="va">None</span>, anisotropy:NoneType<span class="op">=</span><span class="va">None</span>, flip:NoneType<span class="op">=</span><span class="va">None</span>, gamma:NoneType<span class="op">=</span><span class="va">None</span>,</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>    intensity_scale:NoneType<span class="op">=</span><span class="va">None</span>, noise:NoneType<span class="op">=</span><span class="va">None</span>, blur:NoneType<span class="op">=</span><span class="va">None</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>GPU-batched augmentation for patch-based training.</em></p>
+<p>Operates on [B, C, D, H, W] tensors already on GPU. All operations run under torch.no_grad() since augmentation does not need gradient tracking. Inputs are cloned, so the caller’s tensors are never mutated.</p>
+<p>Transform order: spatial (affine, anisotropy, flip) then intensity (gamma, intensity_scale, noise, blur). Spatial transforms apply the same parameters to both image and mask. Intensity transforms skip the mask.</p>
+<p>Each transform is controlled by a parameter dict with at minimum a ‘p’ key for per-sample probability. Pass None to disable a transform.</p>
+<p>Args: affine: dict with keys ‘scales’, ‘degrees’, ‘translation’, ‘default_pad_value’, ‘p’. None to disable. anisotropy: dict with keys ‘axes’, ‘downsampling’, ‘p’. None to disable. flip: dict with keys ‘axes’, ‘p’. None to disable. gamma: dict with keys ‘log_gamma’, ‘p’. None to disable. intensity_scale: dict with keys ‘scale_range’, ‘p’. None to disable. noise: dict with keys ‘std’, ‘p’. None to disable. blur: dict with keys ‘std’, ‘p’. None to disable.</p>
+<p>Example::</p>
+<pre><code>&gt;&gt;&gt; gpu_aug = GpuPatchAugmentation(
+...     affine={'scales': (0.7, 1.4), 'degrees': (30, 30, 30),
+...             'translation': (25, 25, 10), 'default_pad_value': 0., 'p': 0.2},
+...     gamma={'log_gamma': (-0.3, 0.3), 'p': 0.3},
+...     flip={'axes': (0, 1, 2), 'p': 0.5},
+... )
+&gt;&gt;&gt; img_aug, mask_aug = gpu_aug(img_gpu, mask_gpu)</code></pre>
+<p>Design rationale (why a from-scratch engine, not MONAI/TorchIO): Genuinely batched: one affine_grid/grid_sample over the whole [B, C, D, H, W] batch. MONAI/TorchIO transforms are strictly per-sample, so a batched alternative must loop per sample. Measured on an RTX 6000 Ada (full pipeline, 128^3): this batched GPU path ~3 ms/batch (B=2) vs MONAI per-sample-on-GPU ~77 ms (~25x slower) vs TorchIO CPU ~287 ms (~100x slower); the gap is structural and grows with batch size, so the GPU path is kept. It is an approximate reimplementation (voxel-space affine, per-axis flip, image-only anisotropy, sign-preserving gamma), not bit-identical to the CPU/TorchIO path. The voxel-space affine’s geometric error scales with the patch’s physical-extent anisotropy (patch_size x target_spacing), not voxel spacing alone: it is sub-voxel when the physical extent is near-isotropic (the common case, including cubic patches on isotropic data) and deviates materially only for strongly anisotropic physical extents (e.g.&nbsp;a cubic patch on anisotropic spacing).</p>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L1373" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="gpu_patch_augmentations" class="level3">
+<h3 class="anchored" data-anchor-id="gpu_patch_augmentations">gpu_patch_augmentations</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb30"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> gpu_patch_augmentations(</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>    patch_size, target_spacing, anisotropy_threshold:<span class="bu">float</span><span class="op">=</span><span class="fl">3.0</span>, translation_fraction:<span class="bu">float</span><span class="op">=</span><span class="fl">0.15</span>, affine_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.2</span>,</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>    anisotropy_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.25</span>, gamma_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.3</span>, intensity_scale_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.1</span>, noise_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.1</span>, blur_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.2</span>,</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>    flip_p:<span class="bu">float</span><span class="op">=</span><span class="fl">0.5</span></span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Create GpuPatchAugmentation with nnU-Net-inspired defaults.</em></p>
+<p>Approximate GPU reimplementation of suggest_patch_augmentations: it shares the same parameter logic (via _compute_patch_aug_params) and probabilities, but is NOT bit-identical: the affine is voxel-space (not spacing-aware), flip is per-axis independent, anisotropy degrades the image only, and gamma is sign-preserving. Runs batched on GPU (~25x faster than the per-sample CPU/TorchIO path); see GpuPatchAugmentation for the benchmark and rationale. The voxel-space affine’s geometric error scales with physical-extent anisotropy (patch_size x target_spacing), so it is sub-voxel for near-isotropic extents and only matters for strongly anisotropic ones (e.g.&nbsp;a cubic patch on anisotropic spacing).</p>
+<p>Args: patch_size: List/tuple of 3 ints, patch dimensions. target_spacing: List/tuple of 3 floats, voxel spacing. anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0). translation_fraction: Fraction of patch_size for translation (default 0.15). affine_p: Probability for RandomAffine (default 0.2). anisotropy_p: Probability for RandomAnisotropy (default 0.25). gamma_p: Probability for RandomGamma (default 0.3). intensity_scale_p: Probability for RandomIntensityScale (default 0.1). noise_p: Probability for RandomNoise (default 0.1). blur_p: Probability for RandomBlur (default 0.2). flip_p: Probability for RandomFlip per axis (default 0.5).</p>
+<p>Returns: GpuPatchAugmentation instance.</p>
+<p>Example::</p>
+<pre><code>&gt;&gt;&gt; gpu_aug = gpu_patch_augmentations([128, 128, 32], [0.5, 0.5, 1.5])
+&gt;&gt;&gt; dls = MedPatchDataLoaders.from_df(..., gpu_augmentation=gpu_aug)</code></pre>
+<hr>
+<p><a href="https://github.com/MMIV-ML/fastMONAI/blob/main/fastMONAI/vision_augmentation.py#L1443" target="_blank" style="float:right; font-size:smaller">source</a></p>
+</section>
+<section id="suggest_patch_augmentations" class="level3">
+<h3 class="anchored" data-anchor-id="suggest_patch_augmentations">suggest_patch_augmentations</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb32"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="kw">def</span> suggest_patch_augmentations(</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>    patch_size, target_spacing, anisotropy_threshold:<span class="bu">float</span><span class="op">=</span><span class="fl">3.0</span>, translation_fraction:<span class="bu">float</span><span class="op">=</span><span class="fl">0.15</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>):</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Suggest patch-based augmentations with nnU-Net-inspired defaults.</em></p>
+<p>Derives rotation degrees, translation, and RandomAnisotropy axes from patch geometry and voxel spacing. Returns a list of fastMONAI transform instances ready for the <code>patch_tfms</code> parameter in MedPatchDataLoaders.</p>
+<p>Anisotropy detection: if max(spacing)/min(spacing) &gt;= threshold, rotation is restricted to 5 deg out-of-plane and 30 deg in-plane. Otherwise 30 deg symmetric. Translation is patch_size * fraction per axis.</p>
+<p>Args: patch_size: List/tuple of 3 ints, patch dimensions. target_spacing: List/tuple of 3 floats, voxel spacing. anisotropy_threshold: Ratio threshold for anisotropy detection (default 3.0). translation_fraction: Fraction of patch_size for translation (default 0.15).</p>
+<p>Returns: list: fastMONAI transform instances (7 normally, 6 if RandomAnisotropy omitted).</p>
+<p>Example::</p>
+<pre><code>&gt;&gt;&gt; patch_tfms = suggest_patch_augmentations([128, 128, 32], [0.5, 0.5, 1.5])
+&gt;&gt;&gt; dls = MedPatchDataLoaders.from_df(..., patch_tfms=patch_tfms)</code></pre>
+<div id="eu5z2yomz9j" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fastcore.test <span class="im">import</span> test_eq, test_fail</span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Isotropic case</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(tfms), <span class="dv">7</span>)</span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(tfms[<span class="dv">0</span>]), RandomAffine)</span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(tfms[<span class="op">-</span><span class="dv">1</span>]), RandomFlip)</span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Anisotropic case (axis 2 thick): degrees=(5, 5, 30) -&gt; (-5, 5, -5, 5, -30, 30)</span></span>
+<span id="cb34-10"><a href="#cb34-10" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">32</span>], target_spacing<span class="op">=</span>[<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">1.5</span>])</span>
+<span id="cb34-11"><a href="#cb34-11" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(tfms), <span class="dv">7</span>)</span>
+<span id="cb34-12"><a href="#cb34-12" aria-hidden="true" tabindex="-1"></a>aff <span class="op">=</span> tfms[<span class="dv">0</span>].tio_transform</span>
+<span id="cb34-13"><a href="#cb34-13" aria-hidden="true" tabindex="-1"></a>test_eq(aff.degrees, (<span class="op">-</span><span class="dv">5</span>, <span class="dv">5</span>, <span class="op">-</span><span class="dv">5</span>, <span class="dv">5</span>, <span class="op">-</span><span class="dv">30</span>, <span class="dv">30</span>))</span>
+<span id="cb34-14"><a href="#cb34-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-15"><a href="#cb34-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Anisotropic case (axis 0 thick): degrees=(30, 5, 5) -&gt; (-30, 30, -5, 5, -5, 5)</span></span>
+<span id="cb34-16"><a href="#cb34-16" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">32</span>, <span class="dv">128</span>, <span class="dv">128</span>], target_spacing<span class="op">=</span>[<span class="fl">3.0</span>, <span class="fl">0.5</span>, <span class="fl">0.5</span>])</span>
+<span id="cb34-17"><a href="#cb34-17" aria-hidden="true" tabindex="-1"></a>aff <span class="op">=</span> tfms[<span class="dv">0</span>].tio_transform</span>
+<span id="cb34-18"><a href="#cb34-18" aria-hidden="true" tabindex="-1"></a>test_eq(aff.degrees, (<span class="op">-</span><span class="dv">30</span>, <span class="dv">30</span>, <span class="op">-</span><span class="dv">5</span>, <span class="dv">5</span>, <span class="op">-</span><span class="dv">5</span>, <span class="dv">5</span>))</span>
+<span id="cb34-19"><a href="#cb34-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-20"><a href="#cb34-20" aria-hidden="true" tabindex="-1"></a><span class="co"># Isotropic spacing -&gt; symmetric degrees: 30 -&gt; (-30, 30, -30, 30, -30, 30)</span></span>
+<span id="cb34-21"><a href="#cb34-21" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb34-22"><a href="#cb34-22" aria-hidden="true" tabindex="-1"></a>aff <span class="op">=</span> tfms[<span class="dv">0</span>].tio_transform</span>
+<span id="cb34-23"><a href="#cb34-23" aria-hidden="true" tabindex="-1"></a>test_eq(aff.degrees, (<span class="op">-</span><span class="dv">30</span>, <span class="dv">30</span>, <span class="op">-</span><span class="dv">30</span>, <span class="dv">30</span>, <span class="op">-</span><span class="dv">30</span>, <span class="dv">30</span>))</span>
+<span id="cb34-24"><a href="#cb34-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-25"><a href="#cb34-25" aria-hidden="true" tabindex="-1"></a><span class="co"># 2D-like patch [128, 128, 1]</span></span>
+<span id="cb34-26"><a href="#cb34-26" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">1</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb34-27"><a href="#cb34-27" aria-hidden="true" tabindex="-1"></a>aniso_tfm <span class="op">=</span> tfms[<span class="dv">1</span>]</span>
+<span id="cb34-28"><a href="#cb34-28" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(aniso_tfm), RandomAnisotropy)</span>
+<span id="cb34-29"><a href="#cb34-29" aria-hidden="true" tabindex="-1"></a>test_eq(aniso_tfm.add_anisotropy.axes, (<span class="dv">0</span>, <span class="dv">1</span>))</span>
+<span id="cb34-30"><a href="#cb34-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-31"><a href="#cb34-31" aria-hidden="true" tabindex="-1"></a><span class="co"># All dims 1 -&gt; RandomAnisotropy omitted</span></span>
+<span id="cb34-32"><a href="#cb34-32" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb34-33"><a href="#cb34-33" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">len</span>(tfms), <span class="dv">6</span>)</span>
+<span id="cb34-34"><a href="#cb34-34" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">all</span>(<span class="kw">not</span> <span class="bu">isinstance</span>(t, RandomAnisotropy) <span class="cf">for</span> t <span class="kw">in</span> tfms), <span class="va">True</span>)</span>
+<span id="cb34-35"><a href="#cb34-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-36"><a href="#cb34-36" aria-hidden="true" tabindex="-1"></a><span class="co"># Wrong input lengths</span></span>
+<span id="cb34-37"><a href="#cb34-37" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: suggest_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>]))</span>
+<span id="cb34-38"><a href="#cb34-38" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: suggest_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>]))</span>
+<span id="cb34-39"><a href="#cb34-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-40"><a href="#cb34-40" aria-hidden="true" tabindex="-1"></a><span class="co"># All returned transforms have .tio_transform</span></span>
+<span id="cb34-41"><a href="#cb34-41" aria-hidden="true" tabindex="-1"></a>tfms <span class="op">=</span> suggest_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">64</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb34-42"><a href="#cb34-42" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> t <span class="kw">in</span> tfms:</span>
+<span id="cb34-43"><a href="#cb34-43" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="bu">hasattr</span>(t, <span class="st">'tio_transform'</span>), <span class="ss">f"</span><span class="sc">{</span><span class="bu">type</span>(t)<span class="sc">.</span><span class="va">__name__</span><span class="sc">}</span><span class="ss"> missing .tio_transform"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="bcc6ucwhfa" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Tests for _compute_patch_aug_params</span></span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>params <span class="op">=</span> _compute_patch_aug_params([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>test_eq(params[<span class="st">'degrees'</span>], (<span class="dv">30</span>, <span class="dv">30</span>, <span class="dv">30</span>))</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>test_eq(params[<span class="st">'is_aniso'</span>], <span class="va">False</span>)</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a>test_eq(params[<span class="st">'aniso_axes'</span>], (<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>))</span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>params <span class="op">=</span> _compute_patch_aug_params([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">32</span>], [<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">1.5</span>])</span>
+<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>test_eq(params[<span class="st">'degrees'</span>], (<span class="dv">5</span>, <span class="dv">5</span>, <span class="dv">30</span>))</span>
+<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a>test_eq(params[<span class="st">'is_aniso'</span>], <span class="va">True</span>)</span>
+<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a>params <span class="op">=</span> _compute_patch_aug_params([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">1</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb35-12"><a href="#cb35-12" aria-hidden="true" tabindex="-1"></a>test_eq(params[<span class="st">'aniso_axes'</span>], (<span class="dv">0</span>, <span class="dv">1</span>))</span>
+<span id="cb35-13"><a href="#cb35-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-14"><a href="#cb35-14" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: _compute_patch_aug_params([<span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>]))</span>
+<span id="cb35-15"><a href="#cb35-15" aria-hidden="true" tabindex="-1"></a>test_fail(<span class="kw">lambda</span>: _compute_patch_aug_params([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>]))</span>
+<span id="cb35-16"><a href="#cb35-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-17"><a href="#cb35-17" aria-hidden="true" tabindex="-1"></a><span class="co"># Tests for _build_rotation_matrix_3d</span></span>
+<span id="cb35-18"><a href="#cb35-18" aria-hidden="true" tabindex="-1"></a>zero_angles <span class="op">=</span> torch.zeros(<span class="dv">3</span>, <span class="dv">3</span>)</span>
+<span id="cb35-19"><a href="#cb35-19" aria-hidden="true" tabindex="-1"></a>R <span class="op">=</span> _build_rotation_matrix_3d(zero_angles)</span>
+<span id="cb35-20"><a href="#cb35-20" aria-hidden="true" tabindex="-1"></a>test_eq(R.shape, (<span class="dv">3</span>, <span class="dv">3</span>, <span class="dv">3</span>))</span>
+<span id="cb35-21"><a href="#cb35-21" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> i <span class="kw">in</span> <span class="bu">range</span>(<span class="dv">3</span>):</span>
+<span id="cb35-22"><a href="#cb35-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> torch.allclose(R[i], torch.eye(<span class="dv">3</span>), atol<span class="op">=</span><span class="fl">1e-6</span>), <span class="st">"Zero angles should give identity"</span></span>
+<span id="cb35-23"><a href="#cb35-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-24"><a href="#cb35-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Tests for GpuPatchAugmentation: p=0 -&gt; identity</span></span>
+<span id="cb35-25"><a href="#cb35-25" aria-hidden="true" tabindex="-1"></a>gpu_aug_noop <span class="op">=</span> GpuPatchAugmentation(</span>
+<span id="cb35-26"><a href="#cb35-26" aria-hidden="true" tabindex="-1"></a>    affine<span class="op">=</span>{<span class="st">'scales'</span>: (<span class="fl">0.7</span>, <span class="fl">1.4</span>), <span class="st">'degrees'</span>: (<span class="dv">30</span>, <span class="dv">30</span>, <span class="dv">30</span>),</span>
+<span id="cb35-27"><a href="#cb35-27" aria-hidden="true" tabindex="-1"></a>            <span class="st">'translation'</span>: (<span class="dv">10</span>, <span class="dv">10</span>, <span class="dv">10</span>), <span class="st">'default_pad_value'</span>: <span class="fl">0.</span>, <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-28"><a href="#cb35-28" aria-hidden="true" tabindex="-1"></a>    anisotropy<span class="op">=</span>{<span class="st">'axes'</span>: (<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>), <span class="st">'downsampling'</span>: (<span class="fl">1.5</span>, <span class="dv">4</span>), <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-29"><a href="#cb35-29" aria-hidden="true" tabindex="-1"></a>    flip<span class="op">=</span>{<span class="st">'axes'</span>: (<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>), <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-30"><a href="#cb35-30" aria-hidden="true" tabindex="-1"></a>    gamma<span class="op">=</span>{<span class="st">'log_gamma'</span>: (<span class="op">-</span><span class="fl">0.3</span>, <span class="fl">0.3</span>), <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-31"><a href="#cb35-31" aria-hidden="true" tabindex="-1"></a>    intensity_scale<span class="op">=</span>{<span class="st">'scale_range'</span>: (<span class="fl">0.75</span>, <span class="fl">1.25</span>), <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-32"><a href="#cb35-32" aria-hidden="true" tabindex="-1"></a>    noise<span class="op">=</span>{<span class="st">'std'</span>: <span class="fl">0.1</span>, <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-33"><a href="#cb35-33" aria-hidden="true" tabindex="-1"></a>    blur<span class="op">=</span>{<span class="st">'std'</span>: (<span class="fl">0.5</span>, <span class="fl">1.0</span>), <span class="st">'p'</span>: <span class="fl">0.0</span>},</span>
+<span id="cb35-34"><a href="#cb35-34" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb35-35"><a href="#cb35-35" aria-hidden="true" tabindex="-1"></a>test_img <span class="op">=</span> torch.randn(<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>)</span>
+<span id="cb35-36"><a href="#cb35-36" aria-hidden="true" tabindex="-1"></a>test_mask <span class="op">=</span> torch.zeros(<span class="dv">2</span>, <span class="dv">1</span>, <span class="dv">16</span>, <span class="dv">16</span>, <span class="dv">16</span>)</span>
+<span id="cb35-37"><a href="#cb35-37" aria-hidden="true" tabindex="-1"></a>test_mask[:, :, <span class="dv">4</span>:<span class="dv">12</span>, <span class="dv">4</span>:<span class="dv">12</span>, <span class="dv">4</span>:<span class="dv">12</span>] <span class="op">=</span> <span class="fl">1.0</span></span>
+<span id="cb35-38"><a href="#cb35-38" aria-hidden="true" tabindex="-1"></a>out_img, out_mask <span class="op">=</span> gpu_aug_noop(test_img, test_mask)</span>
+<span id="cb35-39"><a href="#cb35-39" aria-hidden="true" tabindex="-1"></a>test_eq(torch.equal(out_img, test_img), <span class="va">True</span>)</span>
+<span id="cb35-40"><a href="#cb35-40" aria-hidden="true" tabindex="-1"></a>test_eq(torch.equal(out_mask, test_mask), <span class="va">True</span>)</span>
+<span id="cb35-41"><a href="#cb35-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-42"><a href="#cb35-42" aria-hidden="true" tabindex="-1"></a><span class="co"># Tests for GpuPatchAugmentation: p=1 -&gt; shapes preserved</span></span>
+<span id="cb35-43"><a href="#cb35-43" aria-hidden="true" tabindex="-1"></a>gpu_aug_all <span class="op">=</span> GpuPatchAugmentation(</span>
+<span id="cb35-44"><a href="#cb35-44" aria-hidden="true" tabindex="-1"></a>    affine<span class="op">=</span>{<span class="st">'scales'</span>: (<span class="fl">0.7</span>, <span class="fl">1.4</span>), <span class="st">'degrees'</span>: (<span class="dv">30</span>, <span class="dv">30</span>, <span class="dv">30</span>),</span>
+<span id="cb35-45"><a href="#cb35-45" aria-hidden="true" tabindex="-1"></a>            <span class="st">'translation'</span>: (<span class="dv">2</span>, <span class="dv">2</span>, <span class="dv">2</span>), <span class="st">'default_pad_value'</span>: <span class="fl">0.</span>, <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-46"><a href="#cb35-46" aria-hidden="true" tabindex="-1"></a>    anisotropy<span class="op">=</span>{<span class="st">'axes'</span>: (<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>), <span class="st">'downsampling'</span>: (<span class="fl">1.5</span>, <span class="dv">4</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-47"><a href="#cb35-47" aria-hidden="true" tabindex="-1"></a>    flip<span class="op">=</span>{<span class="st">'axes'</span>: (<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-48"><a href="#cb35-48" aria-hidden="true" tabindex="-1"></a>    gamma<span class="op">=</span>{<span class="st">'log_gamma'</span>: (<span class="op">-</span><span class="fl">0.3</span>, <span class="fl">0.3</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-49"><a href="#cb35-49" aria-hidden="true" tabindex="-1"></a>    intensity_scale<span class="op">=</span>{<span class="st">'scale_range'</span>: (<span class="fl">0.75</span>, <span class="fl">1.25</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-50"><a href="#cb35-50" aria-hidden="true" tabindex="-1"></a>    noise<span class="op">=</span>{<span class="st">'std'</span>: <span class="fl">0.1</span>, <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-51"><a href="#cb35-51" aria-hidden="true" tabindex="-1"></a>    blur<span class="op">=</span>{<span class="st">'std'</span>: (<span class="fl">0.5</span>, <span class="fl">1.0</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-52"><a href="#cb35-52" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb35-53"><a href="#cb35-53" aria-hidden="true" tabindex="-1"></a>out_img, out_mask <span class="op">=</span> gpu_aug_all(test_img.clone(), test_mask.clone())</span>
+<span id="cb35-54"><a href="#cb35-54" aria-hidden="true" tabindex="-1"></a>test_eq(out_img.shape, test_img.shape)</span>
+<span id="cb35-55"><a href="#cb35-55" aria-hidden="true" tabindex="-1"></a>test_eq(out_mask.shape, test_mask.shape)</span>
+<span id="cb35-56"><a href="#cb35-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-57"><a href="#cb35-57" aria-hidden="true" tabindex="-1"></a><span class="co"># Intensity-only augmentation: mask unchanged</span></span>
+<span id="cb35-58"><a href="#cb35-58" aria-hidden="true" tabindex="-1"></a>gpu_aug_intensity <span class="op">=</span> GpuPatchAugmentation(</span>
+<span id="cb35-59"><a href="#cb35-59" aria-hidden="true" tabindex="-1"></a>    gamma<span class="op">=</span>{<span class="st">'log_gamma'</span>: (<span class="op">-</span><span class="fl">0.3</span>, <span class="fl">0.3</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-60"><a href="#cb35-60" aria-hidden="true" tabindex="-1"></a>    intensity_scale<span class="op">=</span>{<span class="st">'scale_range'</span>: (<span class="fl">0.75</span>, <span class="fl">1.25</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-61"><a href="#cb35-61" aria-hidden="true" tabindex="-1"></a>    noise<span class="op">=</span>{<span class="st">'std'</span>: <span class="fl">0.1</span>, <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-62"><a href="#cb35-62" aria-hidden="true" tabindex="-1"></a>    blur<span class="op">=</span>{<span class="st">'std'</span>: (<span class="fl">0.5</span>, <span class="fl">1.0</span>), <span class="st">'p'</span>: <span class="fl">1.0</span>},</span>
+<span id="cb35-63"><a href="#cb35-63" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb35-64"><a href="#cb35-64" aria-hidden="true" tabindex="-1"></a>mask_copy <span class="op">=</span> test_mask.clone()</span>
+<span id="cb35-65"><a href="#cb35-65" aria-hidden="true" tabindex="-1"></a>_, out_mask <span class="op">=</span> gpu_aug_intensity(test_img.clone(), mask_copy)</span>
+<span id="cb35-66"><a href="#cb35-66" aria-hidden="true" tabindex="-1"></a>test_eq(torch.equal(out_mask, test_mask), <span class="va">True</span>)</span>
+<span id="cb35-67"><a href="#cb35-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-68"><a href="#cb35-68" aria-hidden="true" tabindex="-1"></a><span class="co"># None mask handling</span></span>
+<span id="cb35-69"><a href="#cb35-69" aria-hidden="true" tabindex="-1"></a>out_img, out_mask <span class="op">=</span> gpu_aug_all(test_img.clone(), <span class="va">None</span>)</span>
+<span id="cb35-70"><a href="#cb35-70" aria-hidden="true" tabindex="-1"></a>test_eq(out_mask, <span class="va">None</span>)</span>
+<span id="cb35-71"><a href="#cb35-71" aria-hidden="true" tabindex="-1"></a>test_eq(out_img.shape, test_img.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="89ongoyx3hp" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Tests for gpu_patch_augmentations factory</span></span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>gpu_aug <span class="op">=</span> gpu_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">128</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(gpu_aug), GpuPatchAugmentation)</span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a>test_eq(gpu_aug.affine[<span class="st">'degrees'</span>], (<span class="dv">30</span>, <span class="dv">30</span>, <span class="dv">30</span>))</span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>test_eq(gpu_aug.anisotropy[<span class="st">'axes'</span>], (<span class="dv">0</span>, <span class="dv">1</span>, <span class="dv">2</span>))</span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Anisotropic case</span></span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>gpu_aug_aniso <span class="op">=</span> gpu_patch_augmentations([<span class="dv">128</span>, <span class="dv">128</span>, <span class="dv">32</span>], [<span class="fl">0.5</span>, <span class="fl">0.5</span>, <span class="fl">1.5</span>])</span>
+<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>test_eq(gpu_aug_aniso.affine[<span class="st">'degrees'</span>], (<span class="dv">5</span>, <span class="dv">5</span>, <span class="dv">30</span>))</span>
+<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a><span class="co"># All dims 1 -&gt; no anisotropy</span></span>
+<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a>gpu_aug_nodim <span class="op">=</span> gpu_patch_augmentations([<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>], [<span class="fl">1.0</span>, <span class="fl">1.0</span>, <span class="fl">1.0</span>])</span>
+<span id="cb36-13"><a href="#cb36-13" aria-hidden="true" tabindex="-1"></a>test_eq(gpu_aug_nodim.anisotropy, <span class="va">None</span>)</span>
+<span id="cb36-14"><a href="#cb36-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-15"><a href="#cb36-15" aria-hidden="true" tabindex="-1"></a><span class="co"># repr contains expected parts</span></span>
+<span id="cb36-16"><a href="#cb36-16" aria-hidden="true" tabindex="-1"></a>repr_str <span class="op">=</span> <span class="bu">repr</span>(gpu_aug)</span>
+<span id="cb36-17"><a href="#cb36-17" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">'GpuPatchAugmentation'</span> <span class="kw">in</span> repr_str</span>
+<span id="cb36-18"><a href="#cb36-18" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">'affine'</span> <span class="kw">in</span> repr_str</span>
+<span id="cb36-19"><a href="#cb36-19" aria-hidden="true" tabindex="-1"></a><span class="cf">assert</span> <span class="st">'flip'</span> <span class="kw">in</span> repr_str</span>
+<span id="cb36-20"><a href="#cb36-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-21"><a href="#cb36-21" aria-hidden="true" tabindex="-1"></a><span class="co"># Flip with p=1 modifies both img and mask consistently</span></span>
+<span id="cb36-22"><a href="#cb36-22" aria-hidden="true" tabindex="-1"></a>gpu_aug_flip <span class="op">=</span> GpuPatchAugmentation(flip<span class="op">=</span>{<span class="st">'axes'</span>: (<span class="dv">0</span>,), <span class="st">'p'</span>: <span class="fl">1.0</span>})</span>
+<span id="cb36-23"><a href="#cb36-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Create asymmetric tensor to verify flip happened</span></span>
+<span id="cb36-24"><a href="#cb36-24" aria-hidden="true" tabindex="-1"></a>asym_img <span class="op">=</span> torch.zeros(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">8</span>, <span class="dv">8</span>, <span class="dv">8</span>)</span>
+<span id="cb36-25"><a href="#cb36-25" aria-hidden="true" tabindex="-1"></a>asym_img[<span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>, :, :] <span class="op">=</span> <span class="fl">1.0</span>  <span class="co"># First slice lit up</span></span>
+<span id="cb36-26"><a href="#cb36-26" aria-hidden="true" tabindex="-1"></a>asym_mask <span class="op">=</span> asym_img.clone()</span>
+<span id="cb36-27"><a href="#cb36-27" aria-hidden="true" tabindex="-1"></a>out_img, out_mask <span class="op">=</span> gpu_aug_flip(asym_img.clone(), asym_mask.clone())</span>
+<span id="cb36-28"><a href="#cb36-28" aria-hidden="true" tabindex="-1"></a>test_eq(out_img.shape, asym_img.shape)</span>
+<span id="cb36-29"><a href="#cb36-29" aria-hidden="true" tabindex="-1"></a><span class="co"># After flip on axis 0 (D-axis), first slice -&gt; last slice</span></span>
+<span id="cb36-30"><a href="#cb36-30" aria-hidden="true" tabindex="-1"></a>test_eq(out_img[<span class="dv">0</span>, <span class="dv">0</span>, <span class="op">-</span><span class="dv">1</span>, :, :].<span class="bu">sum</span>() <span class="op">&gt;</span> <span class="dv">0</span>, <span class="va">True</span>)</span>
+<span id="cb36-31"><a href="#cb36-31" aria-hidden="true" tabindex="-1"></a>test_eq(out_mask[<span class="dv">0</span>, <span class="dv">0</span>, <span class="op">-</span><span class="dv">1</span>, :, :].<span class="bu">sum</span>() <span class="op">&gt;</span> <span class="dv">0</span>, <span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="5117c50a" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Test .tio_transform property</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a><span class="co"># CustomDictTransform-based wrappers</span></span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomAffine(degrees<span class="op">=</span><span class="dv">10</span>).tio_transform), tio.RandomAffine)</span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomFlip(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomFlip)</span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomElasticDeformation(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomElasticDeformation)</span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a><span class="co"># DisplayedTransform-based wrappers</span></span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(PadOrCrop([<span class="dv">64</span>, <span class="dv">64</span>, <span class="dv">64</span>]).tio_transform), tio.CropOrPad)</span>
+<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(ZNormalization().tio_transform), tio.ZNormalization)</span>
+<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RescaleIntensity((<span class="op">-</span><span class="dv">1</span>, <span class="dv">1</span>), (<span class="op">-</span><span class="dv">1000</span>, <span class="dv">1000</span>)).tio_transform), tio.RescaleIntensity)</span>
+<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomGamma(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomGamma)</span>
+<span id="cb37-12"><a href="#cb37-12" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomNoise(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomNoise)</span>
+<span id="cb37-13"><a href="#cb37-13" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomBiasField(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomBiasField)</span>
+<span id="cb37-14"><a href="#cb37-14" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomBlur(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomBlur)</span>
+<span id="cb37-15"><a href="#cb37-15" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomGhosting(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomGhosting)</span>
+<span id="cb37-16"><a href="#cb37-16" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomSpike(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomSpike)</span>
+<span id="cb37-17"><a href="#cb37-17" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomMotion(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomMotion)</span>
+<span id="cb37-18"><a href="#cb37-18" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(RandomAnisotropy(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform), tio.RandomAnisotropy)</span>
+<span id="cb37-19"><a href="#cb37-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-20"><a href="#cb37-20" aria-hidden="true" tabindex="-1"></a><span class="co"># Custom TorchIO wrappers (isinstance check since these are custom subclasses)</span></span>
+<span id="cb37-21"><a href="#cb37-21" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">isinstance</span>(RandomIntensityScale(p<span class="op">=</span><span class="fl">0.5</span>).tio_transform, tio.IntensityTransform), <span class="va">True</span>)</span>
+<span id="cb37-22"><a href="#cb37-22" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">isinstance</span>(NormalizeIntensity().tio_transform, tio.IntensityTransform), <span class="va">True</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div id="2c4e671d" class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Test RandomCutout (ItemTransform - expects tuple input)</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> numpy <span class="im">as</span> np</span>
+<span id="cb38-3"><a href="#cb38-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-4"><a href="#cb38-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Create test data</span></span>
+<span id="cb38-5"><a href="#cb38-5" aria-hidden="true" tabindex="-1"></a>test_img <span class="op">=</span> MedImage(torch.randn(<span class="dv">1</span>, <span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>))</span>
+<span id="cb38-6"><a href="#cb38-6" aria-hidden="true" tabindex="-1"></a>test_mask <span class="op">=</span> MedMask(torch.zeros(<span class="dv">1</span>, <span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>))</span>
+<span id="cb38-7"><a href="#cb38-7" aria-hidden="true" tabindex="-1"></a>test_mask[<span class="dv">0</span>, <span class="dv">10</span>:<span class="dv">20</span>, <span class="dv">10</span>:<span class="dv">20</span>, <span class="dv">10</span>:<span class="dv">20</span>] <span class="op">=</span> <span class="fl">1.0</span>  <span class="co"># Tumor region</span></span>
+<span id="cb38-8"><a href="#cb38-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-9"><a href="#cb38-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Test mask_only=True (default): only tumor voxels affected</span></span>
+<span id="cb38-10"><a href="#cb38-10" aria-hidden="true" tabindex="-1"></a>cutout <span class="op">=</span> RandomCutout(holes<span class="op">=</span><span class="dv">1</span>, spatial_size<span class="op">=</span><span class="dv">8</span>, fill<span class="op">=</span><span class="st">'min'</span>, mask_only<span class="op">=</span><span class="va">True</span>, p<span class="op">=</span><span class="fl">1.0</span>)</span>
+<span id="cb38-11"><a href="#cb38-11" aria-hidden="true" tabindex="-1"></a>result_img, result_mask <span class="op">=</span> cutout.encodes((test_img, test_mask))</span>
+<span id="cb38-12"><a href="#cb38-12" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(result_img), MedImage)</span>
+<span id="cb38-13"><a href="#cb38-13" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(result_mask), MedMask)</span>
+<span id="cb38-14"><a href="#cb38-14" aria-hidden="true" tabindex="-1"></a>test_eq(result_img.shape, test_img.shape)</span>
+<span id="cb38-15"><a href="#cb38-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Verify: healthy tissue (mask==0) unchanged (use numpy for comparison)</span></span>
+<span id="cb38-16"><a href="#cb38-16" aria-hidden="true" tabindex="-1"></a>healthy_region <span class="op">=</span> test_mask.numpy()[<span class="dv">0</span>] <span class="op">==</span> <span class="dv">0</span></span>
+<span id="cb38-17"><a href="#cb38-17" aria-hidden="true" tabindex="-1"></a>test_eq(np.array_equal(result_img.numpy()[<span class="dv">0</span>, healthy_region], test_img.numpy()[<span class="dv">0</span>, healthy_region]), <span class="va">True</span>)</span>
+<span id="cb38-18"><a href="#cb38-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Verify: mask unchanged</span></span>
+<span id="cb38-19"><a href="#cb38-19" aria-hidden="true" tabindex="-1"></a>test_eq(torch.equal(result_mask, test_mask), <span class="va">True</span>)</span>
+<span id="cb38-20"><a href="#cb38-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-21"><a href="#cb38-21" aria-hidden="true" tabindex="-1"></a><span class="co"># Test empty mask skips cutout (mask_only=True)</span></span>
+<span id="cb38-22"><a href="#cb38-22" aria-hidden="true" tabindex="-1"></a>empty_mask <span class="op">=</span> MedMask(torch.zeros(<span class="dv">1</span>, <span class="dv">32</span>, <span class="dv">32</span>, <span class="dv">32</span>))</span>
+<span id="cb38-23"><a href="#cb38-23" aria-hidden="true" tabindex="-1"></a>result_img, _ <span class="op">=</span> cutout.encodes((test_img, empty_mask))</span>
+<span id="cb38-24"><a href="#cb38-24" aria-hidden="true" tabindex="-1"></a>test_eq(torch.equal(result_img, test_img), <span class="va">True</span>)  <span class="co"># Unchanged</span></span>
+<span id="cb38-25"><a href="#cb38-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-26"><a href="#cb38-26" aria-hidden="true" tabindex="-1"></a><span class="co"># Test mask_only=False: cutouts can affect any voxel</span></span>
+<span id="cb38-27"><a href="#cb38-27" aria-hidden="true" tabindex="-1"></a>cutout_any <span class="op">=</span> RandomCutout(mask_only<span class="op">=</span><span class="va">False</span>, p<span class="op">=</span><span class="fl">1.0</span>)</span>
+<span id="cb38-28"><a href="#cb38-28" aria-hidden="true" tabindex="-1"></a>result_img, _ <span class="op">=</span> cutout_any.encodes((test_img, test_mask))</span>
+<span id="cb38-29"><a href="#cb38-29" aria-hidden="true" tabindex="-1"></a>test_eq(result_img.shape, test_img.shape)</span>
+<span id="cb38-30"><a href="#cb38-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-31"><a href="#cb38-31" aria-hidden="true" tabindex="-1"></a><span class="co"># Test with TensorCategory target (classification task with mask_only=False)</span></span>
+<span id="cb38-32"><a href="#cb38-32" aria-hidden="true" tabindex="-1"></a>test_label <span class="op">=</span> TensorCategory(<span class="dv">1</span>)</span>
+<span id="cb38-33"><a href="#cb38-33" aria-hidden="true" tabindex="-1"></a>cutout_cls <span class="op">=</span> RandomCutout(mask_only<span class="op">=</span><span class="va">False</span>, p<span class="op">=</span><span class="fl">1.0</span>)</span>
+<span id="cb38-34"><a href="#cb38-34" aria-hidden="true" tabindex="-1"></a>result_img, result_label <span class="op">=</span> cutout_cls.encodes((test_img, test_label))</span>
+<span id="cb38-35"><a href="#cb38-35" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">type</span>(result_img), MedImage)</span>
+<span id="cb38-36"><a href="#cb38-36" aria-hidden="true" tabindex="-1"></a>test_eq(result_label, test_label)</span>
+<span id="cb38-37"><a href="#cb38-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-38"><a href="#cb38-38" aria-hidden="true" tabindex="-1"></a><span class="co"># Test TensorCategory with mask_only=True skips cutout (no mask available)</span></span>
+<span id="cb38-39"><a href="#cb38-39" aria-hidden="true" tabindex="-1"></a>cutout_mask_only <span class="op">=</span> RandomCutout(mask_only<span class="op">=</span><span class="va">True</span>, p<span class="op">=</span><span class="fl">1.0</span>)</span>
+<span id="cb38-40"><a href="#cb38-40" aria-hidden="true" tabindex="-1"></a>result_img, result_label <span class="op">=</span> cutout_mask_only.encodes((test_img, test_label))</span>
+<span id="cb38-41"><a href="#cb38-41" aria-hidden="true" tabindex="-1"></a>test_eq(torch.equal(result_img, test_img), <span class="va">True</span>)  <span class="co"># Unchanged - no mask to intersect</span></span>
+<span id="cb38-42"><a href="#cb38-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-43"><a href="#cb38-43" aria-hidden="true" tabindex="-1"></a><span class="co"># tio_transform property</span></span>
+<span id="cb38-44"><a href="#cb38-44" aria-hidden="true" tabindex="-1"></a>test_eq(<span class="bu">isinstance</span>(cutout.tio_transform, tio.IntensityTransform), <span class="va">True</span>)</span>
+<span id="cb38-45"><a href="#cb38-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb38-46"><a href="#cb38-46" aria-hidden="true" tabindex="-1"></a><span class="co"># Test fill modes with mask_only=False</span></span>
+<span id="cb38-47"><a href="#cb38-47" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> fill_mode <span class="kw">in</span> [<span class="st">'min'</span>, <span class="st">'mean'</span>, <span class="st">'random'</span>, <span class="fl">0.0</span>]:</span>
+<span id="cb38-48"><a href="#cb38-48" aria-hidden="true" tabindex="-1"></a>    cutout <span class="op">=</span> RandomCutout(fill<span class="op">=</span>fill_mode, mask_only<span class="op">=</span><span class="va">False</span>, p<span class="op">=</span><span class="fl">1.0</span>)</span>
+<span id="cb38-49"><a href="#cb38-49" aria-hidden="true" tabindex="-1"></a>    result_img, _ <span class="op">=</span> cutout.encodes((test_img, test_mask))</span>
+<span id="cb38-50"><a href="#cb38-50" aria-hidden="true" tabindex="-1"></a>    test_eq(result_img.shape, test_img.shape)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/fastmonai\.no\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+<footer class="footer"><div class="nav-footer"><div class="nav-footer-center"><div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/MMIV-ML/fastMONAI/issues/new" class="toc-action"><i class="bi bi-github"></i>Report an issue</a></li></ul></div></div></div></footer></body></html>
