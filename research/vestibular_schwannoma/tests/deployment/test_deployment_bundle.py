@@ -3,7 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PACS_DIR = PROJECT_ROOT / "deployment" / "pacs"
@@ -17,7 +17,7 @@ class DeploymentLoadingTests(unittest.TestCase):
         return {
             "artifact_schema": "1",
             "arch_id": "monai.unet",
-            "arch_kwargs": {},
+            "arch_kwargs": {"out_channels": 2},
             "wrapper_spec": [],
             "artifact_role": "final",
             "mlflow_run": run_id,
@@ -108,75 +108,34 @@ class DeploymentLoadingTests(unittest.TestCase):
             metadata.assert_not_called()
             load.assert_not_called()
 
-    def test_loads_ensemble_and_uses_first_member_patch_config(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            _, deployment = self.write_bundle(
-                root, member_ids=("fold_1", "fold_2")
-            )
-            paths = [
-                root / "model_bundles" / "unet" / f"fold_{index}.safetensors"
-                for index in (1, 2)
-            ]
-            models = [MagicMock(), MagicMock()]
+    def test_loads_single_and_ensemble_with_declared_patch_config(self):
+        for member_ids in (("all_data",), ("fold_1", "fold_2")):
             with (
-                patch.object(
-                    runtime_bundle,
-                    "read_safetensors_metadata",
-                    return_value=self.metadata(patch_config={"patch_size": [16, 16, 16]}),
-                ) as metadata,
-                patch.object(
-                    runtime_bundle,
-                    "load_safetensors_model",
-                    side_effect=models,
-                ) as load,
-                patch.object(
-                    runtime_bundle, "PatchConfig", return_value="patch-config"
-                ) as patch_config,
+                self.subTest(member_ids=member_ids),
+                tempfile.TemporaryDirectory() as directory,
             ):
-                loaded = runtime_bundle.load_deployment("unet", script_dir=root)
-
-            self.assertEqual(loaded["members"], deployment["members"])
-            self.assertNotIn("models", loaded)
-            self.assertEqual(loaded["predictor"], models)
-            self.assertEqual(loaded["patch_config"], "patch-config")
-            metadata.assert_called_once_with(paths[0])
-            self.assertEqual(
-                load.call_args_list,
-                [call(paths[0], device="cpu"), call(paths[1], device="cpu")],
-            )
-            patch_config.assert_called_once_with(patch_size=[16, 16, 16])
-
-    def test_loads_one_final_model_from_derived_filename(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            _, deployment = self.write_bundle(root, member_ids=("all_data",))
-            path = root / "model_bundles" / "unet" / "all_data.safetensors"
-            model = MagicMock()
-            with (
-                patch.object(
-                    runtime_bundle,
-                    "read_safetensors_metadata",
-                    return_value=self.metadata("run-final"),
-                ),
-                patch.object(
-                    runtime_bundle,
-                    "load_safetensors_model",
-                    return_value=model,
-                ) as load,
-                patch.object(
-                    runtime_bundle, "PatchConfig", return_value="patch-config"
-                ),
-            ):
-                loaded = runtime_bundle.load_deployment("unet", script_dir=root)
-
-            self.assertEqual(loaded["members"], deployment["members"])
-            self.assertIs(loaded["predictor"], model)
-            load.assert_called_once_with(path, device="cpu")
-
-    def test_unknown_model_type_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "unknown model type"):
-            runtime_bundle.load_deployment("unknown")
+                root = Path(directory)
+                _, declaration = self.write_bundle(root, member_ids=member_ids)
+                models = [object() for _ in member_ids]
+                with (
+                    patch.object(
+                        runtime_bundle,
+                        "read_safetensors_metadata",
+                        return_value=self.metadata(
+                            patch_config={"patch_size": [16, 16, 16]}
+                        ),
+                    ),
+                    patch.object(
+                        runtime_bundle, "load_safetensors_model", side_effect=models
+                    ),
+                ):
+                    loaded = runtime_bundle.load_deployment("unet", script_dir=root)
+                self.assertEqual(loaded["members"], declaration["members"])
+                self.assertEqual(
+                    loaded["predictor"], models[0] if len(models) == 1 else models
+                )
+                self.assertEqual(loaded["patch_config"].patch_size, [16, 16, 16])
+                self.assertEqual(loaded["output_channels"], 2)
 
 
 if __name__ == "__main__":

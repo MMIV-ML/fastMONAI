@@ -5,7 +5,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from vestibular_schwannoma import merge_parallel_folds
+from vestibular_schwannoma.scripts import merge_parallel_folds
 
 
 class MergeParallelFoldsCliTests(unittest.TestCase):

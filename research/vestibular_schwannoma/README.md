@@ -5,11 +5,12 @@ with five-fold cross-validation, optional all-data training, inference, and PACS
 
 ## Contents
 
-- `train_5fold.py`: command-line five-fold training and evaluation.
-- `merge_parallel_folds.py`: validate and combine parallel fold subsets for inference.
-- `notebooks/`: cross-validation and inference workflows.
+- `scripts/train_5fold.py`: command-line five-fold training and evaluation.
+- `scripts/merge_parallel_folds.py`: validate and combine parallel fold subsets for inference.
+- `notebooks/`: educational walkthroughs of cross-validation and inference.
 - `workflow/`: shared configuration, training, evaluation, and artifact handling.
 - `data/ml_dataset.csv`: public case index and fixed fold assignments.
+- `scripts/prepare_data.py`: download, prepare, and verify the exact study dataset.
 - `deployment/pacs/`: Safetensors bundle builder and ROR/PACS container.
 - `tests/`: workflow and deployment tests.
 
@@ -21,23 +22,27 @@ Use fastMONAI 0.10.1 or a matching development checkout. From the fastMONAI repo
 pip install -e '.[dev]'
 ```
 
-Images are not included. The CSV expects prepared data under `../nii_data/`; see
-[data/README.md](data/README.md). UNet and DynUNet use MONAI. The training notebook provides
+Download and prepare the 344-case dataset with `scripts/prepare_data.py`; see
+[data/README.md](data/README.md) for scripted acquisition, corrected labels, and
+reference verification. The default prepared layout is `../nii_data/`, matching
+the shared CSV. UNet and DynUNet use MONAI. The training notebook provides
 setup instructions for optional SegMamba support.
 
 ## Training
 
-Use the CLI for unattended training:
+Use the CLI for unattended training. Run the commands below from
+`research/vestibular_schwannoma/`; relative data and output paths resolve from that
+project directory:
 
 ```bash
-python train_5fold.py --models unet --folds 1 --epochs 5 --no-compile
-python train_5fold.py --models unet  # One model, all five folds
-python train_5fold.py --models dynunet_small dynunet_xs
-python train_5fold.py --skip-unavailable
+python scripts/train_5fold.py --models unet --folds 1 --epochs 5 --no-compile
+python scripts/train_5fold.py --models unet  # One model, all five folds
+python scripts/train_5fold.py --models dynunet_small dynunet_xs
+python scripts/train_5fold.py --skip-unavailable
 ```
 
 The default is three models, five folds, and 500 epochs. Models and folds run sequentially
-within a launcher. Run `python train_5fold.py --help` for all options.
+within a launcher. Run `python scripts/train_5fold.py --help` for all options.
 
 DynUNet variants use the same architecture, deep supervision, patch size, and training
 settings. They differ only in channel widths: the existing `dynunet` uses
@@ -47,11 +52,11 @@ settings. They differ only in channel widths: the existing `dynunet` uses
 For one process per GPU, assign one visible GPU and a new `--results-root` to each process:
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 python train_5fold.py --models unet --folds 1 --results-root cv_results/unet_fold_1 &
-CUDA_VISIBLE_DEVICES=1 python train_5fold.py --models unet --folds 2 --results-root cv_results/unet_fold_2 &
-CUDA_VISIBLE_DEVICES=2 python train_5fold.py --models unet --folds 3 --results-root cv_results/unet_fold_3 &
-CUDA_VISIBLE_DEVICES=3 python train_5fold.py --models unet --folds 4 --results-root cv_results/unet_fold_4 &
-CUDA_VISIBLE_DEVICES=4 python train_5fold.py --models unet --folds 5 --results-root cv_results/unet_fold_5 &
+CUDA_VISIBLE_DEVICES=0 python scripts/train_5fold.py --models unet --folds 1 --results-root cv_results/unet_fold_1 &
+CUDA_VISIBLE_DEVICES=1 python scripts/train_5fold.py --models unet --folds 2 --results-root cv_results/unet_fold_2 &
+CUDA_VISIBLE_DEVICES=2 python scripts/train_5fold.py --models unet --folds 3 --results-root cv_results/unet_fold_3 &
+CUDA_VISIBLE_DEVICES=3 python scripts/train_5fold.py --models unet --folds 4 --results-root cv_results/unet_fold_4 &
+CUDA_VISIBLE_DEVICES=4 python scripts/train_5fold.py --models unet --folds 5 --results-root cv_results/unet_fold_5 &
 wait
 ```
 
@@ -75,7 +80,7 @@ inference-ready. Merge disjoint registries into a new results root; the merger r
 1-5, a matching training contract, distinct run IDs, no overlaps, and a new output root:
 
 ```bash
-python merge_parallel_folds.py \
+python scripts/merge_parallel_folds.py \
   cv_results/unet_fold_1/completed_run_ids.json \
   cv_results/unet_fold_2/completed_run_ids.json \
   cv_results/unet_fold_3/completed_run_ids.json \
@@ -89,12 +94,12 @@ Training and merging fail if their output directory already exists; they never o
 weights or manifests. For example, replace an existing `cv_results/unet_fold_1` like this:
 
 ```bash
-python train_5fold.py \
+python scripts/train_5fold.py \
   --models unet \
   --folds 1 \
   --results-root cv_results/unet_fold_1_retrained_20260902
 
-python merge_parallel_folds.py \
+python scripts/merge_parallel_folds.py \
   cv_results/unet_fold_1_retrained_20260902/completed_run_ids.json \
   cv_results/unet_fold_2/completed_run_ids.json \
   cv_results/unet_fold_3/completed_run_ids.json \
@@ -108,11 +113,10 @@ Contracts must match. The original directory and MLflow run remain unchanged.
 
 ## Inference and artifacts
 
-- Notebook 01 uses fixed folds and can train an all-data model. Its duplicated validation case
-  remains in training and is only an internal fastai monitor.
-- Notebook 02 loads declared models from
-  `cv_results/<RESULTS_RUN>/inference_run_ids.json` and enforces their preprocessing and output
-  contracts.
+- Cross-validation uses fixed folds. Optional all-data training keeps every case in training;
+  its duplicated validation case is only an internal fastai monitor.
+- Inference loads declared models from `cv_results/<RESULTS_RUN>/inference_run_ids.json` and
+  enforces their preprocessing and output contracts.
 - Evaluation and inference use TTA by default and preserve every predicted region. Predictions
   require clinical review.
 - Fold checkpoints live under `<results-root>/<model>/fold_<n>/checkpoints/`. They support

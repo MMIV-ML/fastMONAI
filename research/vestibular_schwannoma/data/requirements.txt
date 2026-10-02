@@ -1,0 +1,9 @@
+# CPU-only acquisition and study reproduction (Python >= 3.10).
+# Pin the tested downloader and its bundled IDC v24 metadata.
+idc-index==0.12.5
+nibabel>=5.2
+numpy>=1.24
+scipy>=1.10
+SimpleITK>=2.3
+pydicom>=2.4
+matplotlib>=3.7

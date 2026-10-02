@@ -1,6 +1,6 @@
 import unittest
 
-from vestibular_schwannoma import train_5fold
+from vestibular_schwannoma.scripts import train_5fold
 
 
 class FiveFoldLauncherTests(unittest.TestCase):

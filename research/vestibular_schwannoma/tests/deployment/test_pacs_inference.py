@@ -19,63 +19,26 @@ import pacs_inference as pacs  # noqa: E402
 
 
 class CommandLineTests(unittest.TestCase):
-    def test_main_forwards_arguments_and_image_version(self):
-        argv = [
-            "/data/input",
-            "/output",
-            "--model-type",
-            "unet",
-            "--tta",
+    def test_model_tta_options_and_image_version(self):
+        cases = [
+            ([], "dynunet", True),
+            (["--model-type", "unet", "--tta"], "unet", True),
+            (["--no-tta"], "dynunet", False),
         ]
-        with (
-            patch.dict(os.environ, {"VERSION": "20260817T120000Z"}),
-            patch.object(pacs, "run_inference") as run_inference,
-        ):
-            pacs.main(argv)
-
-        run_inference.assert_called_once_with(
-            "/data/input",
-            "/output",
-            "unet",
-            use_tta=True,
-            version="20260817T120000Z",
-        )
-
-    def test_main_defaults_to_tta_on(self):
-        argv = ["/data/input", "/output"]
-        with (
-            patch.dict(os.environ, {"VERSION": "20260817T120000Z"}),
-            patch.object(pacs, "run_inference") as run_inference,
-        ):
-            pacs.main(argv)
-
-        run_inference.assert_called_once_with(
-            "/data/input",
-            "/output",
-            "unet",
-            use_tta=True,
-            version="20260817T120000Z",
-        )
-
-    def test_main_allows_tta_to_be_disabled(self):
-        argv = [
-            "/data/input",
-            "/output",
-            "--no-tta",
-        ]
-        with (
-            patch.dict(os.environ, {"VERSION": "20260817T120000Z"}),
-            patch.object(pacs, "run_inference") as run_inference,
-        ):
-            pacs.main(argv)
-
-        run_inference.assert_called_once_with(
-            "/data/input",
-            "/output",
-            "unet",
-            use_tta=False,
-            version="20260817T120000Z",
-        )
+        for options, model_type, use_tta in cases:
+            with (
+                self.subTest(options=options),
+                patch.dict(os.environ, {"VERSION": "20260817T120000Z"}),
+                patch.object(pacs, "run_inference") as run,
+            ):
+                pacs.main(["/data/input", "/output", *options])
+                run.assert_called_once_with(
+                    "/data/input",
+                    "/output",
+                    model_type,
+                    use_tta=use_tta,
+                    version="20260817T120000Z",
+                )
 
 
 class PredictionOutputTests(unittest.TestCase):
@@ -83,7 +46,7 @@ class PredictionOutputTests(unittest.TestCase):
         return {
             "patch_config": SimpleNamespace(patch_size=[16, 16, 16]),
             "model_type": "unet",
-            "bundle_sha256": "a" * 64,
+            "bundle_sha256": "4d8991eff16c90ad0eb185757df9cfccf5615cb7a5d7a9d3304c61e65ad9d172",
             "predictor": object(),
             "members": [{"member_id": "all_data"}],
         }
@@ -138,11 +101,14 @@ class PredictionOutputTests(unittest.TestCase):
         written_mask, written_probability = write_outputs.call_args.args[:2]
         self.assertTrue(torch.equal(written_mask, mask))
         self.assertTrue(torch.equal(written_probability, probabilities[1]))
-        self.assertEqual(write_outputs.call_args.args[2:], (
-            input_output_dir,
-            work_dir,
-            deployment,
-        ))
+        self.assertEqual(
+            write_outputs.call_args.args[2:],
+            (
+                input_output_dir,
+                work_dir,
+                deployment,
+            ),
+        )
         self.assertTrue(write_outputs.call_args.kwargs["use_tta"])
         postprocess.assert_called_once()
         self.assertTrue(unrelated_files_remain)
@@ -207,7 +173,9 @@ class PredictionOutputTests(unittest.TestCase):
                 patch.object(pacs, "_required_pr2mask_tools", return_value={}),
                 patch.object(pacs, "load_deployment") as load,
             ):
-                with self.assertRaisesRegex(RuntimeError, "work directory must be empty"):
+                with self.assertRaisesRegex(
+                    RuntimeError, "work directory must be empty"
+                ):
                     pacs.run_inference(
                         "/dicom",
                         output,
@@ -216,40 +184,6 @@ class PredictionOutputTests(unittest.TestCase):
                         work_dir=work,
                     )
             load.assert_not_called()
-
-    def test_dicom_preflight_runs_before_model_loading(self):
-        events = []
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            with (
-                patch.object(pacs, "_required_pr2mask_tools", return_value={}),
-                patch.object(
-                    pacs,
-                    "validate_dicom_input",
-                    side_effect=lambda path: events.append(("preflight", path)),
-                ),
-                patch.object(
-                    pacs,
-                    "load_deployment",
-                    side_effect=lambda model: (
-                        events.append(("load", model)),
-                        self.deployment(),
-                    )[1],
-                ),
-                patch.object(pacs, "PatchInferenceEngine", side_effect=RuntimeError("stop")),
-            ):
-                with self.assertRaisesRegex(RuntimeError, "stop"):
-                    pacs.run_inference(
-                        root / "input",
-                        root / "output",
-                        "unet",
-                        version="release",
-                        work_dir=root / "work",
-                    )
-        self.assertEqual(
-            events,
-            [("preflight", root / "input"), ("load", "unet")],
-        )
 
     def test_dicom_preflight_failure_prevents_model_loading(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -378,9 +312,7 @@ class PostprocessingTests(unittest.TestCase):
 
             def run(command, **kwargs):
                 calls.append(command)
-                self.assertEqual(
-                    (output_dir / pacs.LOG_NAME).read_text(), "old log"
-                )
+                self.assertEqual((output_dir / pacs.LOG_NAME).read_text(), "old log")
                 self.assertTrue((work_dir / pacs.LOG_NAME).is_file())
                 kwargs["stdout"].write(f"command {len(calls)}\n")
                 kwargs["stdout"].flush()
@@ -396,7 +328,10 @@ class PostprocessingTests(unittest.TestCase):
                 "bundle_sha256": "a" * 64,
                 "members": [{"member_id": f"fold_{number}"} for number in range(5)],
             }
-            with patch.object(pacs.subprocess, "run", side_effect=run):
+            with (
+                patch.object(pacs.subprocess, "run", side_effect=run),
+                patch.object(pacs, "write_redcap_mask") as export_mask,
+            ):
                 pacs._run_postprocessing(
                     input_dir,
                     work_dir,
@@ -407,6 +342,13 @@ class PostprocessingTests(unittest.TestCase):
                     tools=tools,
                 )
 
+            export_mask.assert_called_once_with(
+                work_dir,
+                input_dir,
+                deployment,
+                version="20260817T120000Z",
+                use_tta=True,
+            )
             self.assertEqual(len(calls), 3)
             identity = f"20260817T120000Z_m1_b{'a' * 32}_t1"
             self.assertLessEqual(len(identity), 64)

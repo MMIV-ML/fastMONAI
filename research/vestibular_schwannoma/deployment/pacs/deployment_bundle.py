@@ -57,7 +57,26 @@ def _read_packaged_deployment(path: Path, model_type: str) -> tuple[dict, list[s
     return deployment, filenames
 
 
-def load_deployment(model_type: str, *, script_dir: Path = SCRIPT_DIR) -> dict:
+def _metadata_output_channels(metadata: dict) -> int:
+    """Read and validate the declared model output-channel count."""
+    arch_kwargs = metadata.get("arch_kwargs", {})
+    output_channels = arch_kwargs.get("out_channels")
+    if output_channels is None:
+        output_config = metadata.get("inference_config", {}).get("output", {})
+        classes = output_config.get("classes")
+        if isinstance(classes, list):
+            output_channels = len(classes)
+    if (
+        not isinstance(output_channels, int)
+        or isinstance(output_channels, bool)
+        or output_channels < 1
+    ):
+        raise RuntimeError("model metadata must declare positive out_channels")
+    return output_channels
+
+
+def describe_deployment(model_type: str, *, script_dir: Path = SCRIPT_DIR) -> dict:
+    """Validate a packaged deployment without loading model weights."""
     if model_type not in MODEL_CONFIGS:
         raise ValueError(f"unknown model type: {model_type!r}")
     models_dir = script_dir / "model_bundles" / model_type
@@ -73,12 +92,21 @@ def load_deployment(model_type: str, *, script_dir: Path = SCRIPT_DIR) -> dict:
         raise FileNotFoundError(f"packaged model files not found: {missing}")
 
     first_metadata = read_safetensors_metadata(paths[0])
-    models = [load_safetensors_model(path, device="cpu") for path in paths]
-    for member, path in zip(deployment["members"], paths):
-        print(f"  Loaded {member['member_id']}: {path.name}")
-
-    deployment["predictor"] = models[0] if len(models) == 1 else models
+    deployment["model_paths"] = paths
+    deployment["output_channels"] = _metadata_output_channels(first_metadata)
     deployment["patch_config"] = PatchConfig(
         **dict(first_metadata["inference_config"]["patch_config"])
     )
+    return deployment
+
+
+def load_deployment(model_type: str, *, script_dir: Path = SCRIPT_DIR) -> dict:
+    """Validate a packaged deployment and load all model weights."""
+    deployment = describe_deployment(model_type, script_dir=script_dir)
+    paths = deployment["model_paths"]
+    models = [load_safetensors_model(path, device="cpu") for path in paths]
+    for member, path in zip(deployment["members"], paths):
+        print("  Loaded {}: {}".format(member["member_id"], path.name))
+
+    deployment["predictor"] = models[0] if len(models) == 1 else models
     return deployment

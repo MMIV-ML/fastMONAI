@@ -17,6 +17,11 @@ dependencies:
     # requirements plus the built image digest are the runtime contract.
     - fastMONAI==0.10.1
     - fastai==2.8.7
+    # Keep the fastai/fastMONAI dispatch stack on the known-good versions from
+    # the previously qualified PACS image. plum-dispatch 2.10.0 makes the fastai
+    # docs decorator try to mutate a read-only Function.__doc__ during import.
+    - fastcore==2.2.12
+    - plum-dispatch==2.9.0
     - monai==1.6.0
     - torchio==1.2.1
     - safetensors==0.7.0

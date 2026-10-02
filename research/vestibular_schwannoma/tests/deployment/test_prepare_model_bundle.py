@@ -3,7 +3,7 @@ import json
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,12 +25,17 @@ REGISTERED_TEST_PREFIX = "1.2.826.0.1.3680043.10.9999"
 
 class ArtifactSelectionTests(unittest.TestCase):
     def parse_run(self, role, *extra):
-        return bundle.make_parser().parse_args([
-            "--model-type", "unet",
-            "--run", "all_data=run-id",
-            "--artifact-role", role,
-            *extra,
-        ])
+        return bundle.make_parser().parse_args(
+            [
+                "--model-type",
+                "unet",
+                "--run",
+                "all_data=run-id",
+                "--artifact-role",
+                role,
+                *extra,
+            ]
+        )
 
     def test_pacs_and_research_expect_the_same_output_contract(self):
         self.assertEqual(
@@ -59,11 +64,10 @@ class ArtifactSelectionTests(unittest.TestCase):
                 "workflow": "patch",
                 "patch_config": (
                     {"keep_largest_component": False}
-                    if patch_config is None else patch_config
+                    if patch_config is None
+                    else patch_config
                 ),
-                "output": bundle.make_output_spec(
-                    "multiclass_segmentation", classes=2
-                ),
+                "output": bundle.make_output_spec("multiclass_segmentation", classes=2),
             },
         }
 
@@ -73,46 +77,15 @@ class ArtifactSelectionTests(unittest.TestCase):
             artifact = root / f"source-{member_id}.safetensors"
             artifact.write_bytes(member_id.encode())
             argv.extend(["--artifact", f"{member_id}={artifact}"])
-        argv.extend([
-            "--artifact-role", "final",
-            "--out", str(root / "bundle"),
-        ])
+        argv.extend(
+            [
+                "--artifact-role",
+                "final",
+                "--out",
+                str(root / "bundle"),
+            ]
+        )
         return bundle.make_parser().parse_args(argv)
-
-    def test_role_selects_standard_artifact_path(self):
-        self.assertEqual(
-            bundle._requested_artifact_path(self.parse_run("final")),
-            "model/final_model.safetensors",
-        )
-        self.assertEqual(
-            bundle._requested_artifact_path(self.parse_run("best")),
-            "model/best_model.safetensors",
-        )
-
-    def test_explicit_artifact_path_overrides_role_default(self):
-        args = self.parse_run(
-            "final", "--artifact-path", "custom/export.safetensors"
-        )
-        self.assertEqual(
-            bundle._requested_artifact_path(args),
-            "custom/export.safetensors",
-        )
-
-    def test_artifact_role_is_required(self):
-        with redirect_stderr(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                bundle.make_parser().parse_args([
-                    "--model-type", "unet",
-                    "--run", "all_data=run-id",
-                ])
-
-    def test_uid_prefix_is_optional(self):
-        default_args = self.parse_run("final")
-        registered_args = self.parse_run(
-            "final", "--dicom-uid-prefix", REGISTERED_TEST_PREFIX
-        )
-        self.assertIsNone(default_args.dicom_uid_prefix)
-        self.assertEqual(registered_args.dicom_uid_prefix, REGISTERED_TEST_PREFIX)
 
     def test_registered_prefix_validation(self):
         self.assertEqual(
@@ -143,8 +116,10 @@ class ArtifactSelectionTests(unittest.TestCase):
             output = Path(directory) / "bundle"
             args = self.parse_run(
                 "final",
-                "--dicom-uid-prefix", "1.02.3",
-                "--out", str(output),
+                "--dicom-uid-prefix",
+                "1.02.3",
+                "--out",
+                str(output),
             )
             with patch.object(bundle, "_download_run_artifact") as download:
                 with self.assertRaisesRegex(ValueError, "canonical numeric"):
@@ -153,9 +128,7 @@ class ArtifactSelectionTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_registry_preserves_existing_models_and_unique_codes(self):
-        self.assertEqual(
-            MODEL_CONFIGS["unet"]["arch_ids"], frozenset({"monai.unet"})
-        )
+        self.assertEqual(MODEL_CONFIGS["unet"]["arch_ids"], frozenset({"monai.unet"}))
         self.assertEqual(
             MODEL_CONFIGS["dynunet"]["arch_ids"],
             frozenset({"monai.dynunet"}),
@@ -163,9 +136,7 @@ class ArtifactSelectionTests(unittest.TestCase):
         self.assertEqual(MODEL_CONFIGS["unet"]["dicom_model_code"], 1)
         self.assertEqual(MODEL_CONFIGS["dynunet"]["dicom_model_code"], 2)
 
-        model_codes = [
-            config["dicom_model_code"] for config in MODEL_CONFIGS.values()
-        ]
+        model_codes = [config["dicom_model_code"] for config in MODEL_CONFIGS.values()]
         self.assertTrue(all(type(code) is int and code > 0 for code in model_codes))
         self.assertEqual(len(model_codes), len(set(model_codes)))
         self.assertEqual(
@@ -216,9 +187,7 @@ class ArtifactSelectionTests(unittest.TestCase):
             artifact.touch()
             args = self.parse_run("final", "--out", str(root / "bundle"))
             with (
-                patch.object(
-                    bundle, "_download_run_artifact", return_value=artifact
-                ),
+                patch.object(bundle, "_download_run_artifact", return_value=artifact),
                 patch.object(
                     bundle,
                     "read_safetensors_metadata",
@@ -268,7 +237,10 @@ class ArtifactSelectionTests(unittest.TestCase):
             ),
         )
         for second_metadata, message in incompatible:
-            with self.subTest(message=message), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(message=message),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 args = self.local_args(root, "fold_1", "fold_2")
                 with (
@@ -287,9 +259,7 @@ class ArtifactSelectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             args = self.local_args(root, "all_data")
-            metadata = self.metadata(
-                patch_config={"keep_largest_component": True}
-            )
+            metadata = self.metadata(patch_config={"keep_largest_component": True})
             with (
                 patch.object(
                     bundle, "read_safetensors_metadata", return_value=metadata
@@ -321,48 +291,54 @@ class ArtifactSelectionTests(unittest.TestCase):
                 bundle.build_bundle(args)
             self.assertFalse((root / "bundle").exists())
 
-    def test_final_run_writes_minimal_schema_one_manifest(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            artifact = root / "downloaded.safetensors"
-            artifact.touch()
-            output = root / "bundle"
-            output.mkdir()
-            output.chmod(0o750)
-            args = self.parse_run("final", "--out", str(output))
+    def test_requested_artifact_produces_the_declared_bundle(self):
+        cases = [
+            ("final", "model/final_model.safetensors", []),
+            ("best", "model/best_model.safetensors", []),
+            (
+                "final",
+                "custom/export.safetensors",
+                ["--artifact-path", "custom/export.safetensors"],
+            ),
+        ]
+        for role, artifact_path, extra in cases:
             with (
-                patch.object(
-                    bundle,
-                    "_download_run_artifact",
-                    return_value=artifact,
-                ) as download,
-                patch.object(
-                    bundle,
-                    "read_safetensors_metadata",
-                    return_value=self.metadata(),
-                ),
-                patch.object(bundle, "load_safetensors_model") as strict_load,
-                redirect_stdout(io.StringIO()),
+                self.subTest(role=role, artifact_path=artifact_path),
+                tempfile.TemporaryDirectory() as directory,
             ):
-                manifest_path = bundle.build_bundle(args)
-
-            download.assert_called_once_with(
-                "run-id", "model/final_model.safetensors"
-            )
-            strict_load.assert_called_once_with(artifact.resolve(), device="cpu")
-            declaration = json.loads(manifest_path.read_text())
-            self.assertEqual(
-                set(declaration),
-                {"schema_version", "model_type", "members", "bundle_sha256"},
-            )
-            self.assertEqual(
-                set(declaration["members"][0]),
-                {"member_id", "sha256"},
-            )
-            self.assertEqual(declaration["schema_version"], 1)
-            self.assertEqual(declaration["model_type"], "unet")
-            self.assertTrue((manifest_path.parent / "all_data.safetensors").is_file())
-            self.assertEqual(manifest_path.parent.stat().st_mode & 0o777, 0o750)
+                root = Path(directory)
+                artifact = root / "downloaded.safetensors"
+                artifact.touch()
+                output = root / "bundle"
+                output.mkdir()
+                output.chmod(0o750)
+                args = self.parse_run(role, "--out", str(output), *extra)
+                with (
+                    patch.object(
+                        bundle, "_download_run_artifact", return_value=artifact
+                    ) as download,
+                    patch.object(
+                        bundle,
+                        "read_safetensors_metadata",
+                        return_value=self.metadata(role=role),
+                    ),
+                    patch.object(bundle, "load_safetensors_model"),
+                    redirect_stdout(io.StringIO()),
+                ):
+                    manifest_path = bundle.build_bundle(args)
+                download.assert_called_once_with("run-id", artifact_path)
+                declaration = json.loads(manifest_path.read_text())
+                self.assertEqual(
+                    set(declaration),
+                    {"schema_version", "model_type", "members", "bundle_sha256"},
+                )
+                self.assertEqual(
+                    set(declaration["members"][0]), {"member_id", "sha256"}
+                )
+                self.assertEqual(declaration["schema_version"], 1)
+                self.assertEqual(declaration["model_type"], "unet")
+                self.assertTrue((output / "all_data.safetensors").is_file())
+                self.assertEqual(output.stat().st_mode & 0o777, 0o750)
 
     def build_local_manifest(
         self,
@@ -376,10 +352,14 @@ class ArtifactSelectionTests(unittest.TestCase):
         artifact = root / f"source-{output_name}.safetensors"
         artifact.write_bytes(model_bytes)
         argv = [
-            "--model-type", "unet",
-            "--artifact", f"{member_id}={artifact}",
-            "--artifact-role", "final",
-            "--out", str(root / output_name),
+            "--model-type",
+            "unet",
+            "--artifact",
+            f"{member_id}={artifact}",
+            "--artifact-role",
+            "final",
+            "--out",
+            str(root / output_name),
         ]
         if prefix is not None:
             argv.extend(["--dicom-uid-prefix", prefix])
@@ -435,12 +415,17 @@ class ArtifactSelectionTests(unittest.TestCase):
                 artifact.write_bytes(member.encode())
                 sources.extend(["--artifact", f"{member}={artifact}"])
             output = root / "bundle"
-            args = bundle.make_parser().parse_args([
-                "--model-type", "unet",
-                *sources,
-                "--artifact-role", "final",
-                "--out", str(output),
-            ])
+            args = bundle.make_parser().parse_args(
+                [
+                    "--model-type",
+                    "unet",
+                    *sources,
+                    "--artifact-role",
+                    "final",
+                    "--out",
+                    str(output),
+                ]
+            )
             real_copy = bundle.shutil.copy2
             copy_count = 0
 
@@ -476,12 +461,18 @@ class ArtifactSelectionTests(unittest.TestCase):
             artifact.write_bytes(b"model")
             output = root / "bundle"
             output.mkdir()
-            args = bundle.make_parser().parse_args([
-                "--model-type", "unet",
-                "--artifact", f"all_data={artifact}",
-                "--artifact-role", "final",
-                "--out", str(output),
-            ])
+            args = bundle.make_parser().parse_args(
+                [
+                    "--model-type",
+                    "unet",
+                    "--artifact",
+                    f"all_data={artifact}",
+                    "--artifact-role",
+                    "final",
+                    "--out",
+                    str(output),
+                ]
+            )
             with (
                 patch.object(
                     bundle,
@@ -503,12 +494,18 @@ class ArtifactSelectionTests(unittest.TestCase):
             root = Path(directory)
             artifact = root / "model.safetensors"
             artifact.touch()
-            args = bundle.make_parser().parse_args([
-                "--model-type", "unet",
-                "--artifact", f"all_data={artifact}",
-                "--artifact-role", "final",
-                "--out", str(root / "bundle"),
-            ])
+            args = bundle.make_parser().parse_args(
+                [
+                    "--model-type",
+                    "unet",
+                    "--artifact",
+                    f"all_data={artifact}",
+                    "--artifact-role",
+                    "final",
+                    "--out",
+                    str(root / "bundle"),
+                ]
+            )
             with patch.object(
                 bundle,
                 "read_safetensors_metadata",

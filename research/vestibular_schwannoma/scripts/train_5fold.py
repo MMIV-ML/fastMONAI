@@ -16,16 +16,16 @@ Usage (from ``research/vestibular_schwannoma``)
 ------------------------------------------------
 Inspect all options or run a short single-fold check::
 
-    python train_5fold.py --help
-    python train_5fold.py --models unet --folds 1 --epochs 5 --no-compile
+    python scripts/train_5fold.py --help
+    python scripts/train_5fold.py --models unet --folds 1 --epochs 5 --no-compile
 
 Run one model across all five folds::
 
-    python train_5fold.py --models unet
+    python scripts/train_5fold.py --models unet
 
 Run the default five folds and skip an optional model if it is not installed::
 
-    python train_5fold.py --skip-unavailable
+    python scripts/train_5fold.py --skip-unavailable
 
 The defaults request three models, folds 1-5, and 500 epochs. Models and folds run
 sequentially so only one model occupies GPU memory at a time. Each held-out fold is
@@ -64,7 +64,7 @@ import torch
 from fastMONAI.vision_all import MedDataset, MedMask, ZNormalization, preprocess_dataset
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESEARCH_ROOT = PROJECT_ROOT.parent
 if str(RESEARCH_ROOT) not in sys.path:
     sys.path.insert(0, str(RESEARCH_ROOT))

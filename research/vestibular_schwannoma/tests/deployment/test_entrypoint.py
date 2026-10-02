@@ -40,9 +40,7 @@ class EntrypointTests(unittest.TestCase):
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
         conda = fake_bin / "conda"
-        conda.write_text(
-            "#!/bin/bash\nprintf '%s\\n' \"$@\" > \"$CAPTURE_PATH\"\n"
-        )
+        conda.write_text('#!/bin/bash\nprintf \'%s\\n\' "$@" > "$CAPTURE_PATH"\n')
         conda.chmod(0o755)
         self.fake_bin = fake_bin
 
@@ -72,7 +70,7 @@ class EntrypointTests(unittest.TestCase):
     def captured_args(self):
         return self.capture.read_text().splitlines()
 
-    def expected_args(self, model_type="unet", *, tta=True):
+    def expected_args(self, model_type="dynunet", *, tta=True):
         args = [
             "run",
             "--no-capture-output",
@@ -98,23 +96,14 @@ class EntrypointTests(unittest.TestCase):
             self.expected_args("dynunet", tta=False),
         )
 
-    def test_defaults_to_unet_with_tta(self):
+    def test_defaults_to_dynunet_with_tta(self):
         result = self.run_entrypoint()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.captured_args(), self.expected_args())
 
-    def test_tta_can_be_enabled_explicitly(self):
-        result = self.run_entrypoint(json.dumps({"tta": True}))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            self.captured_args(), self.expected_args(tta=True)
-        )
-
     def test_shell_metacharacters_are_rejected_without_execution(self):
         marker = self.root / "injected"
-        result = self.run_entrypoint(
-            json.dumps({"model-type": f"unet;touch {marker}"})
-        )
+        result = self.run_entrypoint(json.dumps({"model-type": f"unet;touch {marker}"}))
         self.assertEqual(result.returncode, 2)
         self.assertFalse(marker.exists())
         self.assertFalse(self.capture.exists())

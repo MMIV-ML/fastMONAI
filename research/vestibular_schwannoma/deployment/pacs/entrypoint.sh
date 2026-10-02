@@ -28,7 +28,7 @@ if ! jq -e '
     exit 2
 fi
 
-model_type=$(jq -r '.["model-type"] // "unet"' <<< "$ror_options")
+model_type=$(jq -r '.["model-type"] // "dynunet"' <<< "$ror_options")
 if [[ ! "$model_type" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
     echo "Error: invalid model-type syntax: ${model_type}" >&2
     exit 2

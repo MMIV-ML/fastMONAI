@@ -12,17 +12,21 @@ from datetime import datetime
 from pathlib import Path
 
 import torch
+from fastMONAI.vision_all import load_safetensors_model
 from fastMONAI.vision_patch import PatchInferenceEngine
 
-from deployment_bundle import load_deployment
+from deployment_bundle import describe_deployment as load_deployment
 from deployment_models import MODEL_CONFIGS
 from dicom_output import validate_dicom_input, write_prediction_outputs
+from parallel_inference import ParallelEnsemblePatchInferenceEngine
+from redcap_output import write_redcap_mask, model_repeat_instance
 
 
 SW_BATCH_SIZE = 1
+THREADS_PER_ENSEMBLE_MODEL = 3
 DEFAULT_WORK_DIR = Path("/output_tmp")
 DEFAULT_PR2MASK_DIR = Path("/pr2mask")
-FINAL_OUTPUT_DIRS = ("fused", "fused_vote_map", "reports", "mask")
+FINAL_OUTPUT_DIRS = ("fused", "fused_vote_map", "reports", "mask", "redcap")
 LOG_NAME = "pacs_command.log"
 PR2MASK_BUNDLE_HASH_LENGTH = 32
 
@@ -68,6 +72,34 @@ def validate_prediction_outputs(mask, probabilities):
 def _deployment_label(deployment: dict) -> str:
     count = len(deployment["members"])
     return "single model" if count == 1 else f"{count}-model ensemble"
+
+
+def _create_inference_engine(deployment: dict):
+    model_paths = deployment.get("model_paths")
+    if model_paths and len(model_paths) > 1:
+        return ParallelEnsemblePatchInferenceEngine(
+            model_paths,
+            [member["member_id"] for member in deployment["members"]],
+            deployment["patch_config"],
+            output_channels=deployment["output_channels"],
+            threads_per_model=THREADS_PER_ENSEMBLE_MODEL,
+            sw_batch_size=SW_BATCH_SIZE,
+        )
+    if model_paths:
+        predictor = load_safetensors_model(model_paths[0], device="cpu")
+        print(
+            "  Loaded {}: {}".format(
+                deployment["members"][0]["member_id"], model_paths[0].name
+            )
+        )
+    else:
+        # Compatibility path for injected/test deployments using an in-memory model.
+        predictor = deployment["predictor"]
+    return PatchInferenceEngine(
+        predictor,
+        deployment["patch_config"],
+        sw_batch_size=SW_BATCH_SIZE,
+    )
 
 
 def _required_pr2mask_tools(pr2mask_dir: Path) -> dict[str, Path]:
@@ -234,6 +266,7 @@ def _run_postprocessing(
                 stderr=subprocess.STDOUT,
                 check=True,
             )
+    write_redcap_mask(work_dir, input_dir, deployment, version=version, use_tta=use_tta)
     _copy_final_outputs(work_dir, output_dir)
     _publish_log(log_path, output_dir)
 
@@ -263,16 +296,13 @@ def run_inference(
     print("=" * 60)
 
     deployment = load_deployment(model_type)
+    model_repeat_instance(deployment["bundle_sha256"])
     patch_config = deployment["patch_config"]
     label = _deployment_label(deployment)
     print(f"Deployment: {label}")
     print(f"Patch size: {patch_config.patch_size}")
 
-    engine = PatchInferenceEngine(
-        deployment["predictor"],
-        patch_config,
-        sw_batch_size=SW_BATCH_SIZE,
-    )
+    engine = _create_inference_engine(deployment)
     print(f"Running patch inference (TTA={'on' if use_tta else 'off'})...")
     segmentation, probabilities = engine.predict_mask_and_probabilities(
         str(input_dir), tta=use_tta
@@ -316,7 +346,7 @@ def main(argv=None):
     )
     parser.add_argument("input_dir", help="Directory containing the input DICOM series")
     parser.add_argument("output_dir", help="Directory for final PACS output")
-    parser.add_argument("--model-type", choices=tuple(MODEL_CONFIGS), default="unet")
+    parser.add_argument("--model-type", choices=tuple(MODEL_CONFIGS), default="dynunet")
     parser.add_argument(
         "--tta",
         action=argparse.BooleanOptionalAction,

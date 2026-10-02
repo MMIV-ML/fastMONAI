@@ -22,11 +22,17 @@ coverage.xml
 htmlcov/
 
 # Private/local medical data. Keep only documentation, the reviewed research
-# index, and synthetic examples.
+# index, replacement-mask release, and synthetic examples.
 data/**
 !data/
 !data/README.md
+!data/corrected_labels/
+!data/corrected_labels/README.md
+!data/corrected_labels/LICENSE.txt
+!data/corrected_labels/vs_corrected_labels_v1.zip
 !data/ml_dataset.csv
+!data/reference_dataset.json
+!data/requirements.txt
 !data/*.example.csv
 raw_data/
 nii_data/
@@ -83,3 +89,6 @@ tmp*/
 # Private project planning
 docs/roadmap.html
 docs/component_postprocessing_review.html
+
+# Public, persistent mapping of deployed model hashes to REDCap instances
+!deployment/pacs/redcap_model_instances.json
