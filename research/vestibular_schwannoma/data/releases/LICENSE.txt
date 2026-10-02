@@ -1,0 +1,11 @@
+Replacement masks and release documentation: CC BY 4.0.
+License: https://creativecommons.org/licenses/by/4.0/
+
+This license permits redistribution and adaptation, including commercial use,
+with appropriate credit, a license link, and identification of changes.
+Consult the linked license for its full terms.
+
+Contributors: Njål Lura, Satheshkumar Kaliyugarassan.
+Image source: Shapey et al. (2021), Vestibular-Schwannoma-SEG version 2,
+The Cancer Imaging Archive, DOI: 10.7937/TCIA.9YTJ-5Q73 (CC BY 4.0).
+These masks are new annotations for scans with errors in the original annotations.
