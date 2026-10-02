@@ -27,7 +27,8 @@ LABEL org.opencontainers.image.version="${VERSION}"
 ENV VERSION="${VERSION}"
 
 COPY deployment_hashing.py deployment_models.py deployment_bundle.py \
-    dicom_output.py pacs_inference.py entrypoint.sh ./
+    parallel_inference.py dicom_output.py redcap_output.py pacs_inference.py entrypoint.sh ./
+COPY redcap_model_instances.json ./
 COPY model_bundles/ ./model_bundles/
 
 # The code to run when container is started:

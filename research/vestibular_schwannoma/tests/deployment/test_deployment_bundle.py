@@ -17,7 +17,7 @@ class DeploymentLoadingTests(unittest.TestCase):
         return {
             "artifact_schema": "1",
             "arch_id": "monai.unet",
-            "arch_kwargs": {},
+            "arch_kwargs": {"out_channels": 2},
             "wrapper_spec": [],
             "artifact_role": "final",
             "mlflow_run": run_id,

@@ -41,7 +41,7 @@ class CommandLineTests(unittest.TestCase):
             version="20260817T120000Z",
         )
 
-    def test_main_defaults_to_tta_on(self):
+    def test_main_defaults_to_dynunet_with_tta_on(self):
         argv = ["/data/input", "/output"]
         with (
             patch.dict(os.environ, {"VERSION": "20260817T120000Z"}),
@@ -52,7 +52,7 @@ class CommandLineTests(unittest.TestCase):
         run_inference.assert_called_once_with(
             "/data/input",
             "/output",
-            "unet",
+            "dynunet",
             use_tta=True,
             version="20260817T120000Z",
         )
@@ -72,7 +72,7 @@ class CommandLineTests(unittest.TestCase):
         run_inference.assert_called_once_with(
             "/data/input",
             "/output",
-            "unet",
+            "dynunet",
             use_tta=False,
             version="20260817T120000Z",
         )
@@ -83,7 +83,7 @@ class PredictionOutputTests(unittest.TestCase):
         return {
             "patch_config": SimpleNamespace(patch_size=[16, 16, 16]),
             "model_type": "unet",
-            "bundle_sha256": "a" * 64,
+            "bundle_sha256": "4d8991eff16c90ad0eb185757df9cfccf5615cb7a5d7a9d3304c61e65ad9d172",
             "predictor": object(),
             "members": [{"member_id": "all_data"}],
         }
@@ -396,7 +396,10 @@ class PostprocessingTests(unittest.TestCase):
                 "bundle_sha256": "a" * 64,
                 "members": [{"member_id": f"fold_{number}"} for number in range(5)],
             }
-            with patch.object(pacs.subprocess, "run", side_effect=run):
+            with (
+                patch.object(pacs.subprocess, "run", side_effect=run),
+                patch.object(pacs, "write_redcap_mask") as export_mask,
+            ):
                 pacs._run_postprocessing(
                     input_dir,
                     work_dir,
@@ -407,6 +410,9 @@ class PostprocessingTests(unittest.TestCase):
                     tools=tools,
                 )
 
+            export_mask.assert_called_once_with(
+                work_dir, input_dir, deployment, version="20260817T120000Z", use_tta=True
+            )
             self.assertEqual(len(calls), 3)
             identity = f"20260817T120000Z_m1_b{'a' * 32}_t1"
             self.assertLessEqual(len(identity), 64)

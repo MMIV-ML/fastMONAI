@@ -72,7 +72,7 @@ class EntrypointTests(unittest.TestCase):
     def captured_args(self):
         return self.capture.read_text().splitlines()
 
-    def expected_args(self, model_type="unet", *, tta=True):
+    def expected_args(self, model_type="dynunet", *, tta=True):
         args = [
             "run",
             "--no-capture-output",
@@ -98,7 +98,7 @@ class EntrypointTests(unittest.TestCase):
             self.expected_args("dynunet", tta=False),
         )
 
-    def test_defaults_to_unet_with_tta(self):
+    def test_defaults_to_dynunet_with_tta(self):
         result = self.run_entrypoint()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.captured_args(), self.expected_args())
