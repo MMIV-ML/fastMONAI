@@ -6,9 +6,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: fastai/workflows/nbdev-ci@master
-      - name: Test vestibular schwannoma deployment
-        run: >-
-          python -m unittest discover
-          -s research/vestibular_schwannoma/tests
-          -t research
-          -p 'test_*.py'
+      - name: Test vestibular schwannoma workflows and deployment
+        env:
+          PYTHONPATH: research:research/vestibular_schwannoma
+        run: |
+          python -m pip install pytest
+          python -m pytest -q research/vestibular_schwannoma/tests
