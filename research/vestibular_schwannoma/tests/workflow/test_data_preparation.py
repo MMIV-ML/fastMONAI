@@ -255,10 +255,9 @@ def test_download_preflights_retriever_before_network(monkeypatch, capsys):
 def bundle_in_project(study, monkeypatch):
     index, frozen, root, *_ = study
     project = index.parent.parent
-    archive = project / "data/releases/vs_corrected_labels_v1.zip"
+    archive = project / "data/corrected_labels/vs_corrected_labels_v1.zip"
     archive.parent.mkdir()
-    asset = build_label_bundle(index, frozen, root, archive)
-    write_json(project / "data/corrected_labels.json", asset)
+    build_label_bundle(index, frozen, root, archive)
     monkeypatch.setattr(cli, "PROJECT_ROOT", project)
     return archive
 
@@ -268,7 +267,7 @@ def test_labels_command_extracts_bundled_masks_without_network(
 ):
     archive = bundle_in_project(study, monkeypatch)
     monkeypatch.setattr(
-        cli, "download_file", lambda *a, **k: pytest.fail("Network used")
+        "workflow.data_download.urlopen", lambda *a, **k: pytest.fail("Network used")
     )
     assert main(["download", "--dataset", "labels"]) == 0
     extracted = cli.PROJECT_ROOT / "data/raw/corrected_labels"
@@ -282,9 +281,9 @@ def test_corrupt_bundled_archive_is_rejected_before_extraction(
     study, monkeypatch, capsys
 ):
     archive = bundle_in_project(study, monkeypatch)
-    archive.write_bytes(archive.read_bytes() + b"unexpected bytes")
+    archive.write_bytes(archive.read_bytes()[:-22])
     assert main(["download", "--dataset", "labels"]) == 1
-    assert "archive differs" in capsys.readouterr().err
+    assert "not a zip file" in capsys.readouterr().err
     assert not (cli.PROJECT_ROOT / "data/raw/corrected_labels").exists()
 
 

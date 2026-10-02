@@ -81,11 +81,11 @@ data/raw/
 ```
 
 The 17 replacement masks are included in this repository as
-[`releases/vs_corrected_labels_v1.zip`](releases/vs_corrected_labels_v1.zip).
+[`corrected_labels/vs_corrected_labels_v1.zip`](corrected_labels/vs_corrected_labels_v1.zip).
 `download` checks and extracts this archive automatically; no separate hosting
 account or download is needed. Use `download --dataset labels` to extract just
-the masks. An alternative HTTPS location can be supplied with
-`--corrected-label-url URL`; the archive must match `corrected_labels.json`.
+the masks. The ZIP contains its own case mapping and provenance manifest;
+preparation verifies every replacement mask against `reference_dataset.json`.
 
 ## Alternatives: TCIA Data Retriever CLI or graphical app
 
@@ -190,8 +190,8 @@ Contributors: **Njål Lura** and **Satheshkumar Kaliyugarassan**.
 The release uses **CC BY 4.0** and asks readers to cite the accompanying study
 paper when available.
 
-The [`releases/`](releases/) folder contains one ZIP,
-a [short README](releases/README.md), and a [license notice](releases/LICENSE.txt).
+The [`corrected_labels/`](corrected_labels/) folder contains one ZIP,
+a [short README](corrected_labels/README.md), and a [license notice](corrected_labels/LICENSE.txt).
 These small masks are versioned with the preparation code on GitHub. Model
 weights are distributed separately on Hugging Face. Use a tagged repository
 release to identify the code, case index, and masks used for a study.
@@ -204,9 +204,8 @@ python scripts/prepare_data.py bundle-labels --data-root ../nii_data
 
 The ZIP contains 17 masks, a TCIA case mapping, provenance manifest, README,
 and license. Fresh NIfTI headers omit annotation-editor text and extensions
-while preserving geometry and tumour voxels. Existing bundles and asset metadata
-are refused. If the archive changes, update its checksum and size in
-`corrected_labels.json`.
+while preserving geometry and tumour voxels. Existing bundles are refused;
+package an explicitly reviewed future release under a new filename.
 
 Original Queen Square data are
 [CC BY 4.0](https://wiki.cancerimagingarchive.net/pages/viewpage.action?pageId=70229053);

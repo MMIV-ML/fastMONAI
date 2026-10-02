@@ -14,13 +14,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from workflow.data_download import (  # noqa: E402
-    ChecksumMismatchError,
     DownloadError,
     acquire_crossmoda,
     acquire_tcia,
-    download_file,
     safe_extract_zip,
-    verify_checksum,
 )
 from workflow.data_sources import TCIA_VESTIBULAR_SCHWANNOMA_SEG  # noqa: E402
 
@@ -56,10 +53,6 @@ def parser() -> argparse.ArgumentParser:
     )
     download.add_argument(
         "--assets-only", action="store_true", help="skip TCIA DICOM retrieval"
-    )
-    download.add_argument(
-        "--corrected-label-url",
-        help="download the label archive using its pinned SHA-256",
     )
 
     for command, help_text in [
@@ -108,9 +101,8 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--output", default="data/reference_dataset.json")
         else:
             sub.add_argument(
-                "--output", default="data/releases/vs_corrected_labels_v1.zip"
+                "--output", default="data/corrected_labels/vs_corrected_labels_v1.zip"
             )
-            sub.add_argument("--asset-metadata", default="data/corrected_labels.json")
     return root
 
 
@@ -119,24 +111,12 @@ def progress(number: int, total: int, case_id: str) -> None:
         print(f"{number}/{total}: {case_id}", file=sys.stderr, flush=True)
 
 
-def label_asset() -> dict:
-    asset = json.loads((PROJECT_ROOT / "data/corrected_labels.json").read_text())
-    filename = asset["filename"]
-    if not isinstance(filename, str) or Path(filename).name != filename:
-        raise ValueError("Invalid corrected-label archive filename")
-    if not asset.get("sha256"):
-        raise ValueError("Corrected-label metadata must declare a SHA-256")
-    return asset
-
-
-def bundled_labels(asset: dict | None = None) -> Path:
-    """Locate and verify the replacement masks included in this checkout."""
-    asset = label_asset() if asset is None else asset
-    archive = PROJECT_ROOT / "data/releases" / asset["filename"]
-    if not verify_checksum(archive, f"sha256:{asset['sha256']}"):
-        raise ChecksumMismatchError(
-            f"Bundled corrected-label archive differs: {archive}"
-        )
+def bundled_labels() -> Path:
+    """Check the ZIP's integrity; preparation verifies masks against the reference."""
+    archive = PROJECT_ROOT / "data/corrected_labels/vs_corrected_labels_v1.zip"
+    with zipfile.ZipFile(archive) as bundle:
+        if bad_member := bundle.testzip():
+            raise zipfile.BadZipFile(f"Corrupt label archive member: {bad_member}")
     return archive
 
 
@@ -210,17 +190,7 @@ def _download(args: argparse.Namespace) -> dict:
         results["queen_square_backend"] = "assets-only" if args.assets_only else backend
         results["queen_square_assets"] = [str(p) for p in result.assets]
     if args.dataset in {"all", "labels"}:
-        asset = label_asset()
-        if args.corrected_label_url:
-            if not args.corrected_label_url.startswith("https://"):
-                raise ValueError("Corrected-label downloads require HTTPS")
-            archive = download_file(
-                args.corrected_label_url,
-                raw / asset["filename"],
-                checksum=f"sha256:{asset['sha256']}",
-            )
-        else:
-            archive = bundled_labels(asset)
+        archive = bundled_labels()
         results["corrected_labels"] = str(
             safe_extract_zip(archive, raw / "corrected_labels")
         )
@@ -261,15 +231,9 @@ def run(args: argparse.Namespace) -> dict:
             allow_extra_files=args.allow_extra_files,
         )
     if args.command == "bundle-labels":
-        metadata = project_path(args.asset_metadata)
-        if metadata.exists():
-            raise FileExistsError(f"Label asset metadata already exists: {metadata}")
-        value = build_label_bundle(
+        return build_label_bundle(
             index, reference, project_path(args.data_root), project_path(args.output)
         )
-        metadata.parent.mkdir(parents=True, exist_ok=True)
-        write_json(metadata, value)
-        return value
     raw = project_path(args.raw_root)
     if args.from_existing:
         if any(

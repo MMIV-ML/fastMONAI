@@ -26,13 +26,12 @@ htmlcov/
 data/**
 !data/
 !data/README.md
-!data/releases/
-!data/releases/README.md
-!data/releases/LICENSE.txt
-!data/releases/vs_corrected_labels_v1.zip
+!data/corrected_labels/
+!data/corrected_labels/README.md
+!data/corrected_labels/LICENSE.txt
+!data/corrected_labels/vs_corrected_labels_v1.zip
 !data/ml_dataset.csv
 !data/reference_dataset.json
-!data/corrected_labels.json
 !data/requirements.txt
 !data/*.example.csv
 raw_data/
