@@ -155,7 +155,7 @@ class PredictionOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "output"
             output.mkdir()
-            (output / "mask").symlink_to(output / "missing-target")
+            (output / "labels").symlink_to(output / "missing-target")
             with self.assertRaisesRegex(
                 RuntimeError, "owned output directories already exist"
             ):
@@ -297,7 +297,7 @@ class PostprocessingTests(unittest.TestCase):
             output_dir.mkdir()
             (output_dir / pacs.LOG_NAME).write_text("old log")
             tools_dir.mkdir()
-            for name in ("mask", "vote_map"):
+            for name in ("model_mask", "vote_map"):
                 path = work_dir / name
                 path.mkdir(parents=True)
                 (path / "raw.dcm").write_text(name)
@@ -317,11 +317,15 @@ class PostprocessingTests(unittest.TestCase):
                 kwargs["stdout"].write(f"command {len(calls)}\n")
                 kwargs["stdout"].flush()
                 if len(calls) == 3:
-                    for name in pacs.FINAL_OUTPUT_DIRS:
+                    for name in ("fused", "fused_vote_map", "reports", "redcap"):
                         path = work_dir / name
                         path.mkdir(exist_ok=True)
                         (path / "result.dcm").write_text(name)
+                    labels_series.mkdir(parents=True)
+                    (labels_series / "result.dcm").write_text("labels")
                 return SimpleNamespace(returncode=0)
+
+            labels_series = work_dir / "labels" / "1.2.3.4.5"
 
             deployment = {
                 "model_type": "unet",
@@ -330,6 +334,7 @@ class PostprocessingTests(unittest.TestCase):
             }
             with (
                 patch.object(pacs.subprocess, "run", side_effect=run),
+                patch.object(pacs, "tag_pr2mask_mask") as tag_mask,
                 patch.object(pacs, "write_redcap_mask") as export_mask,
             ):
                 pacs._run_postprocessing(
@@ -342,6 +347,7 @@ class PostprocessingTests(unittest.TestCase):
                     tools=tools,
                 )
 
+            tag_mask.assert_called_once_with(labels_series, deployment, use_tta=True)
             export_mask.assert_called_once_with(
                 work_dir,
                 input_dir,
@@ -350,8 +356,17 @@ class PostprocessingTests(unittest.TestCase):
                 use_tta=True,
             )
             self.assertEqual(len(calls), 3)
-            identity = f"20260817T120000Z_m1_b{'a' * 32}_t1"
+            identity = "20260817T120000Z_unet_tta"
             self.assertLessEqual(len(identity), 64)
+            self.assertEqual(
+                [command[2] for command in calls],
+                [str(work_dir / "model_mask")] * 2 + [str(work_dir / "vote_map")],
+            )
+            self.assertEqual(calls[0][calls[0].index("-i") + 1], "20260817T120000Z_tta")
+            self.assertTrue(all("-i" not in command for command in calls[1:]))
+            titles = {command[command.index("-t") + 1] for command in calls}
+            self.assertEqual(len(titles), 1)
+            self.assertRegex(titles.pop(), r"^unet 5-model ensemble, [A-Z][a-z]{2}\d{6} $")
             self.assertIn(identity + "_report", calls[0])
             self.assertIn(identity + "_fused", calls[1])
             self.assertIn(identity + "_votemap", calls[2])
@@ -365,15 +380,33 @@ class PostprocessingTests(unittest.TestCase):
                 (work_dir / pacs.LOG_NAME).read_text(),
                 (output_dir / pacs.LOG_NAME).read_text(),
             )
-            for name in pacs.FINAL_OUTPUT_DIRS:
+            for name in ("fused", "fused_vote_map", "reports", "redcap"):
                 self.assertTrue((output_dir / name / "result.dcm").is_file())
+            self.assertEqual(
+                (output_dir / "labels" / labels_series.name / "result.dcm").read_text(),
+                "labels",
+            )
             self.assertFalse((output_dir / "vote_map").exists())
+            self.assertFalse((output_dir / "model_mask").exists())
+            self.assertFalse((output_dir / "mask").exists())
+
+    def test_tagging_requires_exactly_one_pr2mask_mask_series(self):
+        for count in (0, 2):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                work = Path(directory)
+                (work / "labels").mkdir()
+                for number in range(count):
+                    (work / "labels" / f"1.2.{number}").mkdir()
+                with patch.object(pacs, "tag_pr2mask_mask") as tag_mask:
+                    with self.assertRaisesRegex(RuntimeError, "exactly one mask series"):
+                        pacs._tag_pr2mask_labels(work, {}, use_tta=False)
+                tag_mask.assert_not_called()
 
     def test_missing_final_product_is_rejected_before_copy(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             work = root / "work"
-            for name in ("mask", "fused"):
+            for name in ("labels", "fused"):
                 (work / name).mkdir(parents=True, exist_ok=True)
             output = root / "output"
             with self.assertRaisesRegex(RuntimeError, "required output directories"):

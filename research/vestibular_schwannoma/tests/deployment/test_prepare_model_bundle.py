@@ -15,12 +15,8 @@ import prepare_model_bundle as bundle  # noqa: E402
 from deployment_models import (  # noqa: E402
     DICOM_OUTPUT_CODES,
     MODEL_CONFIGS,
-    validate_registered_uid_prefix,
 )
 from vestibular_schwannoma.workflow.config import VS_OUTPUT_SPEC  # noqa: E402
-
-
-REGISTERED_TEST_PREFIX = "1.2.826.0.1.3680043.10.9999"
 
 
 class ArtifactSelectionTests(unittest.TestCase):
@@ -86,46 +82,6 @@ class ArtifactSelectionTests(unittest.TestCase):
             ]
         )
         return bundle.make_parser().parse_args(argv)
-
-    def test_registered_prefix_validation(self):
-        self.assertEqual(
-            validate_registered_uid_prefix(REGISTERED_TEST_PREFIX),
-            REGISTERED_TEST_PREFIX,
-        )
-        invalid = (
-            "",
-            " 1.2.3",
-            "1.2.3.",
-            "1.02.3",
-            "1.40.3",
-            "3.1.2",
-            "1.2.alpha",
-            "2.25",
-            "2.25.123",
-            "1.2.840.10008",
-            "1.2.840.10008.1",
-            "1.2." + "1" * 31,
-        )
-        for value in invalid:
-            with self.subTest(value=value):
-                with self.assertRaises(ValueError):
-                    validate_registered_uid_prefix(value)
-
-    def test_invalid_prefix_fails_before_download_or_output_creation(self):
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "bundle"
-            args = self.parse_run(
-                "final",
-                "--dicom-uid-prefix",
-                "1.02.3",
-                "--out",
-                str(output),
-            )
-            with patch.object(bundle, "_download_run_artifact") as download:
-                with self.assertRaisesRegex(ValueError, "canonical numeric"):
-                    bundle.build_bundle(args)
-            download.assert_not_called()
-            self.assertFalse(output.exists())
 
     def test_registry_preserves_existing_models_and_unique_codes(self):
         self.assertEqual(MODEL_CONFIGS["unet"]["arch_ids"], frozenset({"monai.unet"}))
@@ -347,7 +303,6 @@ class ArtifactSelectionTests(unittest.TestCase):
         *,
         member_id="all_data",
         model_bytes=b"model",
-        prefix=None,
     ) -> dict:
         artifact = root / f"source-{output_name}.safetensors"
         artifact.write_bytes(model_bytes)
@@ -361,8 +316,6 @@ class ArtifactSelectionTests(unittest.TestCase):
             "--out",
             str(root / output_name),
         ]
-        if prefix is not None:
-            argv.extend(["--dicom-uid-prefix", prefix])
         args = bundle.make_parser().parse_args(argv)
         with (
             patch.object(
@@ -376,7 +329,7 @@ class ArtifactSelectionTests(unittest.TestCase):
             manifest_path = bundle.build_bundle(args)
         return json.loads(manifest_path.read_text())
 
-    def test_prefix_and_member_rename_do_not_change_bundle_hash(self):
+    def test_member_rename_does_not_change_bundle_hash(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             original = self.build_local_manifest(root, "original")
@@ -384,11 +337,9 @@ class ArtifactSelectionTests(unittest.TestCase):
                 root,
                 "renamed",
                 member_id="renamed_member",
-                prefix=REGISTERED_TEST_PREFIX,
             )
 
         self.assertNotIn("registered_prefix", original)
-        self.assertEqual(renamed["registered_prefix"], REGISTERED_TEST_PREFIX)
         self.assertEqual(original["members"][0]["member_id"], "all_data")
         self.assertEqual(renamed["members"][0]["member_id"], "renamed_member")
         self.assertEqual(original["bundle_sha256"], renamed["bundle_sha256"])

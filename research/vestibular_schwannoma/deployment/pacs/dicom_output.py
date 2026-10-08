@@ -13,7 +13,7 @@ import numpy as np
 from imagedata.series import Series
 from pydicom import dcmread
 from pydicom.misc import is_dicom
-from pydicom.uid import UID, generate_uid
+from pydicom.uid import UID
 
 from deployment_hashing import canonical_json, sha256_bytes
 from deployment_models import (
@@ -308,17 +308,10 @@ def _require_prediction_representation(value: str) -> str:
     return value
 
 
-def _generate_uid(deployment: dict, identity: dict) -> str:
-    payload = canonical_json(identity)
-    registered_prefix = deployment.get("registered_prefix")
-    if registered_prefix is None:
-        prefix = DICOM_UID_DEFAULT_PREFIX
-        generated = uuid.uuid5(uuid.UUID(DICOM_UID_NAMESPACE), payload)
-        uid = f"{prefix}.{generated.int}"
-    else:
-        prefix = registered_prefix
-        uid = str(generate_uid(prefix=f"{prefix}.", entropy_srcs=[payload]))
-    if len(uid) > 64 or not UID(uid).is_valid or not uid.startswith(f"{prefix}."):
+def _generate_uid(identity: dict) -> str:
+    generated = uuid.uuid5(uuid.UUID(DICOM_UID_NAMESPACE), canonical_json(identity))
+    uid = f"{DICOM_UID_DEFAULT_PREFIX}.{generated.int}"
+    if len(uid) > 64 or not UID(uid).is_valid:
         raise RuntimeError(f"generated invalid DICOM UID: {uid!r}")
     return uid
 
@@ -364,17 +357,15 @@ def make_derived_series_uid(
             output_pixels_sha256, "output pixel digest"
         ),
     }
-    return _generate_uid(deployment, identity)
+    return _generate_uid(identity)
 
 
 def _make_derived_instance_uid(
-    deployment: dict,
     derived_series_uid: str,
     source_sop_uid: str,
 ) -> str:
     """Derive one SOP Instance UID from its derived series and source SOP."""
     return _generate_uid(
-        deployment,
         {
             "schema_version": DEPLOYMENT_SCHEMA,
             "derived_series_uid": _require_generated_dicom_uid(
@@ -460,7 +451,7 @@ def save_series_pred(
     series_obj.seriesInstanceUID = series_uid
     series_obj.setDicomAttribute("SeriesInstanceUID", series_uid)
     for slice_idx, source_sop_uid in enumerate(source_sop_uids):
-        new_uid = _make_derived_instance_uid(deployment, series_uid, source_sop_uid)
+        new_uid = _make_derived_instance_uid(series_uid, source_sop_uid)
         series_obj.setDicomAttribute("SOPInstanceUID", new_uid, slice=slice_idx)
     with _suppress_invalid_ui_warnings():
         series_obj.write(save_dir, opts={"keep_uid": True}, formats=["dicom"])
@@ -479,31 +470,20 @@ def _series_description(deployment: dict, prediction_representation: str) -> str
     )
 
 
-def _set_derived_metadata(
-    series_obj,
+def _provenance_tags(
     deployment,
     prediction_representation,
     use_tta,
-):
+    image_type,
+) -> dict:
+    """Return the fastMONAI provenance attributes for a derived series."""
     representation_label = _REPRESENTATION_LABELS[
         _require_prediction_representation(prediction_representation)
     ]
-    series_obj.setDicomAttribute("SoftwareVersions", build_software_versions())
-    image_type = series_obj.getDicomAttribute("ImageType")
     image_type = (
         []
         if image_type is None
         else ([image_type] if isinstance(image_type, str) else list(image_type))
-    )
-    series_obj.setDicomAttribute(
-        "ImageType",
-        ["DERIVED", "SECONDARY"]
-        + image_type[2:]
-        + [_IMAGE_TYPE_MARKERS[prediction_representation]],
-    )
-    series_obj.setDicomAttribute(
-        "SeriesDescription",
-        _series_description(deployment, prediction_representation),
     )
     derivation = (
         f"fastMONAI {representation_label}; model={deployment['model_type']}; "
@@ -513,7 +493,54 @@ def _set_derived_metadata(
     )
     if prediction_representation == PROBABILITY_MAP:
         derivation += "; foreground probability = stored uint16 value / 65535"
-    series_obj.setDicomAttribute("DerivationDescription", derivation)
+    return {
+        "SoftwareVersions": build_software_versions(),
+        "ImageType": ["DERIVED", "SECONDARY"]
+        + image_type[2:]
+        + [_IMAGE_TYPE_MARKERS[prediction_representation]],
+        "SeriesDescription": _series_description(
+            deployment, prediction_representation
+        ),
+        "DerivationDescription": derivation,
+    }
+
+
+def _set_derived_metadata(
+    series_obj,
+    deployment,
+    prediction_representation,
+    use_tta,
+):
+    tags = _provenance_tags(
+        deployment,
+        prediction_representation,
+        use_tta,
+        series_obj.getDicomAttribute("ImageType"),
+    )
+    for keyword, value in tags.items():
+        series_obj.setDicomAttribute(keyword, value)
+
+
+def tag_pr2mask_mask(series_dir, deployment, *, use_tta):
+    """Add fastMONAI provenance to the mask series written by pr2mask.
+
+    Study identity, window, UIDs and pixels are left as pr2mask wrote them.
+    """
+    paths = sorted(path for path in Path(series_dir).iterdir() if path.is_file())
+    if not paths:
+        raise RuntimeError(f"pr2mask mask series is empty: {series_dir}")
+    with _suppress_invalid_ui_warnings():
+        for path in paths:
+            dataset = dcmread(str(path))
+            tags = _provenance_tags(
+                deployment,
+                SEGMENTATION_MASK,
+                use_tta,
+                dataset.get("ImageType"),
+            )
+            for keyword, value in tags.items():
+                setattr(dataset, keyword, value)
+            dataset.save_as(str(path))
 
 
 def _create_prediction_series(
@@ -595,12 +622,12 @@ def write_prediction_outputs(
     *,
     use_tta,
 ):
-    """Write the paired segmentation and probability DICOM series."""
+    """Write the segmentation and probability series that pr2mask reads."""
     output_path = Path(output_dir)
     mask_path = create_dicom_mask(
         segmentation,
         dicom_input_path,
-        output_path / "mask",
+        output_path / "model_mask",
         deployment,
         use_tta=use_tta,
     )

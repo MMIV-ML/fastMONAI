@@ -25,6 +25,8 @@ RUN test -n "${VERSION}" || \
     (echo "VERSION build argument is required" >&2; exit 1)
 LABEL org.opencontainers.image.version="${VERSION}"
 ENV VERSION="${VERSION}"
+# pr2mask records this as the container version in its DICOM SoftwareVersions.
+ENV CONTAINER_VERSION="vs-seg:${VERSION}"
 
 COPY deployment_hashing.py deployment_models.py deployment_bundle.py \
     parallel_inference.py dicom_output.py redcap_output.py pacs_inference.py entrypoint.sh ./

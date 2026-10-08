@@ -19,7 +19,6 @@ sys.path.insert(0, str(PACS_DIR))
 import dicom_output as dicom  # noqa: E402
 
 
-REGISTERED_TEST_PREFIX = "1.2.826.0.1.3680043.10.9999"
 SOURCE_SERIES_UID = "1.2.3.4"
 SOURCE_SOP_UIDS = ["1.2.3.4.1", "1.2.3.4.2"]
 SOP_SEQUENCE_SHA256 = "b" * 64
@@ -173,7 +172,7 @@ class DicomInputValidationTests(unittest.TestCase):
         repeated = dicom.make_derived_series_uid(
             deployment, HEX_SERIES_UID, dicom.SEGMENTATION_MASK, **kwargs
         )
-        instance = dicom._make_derived_instance_uid(deployment, first, sop_uids[0])
+        instance = dicom._make_derived_instance_uid(first, sop_uids[0])
         self.assertEqual(first, repeated)
         for value in (first, instance):
             self.assertTrue(UID(value).is_valid)
@@ -292,16 +291,13 @@ class DicomInputValidationTests(unittest.TestCase):
 
 
 class DicomUIDTests(unittest.TestCase):
-    def deployment(self, *, bundle_hash="a" * 64, prefix=None, model_type="unet"):
-        deployment = {
+    def deployment(self, *, bundle_hash="a" * 64, model_type="unet"):
+        return {
             "schema_version": 1,
             "model_type": model_type,
             "bundle_sha256": bundle_hash,
             "members": [{} for _ in range(5)],
         }
-        if prefix is not None:
-            deployment["registered_prefix"] = prefix
-        return deployment
 
     def uid(self, deployment, representation=dicom.SEGMENTATION_MASK, **extra):
         kwargs = {
@@ -344,32 +340,18 @@ class DicomUIDTests(unittest.TestCase):
             self.assertLessEqual(len(value), 64)
             self.assertRegex(value, r"^2\.25\.[0-9]+$")
 
-    def test_registered_prefix_uid_golden_vector(self):
-        value = self.uid(self.deployment(prefix=REGISTERED_TEST_PREFIX))
-        self.assertEqual(
-            value,
-            "1.2.826.0.1.3680043.10.9999.702858577822640103404256011291145367",
-        )
-        self.assertTrue(UID(value).is_valid)
-        self.assertLessEqual(len(value), 64)
-        self.assertTrue(value.startswith(REGISTERED_TEST_PREFIX + "."))
-
     def test_instance_uid_uses_only_series_and_source_sop_identity(self):
         series_uid = self.uid(self.deployment())
-        first = dicom._make_derived_instance_uid(
-            self.deployment(), series_uid, SOURCE_SOP_UIDS[0]
-        )
-        changed_irrelevant_bundle = dicom._make_derived_instance_uid(
-            self.deployment(bundle_hash="d" * 64), series_uid, SOURCE_SOP_UIDS[0]
-        )
+        first = dicom._make_derived_instance_uid(series_uid, SOURCE_SOP_UIDS[0])
+        repeated = dicom._make_derived_instance_uid(series_uid, SOURCE_SOP_UIDS[0])
         changed_source = dicom._make_derived_instance_uid(
-            self.deployment(), series_uid, SOURCE_SOP_UIDS[1]
+            series_uid, SOURCE_SOP_UIDS[1]
         )
         self.assertEqual(
             first,
             "2.25.91692261918121449464758301100525040869",
         )
-        self.assertEqual(first, changed_irrelevant_bundle)
+        self.assertEqual(first, repeated)
         self.assertNotEqual(first, changed_source)
 
     def test_canonical_identity_and_representation_validation(self):
@@ -412,52 +394,47 @@ class DicomUIDTests(unittest.TestCase):
             def write(self, path, opts, formats):
                 self.written = (path, opts, formats)
 
-        for prefix in (None, REGISTERED_TEST_PREFIX):
-            with self.subTest(prefix=prefix):
-                series = FakeSeries()
-                with (
-                    patch.object(dicom, "_finalize_written_dicom") as finalize,
-                    patch.object(
-                        dicom,
-                        "make_derived_series_uid",
-                        wraps=dicom.make_derived_series_uid,
-                    ) as make_series_uid,
-                ):
-                    dicom.save_series_pred(
-                        series,
-                        "/output",
-                        self.deployment(prefix=prefix),
-                        dicom.SEGMENTATION_MASK,
-                        output_pixels_sha256=PIXEL_SHA256,
-                        use_tta=False,
-                    )
-                expected_sop_digest = dicom.sha256_bytes(
-                    dicom.canonical_json(SOURCE_SOP_UIDS).encode("utf-8")
-                )
-                self.assertEqual(
-                    make_series_uid.call_args.kwargs["source_sop_sequence_sha256"],
-                    expected_sop_digest,
-                )
-                sop_uids = [
-                    value
-                    for keyword, value, slice_index in series.attributes
-                    if keyword == "SOPInstanceUID" and slice_index is not None
-                ]
-                expected_prefix = "2.25" if prefix is None else prefix
-                self.assertTrue(
-                    series.seriesInstanceUID.startswith(expected_prefix + ".")
-                )
-                self.assertEqual(series.studyID, "SOURCE-STUDY")
-                self.assertEqual(series.studyInstanceUID, HEX_STUDY_UID)
-                self.assertEqual(series.frameOfReferenceUID, HEX_FRAME_UID)
-                self.assertEqual(len(sop_uids), 2)
-                self.assertEqual(len(set(sop_uids)), 2)
-                self.assertTrue(all(UID(value).is_valid for value in sop_uids))
-                self.assertEqual(
-                    series.written,
-                    ("/output", {"keep_uid": True}, ["dicom"]),
-                )
-                finalize.assert_called_once_with("/output")
+        series = FakeSeries()
+        with (
+            patch.object(dicom, "_finalize_written_dicom") as finalize,
+            patch.object(
+                dicom,
+                "make_derived_series_uid",
+                wraps=dicom.make_derived_series_uid,
+            ) as make_series_uid,
+        ):
+            dicom.save_series_pred(
+                series,
+                "/output",
+                self.deployment(),
+                dicom.SEGMENTATION_MASK,
+                output_pixels_sha256=PIXEL_SHA256,
+                use_tta=False,
+            )
+        expected_sop_digest = dicom.sha256_bytes(
+            dicom.canonical_json(SOURCE_SOP_UIDS).encode("utf-8")
+        )
+        self.assertEqual(
+            make_series_uid.call_args.kwargs["source_sop_sequence_sha256"],
+            expected_sop_digest,
+        )
+        sop_uids = [
+            value
+            for keyword, value, slice_index in series.attributes
+            if keyword == "SOPInstanceUID" and slice_index is not None
+        ]
+        self.assertTrue(series.seriesInstanceUID.startswith("2.25."))
+        self.assertEqual(series.studyID, "SOURCE-STUDY")
+        self.assertEqual(series.studyInstanceUID, HEX_STUDY_UID)
+        self.assertEqual(series.frameOfReferenceUID, HEX_FRAME_UID)
+        self.assertEqual(len(sop_uids), 2)
+        self.assertEqual(len(set(sop_uids)), 2)
+        self.assertTrue(all(UID(value).is_valid for value in sop_uids))
+        self.assertEqual(
+            series.written,
+            ("/output", {"keep_uid": True}, ["dicom"]),
+        )
+        finalize.assert_called_once_with("/output")
 
     def test_missing_or_duplicate_source_sop_uids_are_rejected(self):
         series = SimpleNamespace(slices=2, SOPInstanceUIDs=None)
@@ -556,6 +533,72 @@ class DicomUIDTests(unittest.TestCase):
                     self.assertIn("stored uint16 value / 65535", derivation)
                 else:
                     self.assertNotIn("stored uint16 value / 65535", derivation)
+
+    def test_pr2mask_mask_gets_provenance_and_keeps_pr2mask_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            series_dir = Path(directory)
+            for index in range(2):
+                path = _write_test_image(
+                    series_dir / f"{index}.dcm",
+                    index,
+                    study_uid=HEX_STUDY_UID,
+                    series_uid="1.3.6.1.4.1.45037.1",
+                    sop_uid=f"1.3.6.1.4.1.45037.1.{index + 1}",
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    dataset = dcmread(str(path))
+                    dataset.StudyID = HEX_STUDY_UID
+                    dataset.ImageType = ["DERIVED", "SECONDARY", "OTHER"]
+                    dataset.SeriesDescription = "t1_mpr_ns_sag (mask)"
+                    dataset.SoftwareVersions = "syngo MR A35"
+                    dataset.WindowCenter = "0.5"
+                    dataset.WindowWidth = "1"
+                    dataset.PixelData = np.array(
+                        [[0, 1, 0], [1, 0, 0]], dtype="<u2"
+                    ).tobytes()
+                    dataset.save_as(str(path))
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                dicom.tag_pr2mask_mask(series_dir, self.deployment(), use_tta=True)
+            self.assertEqual(caught, [])
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                written = [dcmread(str(path)) for path in sorted(series_dir.iterdir())]
+
+        self.assertEqual(len(written), 2)
+        for index, dataset in enumerate(written):
+            self.assertEqual(
+                dataset.SeriesDescription,
+                "fastMONAI UNet 5-model ensemble segmentation mask",
+            )
+            self.assertEqual(
+                str(dataset.SoftwareVersions),
+                f"fastMONAI {dicom.fastMONAI.__version__}",
+            )
+            self.assertEqual(
+                list(dataset.ImageType), ["DERIVED", "SECONDARY", "OTHER", "MASK"]
+            )
+            self.assertIn("model=unet", dataset.DerivationDescription)
+            self.assertIn("tta=on", dataset.DerivationDescription)
+            self.assertEqual(str(dataset.StudyInstanceUID), HEX_STUDY_UID)
+            self.assertEqual(str(dataset.StudyID), HEX_STUDY_UID)
+            self.assertEqual(float(dataset.WindowCenter), 0.5)
+            self.assertEqual(float(dataset.WindowWidth), 1.0)
+            self.assertEqual(str(dataset.SeriesInstanceUID), "1.3.6.1.4.1.45037.1")
+            self.assertEqual(
+                str(dataset.SOPInstanceUID), f"1.3.6.1.4.1.45037.1.{index + 1}"
+            )
+            np.testing.assert_array_equal(
+                dataset.pixel_array, np.array([[0, 1, 0], [1, 0, 0]])
+            )
+
+    def test_empty_pr2mask_mask_series_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "mask series is empty"):
+                dicom.tag_pr2mask_mask(directory, self.deployment(), use_tta=False)
 
     def test_probability_map_is_stored_as_scaled_uint16(self):
         class FakePrediction:

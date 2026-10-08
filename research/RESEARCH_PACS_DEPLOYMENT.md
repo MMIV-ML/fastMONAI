@@ -16,7 +16,6 @@ project's values.
 | `<CONTAINER_NAME>` | Docker image name you build | `vs-seg` |
 | `<MODEL_TYPE>` | Registered model key | `unet`, `dynunet` |
 | `<BUILD_VERSION>` | UTC build identifier | `20260812T140500Z` |
-| `<DICOM_UID_PREFIX>` | Optional registered DICOM prefix reserved for this generator | site-specific |
 
 The canonical project deployment directory is
 `<PROJECT_DIR>/research/<PROJECT>/deployment/pacs/`.
@@ -65,24 +64,15 @@ The select statement must match the approved test series.
 
 ## 3. Prepare the model bundle
 
-Build the project's declared Safetensors bundle before building the image. With no prefix, the
-bundle uses deterministic `2.25` UUID-derived UIDs and requires no registration. If the deploying
-organization owns and has reserved a registered DICOM prefix for this generator, pass it without
-a trailing period:
+Build the project's declared Safetensors bundle before building the image. fastMONAI-generated
+series use deterministic `2.25` UUID-derived UIDs, which need no registration.
 
 ```bash
 python prepare_model_bundle.py ...
-
-# Optional site-controlled identity
-export DICOM_UID_PREFIX="<DICOM_UID_PREFIX>"
-python prepare_model_bundle.py ... --dicom-uid-prefix "$DICOM_UID_PREFIX"
 ```
 
 The declared members determine the deployment form: exactly one member is a
-single-model deployment, while two or more members form an ensemble. The
-builder stores the optional prefix in `deployment_config.json`; it cannot be
-overridden at runtime. The prefix is public metadata once used, so keep
-site-specific values out of Git and include it in controlled release records.
+single-model deployment, while two or more members form an ensemble.
 
 Bundle preparation is the static model-validation boundary: it validates lineage,
 roles, architecture, ensemble compatibility, inference configuration, strict model
@@ -90,13 +80,6 @@ loading, and hashes before publishing the bundle. The immutable image trusts tha
 prepared bundle. Runtime strictly loads the declared Safetensors files and reads the
 embedded `PatchConfig`, but does not repeat file hashing or release-lineage checks for
 every patient.
-
-For a registered prefix, ask the institution's DICOM/OID administrator first. If the institution
-does not own one, use a recognized allocation authority such as the
-[Medical Connections free UID service](https://www.medicalconnections.co.uk/FreeUID/). Never
-invent a root or use another organization's root. The root owner is responsible for preventing
-duplicate subordinate UIDs and should reserve a subtree for each generator.
-Omitting the prefix selects the public `2.25` form.
 
 ## 4. Pull Base Docker Image
 
@@ -239,7 +222,7 @@ Provide the Research PACS administrator with:
 - the dated tag, `latest` alias, image ID or registry digest, and archive checksum;
 - the Git commit, ROR executable identity, and Fiona base image ID or digest;
 - the model-bundle names and hashes;
-- the bundle's DICOM schema and optional registered prefix;
+- the bundle's DICOM schema;
 - the series selection criteria;
 - the supported `ROR_CONT_OPTIONS` keys and defaults;
 - the expected output series and DICOM identity contract; and

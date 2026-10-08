@@ -47,7 +47,6 @@ from deployment_models import (
     DEPLOYMENT_SCHEMA,
     MODEL_CONFIGS,
     bundle_member_filename,
-    validate_registered_uid_prefix,
 )
 
 
@@ -156,11 +155,6 @@ def _validate_output_target(out: Path) -> None:
 
 def build_bundle(args) -> Path:
     sources = _declared_sources(args)
-    registered_prefix = (
-        validate_registered_uid_prefix(args.dicom_uid_prefix)
-        if args.dicom_uid_prefix is not None
-        else None
-    )
     artifact_path = _requested_artifact_path(args)
     resolved = [(source, _resolve_source(source, artifact_path)) for source in sources]
 
@@ -245,8 +239,6 @@ def build_bundle(args) -> Path:
             "model_type": args.model_type,
             "members": members,
         }
-        if registered_prefix is not None:
-            manifest["registered_prefix"] = registered_prefix
         manifest["bundle_sha256"] = _bundle_sha256(
             DEPLOYMENT_SCHEMA,
             args.model_type,
@@ -284,14 +276,6 @@ def make_parser() -> argparse.ArgumentParser:
         description="Build an explicit single-model or ensemble Safetensors bundle.",
     )
     parser.add_argument("--model-type", required=True, choices=tuple(MODEL_CONFIGS))
-    parser.add_argument(
-        "--dicom-uid-prefix",
-        default=None,
-        help=(
-            "Optional registered numeric UID prefix reserved for this generator, without "
-            "a trailing period. Omit it to use deterministic 2.25 UUID UIDs."
-        ),
-    )
     parser.add_argument(
         "--run", action="append", default=[], metavar="MEMBER_ID=RUN_ID",
         help="Explicit MLflow run member. Repeat for an ensemble.",

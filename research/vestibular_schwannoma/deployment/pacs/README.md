@@ -41,12 +41,8 @@ Repeat `--run MEMBER=RUN_ID` for other ensemble sizes, or use
 `--artifact MEMBER=/path/model.safetensors` for a local artifact. The builder validates and
 strict-loads each member into the ignored `model_bundles/<model-type>/` directory.
 
-Derived DICOM UIDs use deterministic `2.25` values by default. To use a registered
-application-specific prefix:
-
-```bash
-python prepare_model_bundle.py ... --dicom-uid-prefix "<registered-prefix>"
-```
+The intermediate `model_mask` and `vote_map` series use deterministic `2.25` UIDs.
+Published series keep pr2mask's UIDs.
 
 ## Test and build
 
@@ -92,14 +88,19 @@ Unknown keys and invalid values fail before inference. Header preflight rejects
 inconsistent Study, Series, SOP, modality, or geometry data; nonstandard source UIDs and
 missing optional Frame of Reference metadata produce aggregated warnings.
 
-The runtime writes `mask` and intermediate `vote_map` DICOM series. Fiona's `pr2mask` creates
-`fused`, `fused_vote_map`, and `reports`; `vote_map` is not published. Vote-map probabilities
-are `round(probability x 65535)`. Existing `mask`, `fused`, `fused_vote_map`, `reports`, and `redcap`
-directories are rejected to prevent overwrites.
+The runtime writes intermediate `model_mask` and `vote_map` DICOM series. Fiona's `pr2mask`
+reads them and creates `fused`, `fused_vote_map`, `reports`, and its own mask series in
+`labels/`, using pr2mask's folder layout. fastMONAI provenance (SeriesDescription,
+SoftwareVersions, DerivationDescription, and a `MASK` ImageType value) is added to the
+`labels` series before it is published. Its study identity, window, and UIDs stay as pr2mask
+wrote them, so the PACS files the mask with the other pr2mask outputs. `model_mask` and
+`vote_map` are not published. Vote-map probabilities are `round(probability x 65535)`.
+Existing `fused`, `fused_vote_map`, `reports`, `labels`, and `redcap` directories are rejected
+to prevent overwrites.
 
 ### Recoverable masks in REDCap JSON
 
-The final output now includes `redcap/<report-series-UID>/output.json` and
+The final output now includes `redcap/<mask-series-UID>/output.json` and
 `output_data_dictionary.zip`, using pr2mask's EAV row format and instrument.
 `redcap` is an owned output directory and must not already exist.
 The exporter reads the **written DICOM mask**, matches it to the source images by
@@ -140,7 +141,11 @@ surface distances or a documented resampling step.
 ### Stable model destinations and overwrites
 
 `redcap_model_instances.json` assigns each full bundle SHA-256 a permanent positive
-integer. The current UNet bundle uses instance 1 and DynUNet uses instance 2.
+integer of at least 2. Instance 1 of the `pr2mask` instrument holds the original (manual)
+mask, and REDCap instances are filled in order, so model instances follow it without gaps.
+The current UNet bundle uses instance 2 and DynUNet uses instance 3. Instance 4 is reserved
+for the next fastMONAI model, and 5 is used by the nnU-Net medium container in its separate
+repository; keep allocations unique across both projects.
 Never renumber or reuse entries. Register each new bundle with an unused integer
 before building a release; unknown bundles and duplicate allocations fail closed.
 The registry is copied into the container and validated before inference.
