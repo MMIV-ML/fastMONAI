@@ -17,7 +17,11 @@ from fastMONAI.vision_patch import PatchInferenceEngine
 
 from deployment_bundle import describe_deployment as load_deployment
 from deployment_models import MODEL_CONFIGS
-from dicom_output import validate_dicom_input, write_prediction_outputs
+from dicom_output import (
+    tag_pr2mask_mask,
+    validate_dicom_input,
+    write_prediction_outputs,
+)
 from parallel_inference import ParallelEnsemblePatchInferenceEngine
 from redcap_output import write_redcap_mask, model_repeat_instance
 
@@ -26,9 +30,8 @@ SW_BATCH_SIZE = 1
 THREADS_PER_ENSEMBLE_MODEL = 3
 DEFAULT_WORK_DIR = Path("/output_tmp")
 DEFAULT_PR2MASK_DIR = Path("/pr2mask")
-FINAL_OUTPUT_DIRS = ("fused", "fused_vote_map", "reports", "mask", "redcap")
+FINAL_OUTPUT_DIRS = ("fused", "fused_vote_map", "reports", "labels", "redcap")
 LOG_NAME = "pacs_command.log"
-PR2MASK_BUNDLE_HASH_LENGTH = 32
 
 
 def validate_prediction_outputs(mask, probabilities):
@@ -150,6 +153,18 @@ def _prepare_output_directory(path: Path) -> None:
         )
 
 
+def _tag_pr2mask_labels(work_dir: Path, deployment: dict, *, use_tta: bool) -> None:
+    """Add fastMONAI provenance to the mask series pr2mask wrote in labels/."""
+    labels_dir = work_dir / "labels"
+    series = sorted(path for path in labels_dir.glob("*") if path.is_dir())
+    if len(series) != 1:
+        raise RuntimeError(
+            f"pr2mask must create exactly one mask series in {labels_dir}; "
+            f"found {len(series)}"
+        )
+    tag_pr2mask_mask(series[0], deployment, use_tta=use_tta)
+
+
 def _copy_final_outputs(work_dir: Path, output_dir: Path) -> None:
     missing = [name for name in FINAL_OUTPUT_DIRS if not (work_dir / name).is_dir()]
     if missing:
@@ -190,32 +205,30 @@ def _run_postprocessing(
     version: str,
     tools: dict[str, Path],
 ) -> None:
-    for name in ("mask", "vote_map"):
+    for name in ("model_mask", "vote_map"):
         if not (work_dir / name).is_dir():
             raise RuntimeError(f"inference did not create required {name!r} output")
 
     model_type = deployment["model_type"]
-    model_code = MODEL_CONFIGS[model_type]["dicom_model_code"]
-    bundle_identity = deployment["bundle_sha256"][:PR2MASK_BUNDLE_HASH_LENGTH]
-    identity = (
-        f"{version}_m{model_code}_b{bundle_identity}_t{int(use_tta)}"
-    )
-    info = (
-        f"{model_type} {_deployment_label(deployment)}, "
-        f"Predicted {datetime.now():%b%d%Y}"
-    )
+    tta = "tta" if use_tta else "no-tta"
+    # The image version pins one bundle per model type, so version, model and TTA
+    # keep pr2mask's stable series UIDs distinct.
+    identity = f"{version}_{model_type}_{tta}"
+    # The report title already names the model.
+    report_identity = f"{version}_{tta}"
+    info = f"{model_type} {_deployment_label(deployment)}, {datetime.now():%b%d%Y}"
     commands = (
         (
             "imageAndMask2Report",
             [
                 str(tools["imageAndMask2Report"]),
                 str(input_dir),
-                str(work_dir / "mask"),
+                str(work_dir / "model_mask"),
                 str(work_dir),
                 "-u",
                 f"{identity}_report",
                 "-i",
-                identity,
+                report_identity,
                 "--reporttype",
                 "mosaic",
                 "-t",
@@ -227,12 +240,12 @@ def _run_postprocessing(
             [
                 str(tools["imageAndMask2Fused"]),
                 str(input_dir),
-                str(work_dir / "mask"),
+                str(work_dir / "model_mask"),
                 str(work_dir),
                 "-u",
                 f"{identity}_fused",
-                "-i",
-                identity,
+                "-t",
+                f"{info} ",
             ],
         ),
         (
@@ -250,8 +263,8 @@ def _run_postprocessing(
                 f"{identity}_votemap",
                 "-s",
                 "peak agreement {peak_agreement}",
-                "-i",
-                identity,
+                "-t",
+                f"{info} ",
             ],
         ),
     )
@@ -266,6 +279,7 @@ def _run_postprocessing(
                 stderr=subprocess.STDOUT,
                 check=True,
             )
+    _tag_pr2mask_labels(work_dir, deployment, use_tta=use_tta)
     write_redcap_mask(work_dir, input_dir, deployment, version=version, use_tta=use_tta)
     _copy_final_outputs(work_dir, output_dir)
     _publish_log(log_path, output_dir)
