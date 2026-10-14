@@ -104,7 +104,7 @@ class ParallelEnsembleTests(unittest.TestCase):
                         image, tta=use_tta
                     )
                     expected_mask, expected = sequential.predict_mask_and_probabilities(
-                        image, tta=use_tta
+                        image, tta=parallel.TTA_FLIP_AXES if use_tta else False
                     )
                     torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
                     torch.testing.assert_close(

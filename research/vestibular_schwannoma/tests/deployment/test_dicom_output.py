@@ -310,6 +310,7 @@ class DicomUIDTests(unittest.TestCase):
             deployment, SOURCE_SERIES_UID, representation, **kwargs
         )
 
+    @patch.object(dicom.fastMONAI, "__version__", "0.10.1")
     def test_default_uid_golden_vector_and_identity_separation(self):
         deployment = self.deployment()
         mask_series = self.uid(deployment)
@@ -340,6 +341,7 @@ class DicomUIDTests(unittest.TestCase):
             self.assertLessEqual(len(value), 64)
             self.assertRegex(value, r"^2\.25\.[0-9]+$")
 
+    @patch.object(dicom.fastMONAI, "__version__", "0.10.1")
     def test_instance_uid_uses_only_series_and_source_sop_identity(self):
         series_uid = self.uid(self.deployment())
         first = dicom._make_derived_instance_uid(series_uid, SOURCE_SOP_UIDS[0])

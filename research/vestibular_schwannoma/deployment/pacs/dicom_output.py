@@ -24,6 +24,7 @@ from deployment_models import (
     DICOM_UID_NAMESPACE,
     MODEL_CONFIGS,
 )
+from parallel_inference import TTA_DESCRIPTION
 
 
 SEGMENTATION_MASK = "segmentation_mask"
@@ -489,7 +490,7 @@ def _provenance_tags(
         f"fastMONAI {representation_label}; model={deployment['model_type']}; "
         f"members={len(deployment['members'])}; "
         f"bundle_sha256={deployment['bundle_sha256']}; "
-        f"tta={'on' if use_tta else 'off'}"
+        f"tta={f'on ({TTA_DESCRIPTION})' if use_tta else 'off'}"
     )
     if prediction_representation == PROBABILITY_MAP:
         derivation += "; foreground probability = stored uint16 value / 65535"

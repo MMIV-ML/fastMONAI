@@ -4,7 +4,10 @@ Build the CE-T1w vestibular schwannoma container with `dynunet`, `unet`, or both
 DynUNet is the default model.
 Multiple Safetensors members run concurrently in separate CPU workers with three
 threads per model. Five-fold deployment therefore requires at least 15 available CPU
-threads; the qualified target has 16. Eight-flip TTA is enabled by default.
+threads; the qualified target has 16. TTA is enabled by default and averages two passes, the
+original and one copy flipped anterior-posterior and inferior-superior together (`TTA_FLIP_AXES`
+in `parallel_inference.py`), as in the nnU-Net container. On the 344 held-out cases this gave
+about the same false positives as all 8 flips at a quarter of the cost.
 
 See [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md)
 for the general build, qualification, export, and handoff workflow.
