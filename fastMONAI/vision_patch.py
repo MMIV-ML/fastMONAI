@@ -1160,17 +1160,32 @@ def _normalize_patch_overlap(patch_overlap: 'int | float | list', patch_size: li
     return tuple(result)
 
 
-# Batch tensor shape: [B, C, D, H, W], spatial dims are 2, 3, 4.
+# Batch tensor shape [B, C, X, Y, Z]; spatial dims are 2, 3, 4. After RAS+ reordering
+# (apply_reorder=True) they are left-right, anterior-posterior and inferior-superior.
 _TTA_FLIP_AXES = (
     (),         # original
-    (4,),       # flip LR (W)
-    (3,),       # flip AP (H)
-    (2,),       # flip IS (D)
-    (3, 4),     # flip LR+AP
+    (4,),       # flip IS (z)
+    (3,),       # flip AP (y)
+    (2,),       # flip LR (x)
+    (3, 4),     # flip AP+IS
     (2, 4),     # flip LR+IS
-    (2, 3),     # flip AP+IS
+    (2, 3),     # flip LR+AP
     (2, 3, 4),  # flip all
 )
+
+
+def _resolve_tta(tta) -> tuple | None:
+    """Map the `tta` argument to the flip set to average, or None for no TTA.
+
+    True means all 8 flips (`_TTA_FLIP_AXES`); a sequence of axis tuples selects those flips,
+    e.g. `[(), (4,)]` for the original plus an inferior-superior flip.
+    """
+    if tta is True: return _TTA_FLIP_AXES
+    if not tta: return None
+    flips = tuple(tuple(a) for a in tta)
+    if any(ax not in (2, 3, 4) for a in flips for ax in a):
+        raise ValueError(f"TTA flip axes must be spatial dims 2, 3 or 4, got {flips}")
+    return flips
 
 
 def _logits_to_probs(logits: torch.Tensor) -> torch.Tensor:
@@ -1182,8 +1197,8 @@ def _logits_to_probs(logits: torch.Tensor) -> torch.Tensor:
     return torch.sigmoid(logits.float()) if logits.shape[1] == 1 else torch.softmax(logits.float(), dim=1)
 
 
-def _predict_patch_tta(models, patch_input, amp_context=None) -> torch.Tensor:
-    """Mirror TTA (with optional model ensemble): average probabilities over the 8 flips and all models.
+def _predict_patch_tta(models, patch_input, amp_context=None, flip_axes=_TTA_FLIP_AXES) -> torch.Tensor:
+    """Mirror TTA (with optional model ensemble): average probabilities over `flip_axes` and all models.
 
     models is a single model or a list of models; a list soft-votes (averages probabilities).
     Uses a running sum (2x memory, not 9x per model). Each pass: flip -> forward -> activate ->
@@ -1194,7 +1209,7 @@ def _predict_patch_tta(models, patch_input, amp_context=None) -> torch.Tensor:
     if not isinstance(models, (list, tuple)):
         models = [models]
     summed_probs = None
-    for axes in _TTA_FLIP_AXES:
+    for axes in flip_axes:
         flipped = torch.flip(patch_input, list(axes)) if axes else patch_input
         for model in models:
             with amp_context:
@@ -1203,7 +1218,7 @@ def _predict_patch_tta(models, patch_input, amp_context=None) -> torch.Tensor:
             if axes:
                 probs = torch.flip(probs, list(axes))
             summed_probs = probs if summed_probs is None else summed_probs + probs
-    return (summed_probs / (len(_TTA_FLIP_AXES) * len(models))).cpu()
+    return (summed_probs / (len(flip_axes) * len(models))).cpu()
 
 
 @dataclass
@@ -1374,12 +1389,14 @@ class PatchInferenceEngine:
             patch_loader=patch_loader
         )
 
-    def _run_inference(self, prepared: _PreparedSubject, tta: bool = False) -> torch.Tensor:
+    def _run_inference(self, prepared: _PreparedSubject, tta: bool | tuple | list = False) -> torch.Tensor:
         """Run the model(s) over all patches and aggregate; returns the raw probability tensor.
 
-        Must run on the main thread (model forward pass). tta enables mirror test-time augmentation.
+        Must run on the main thread (model forward pass). tta enables mirror test-time augmentation:
+        True for all 8 flips, or a sequence of flip-axis tuples (see `_resolve_tta`).
         With multiple models the per-patch probabilities are averaged (soft voting).
         """
+        flips = _resolve_tta(tta)
         # inference_mode is slightly faster than no_grad (disables autograd tracking
         # and view tracking). Safe here since we don't do in-place ops on outputs.
         with torch.inference_mode():
@@ -1387,8 +1404,8 @@ class PatchInferenceEngine:
                 patch_input = patches_batch['image'][tio.DATA].to(self._device)
                 locations = patches_batch[tio.LOCATION]
 
-                if tta:
-                    probs = _predict_patch_tta(self.models, patch_input, self._amp_context)
+                if flips:
+                    probs = _predict_patch_tta(self.models, patch_input, self._amp_context, flips)
                 else:
                     summed = None
                     for _m in self.models:
@@ -1478,7 +1495,7 @@ class PatchInferenceEngine:
         img_path: Path | str,
         return_probabilities: bool = False,
         return_affine: bool = False,
-        tta: bool = False
+        tta: bool | tuple | list = False
     ) -> torch.Tensor | tuple[torch.Tensor, np.ndarray]:
         """Predict on a single volume using patch-based inference.
 
@@ -1487,7 +1504,9 @@ class PatchInferenceEngine:
             return_probabilities: If True, return probability map instead of argmax.
             return_affine: If True, return (prediction, affine) tuple instead of just prediction.
             tta: If True, apply mirror test-time augmentation (8 flip combinations, averaged
-                probabilities; ~8x slower). Works best when training used RandomFlip. Defaults to False.
+                probabilities; ~8x slower). Works best when training used RandomFlip. A sequence of
+                flip-axis tuples uses only those flips, e.g. `[(), (4,)]` (2 passes; axis 4 is
+                inferior-superior after RAS+ reordering). Defaults to False.
 
         Returns:
             Predicted segmentation mask tensor, or tuple (prediction, affine) if return_affine=True.
@@ -1505,7 +1524,7 @@ class PatchInferenceEngine:
         self,
         img_path: Path | str,
         return_affine: bool = False,
-        tta: bool = False
+        tta: bool | tuple | list = False
     ) -> (
         tuple[torch.Tensor, torch.Tensor]
         | tuple[torch.Tensor, torch.Tensor, np.ndarray]
@@ -1587,7 +1606,7 @@ def patch_inference(
     progress: bool = True,
     save_dir: str = None,
     pre_inference_tfms: list = None,
-    tta: bool = False,
+    tta: bool | tuple | list = False,
     prefetch: bool = True,
     amp: bool = False
 ) -> list:
@@ -1615,7 +1634,8 @@ def patch_inference(
         pre_inference_tfms: Optional override for config.normalization. If None, normalization is
             read from config.normalization (the source of truth set at training time). Provide this
             only to override the config (e.g. for non-serializable transforms).
-        tta: If True, mirror TTA (8 flip combinations).
+        tta: If True, mirror TTA (8 flip combinations); a sequence of flip-axis tuples
+            uses only those flips, e.g. `[(), (4,)]`.
         prefetch: If True (default), overlap I/O with compute using a background
             thread for preparation and saving. Holds two subjects in memory
             simultaneously (current + next). Set to False for memory-constrained
