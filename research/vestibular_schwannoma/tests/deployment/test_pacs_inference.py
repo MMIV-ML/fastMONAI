@@ -95,7 +95,7 @@ class PredictionOutputTests(unittest.TestCase):
             )
 
         engine.predict_mask_and_probabilities.assert_called_once_with(
-            str(input_output_dir), tta=True
+            str(input_output_dir), tta=pacs.TTA_FLIP_AXES
         )
         preflight.assert_called_once_with(input_output_dir)
         written_mask, written_probability = write_outputs.call_args.args[:2]

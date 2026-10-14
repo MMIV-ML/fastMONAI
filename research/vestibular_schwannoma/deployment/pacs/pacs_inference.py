@@ -11,6 +11,8 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+import fastMONAI
+import fastMONAI.vision_patch as vision_patch
 import torch
 from fastMONAI.vision_all import load_safetensors_model
 from fastMONAI.vision_patch import PatchInferenceEngine
@@ -22,7 +24,11 @@ from dicom_output import (
     validate_dicom_input,
     write_prediction_outputs,
 )
-from parallel_inference import ParallelEnsemblePatchInferenceEngine
+from parallel_inference import (
+    TTA_DESCRIPTION,
+    TTA_FLIP_AXES,
+    ParallelEnsemblePatchInferenceEngine,
+)
 from redcap_output import write_redcap_mask, model_repeat_instance
 
 
@@ -317,9 +323,17 @@ def run_inference(
     print(f"Patch size: {patch_config.patch_size}")
 
     engine = _create_inference_engine(deployment)
-    print(f"Running patch inference (TTA={'on' if use_tta else 'off'})...")
+    if use_tta and not isinstance(engine, ParallelEnsemblePatchInferenceEngine):
+        # Older fastMONAI treats any flip set as all 8 flips, so fail instead of
+        # silently running a different TTA than the one recorded in the outputs.
+        if not hasattr(vision_patch, "_resolve_tta"):
+            raise RuntimeError(
+                f"fastMONAI {fastMONAI.__version__} cannot run a TTA flip subset for "
+                "single-model deployments; upgrade fastMONAI or run with --no-tta"
+            )
+    print(f"Running patch inference (TTA={TTA_DESCRIPTION if use_tta else 'off'})...")
     segmentation, probabilities = engine.predict_mask_and_probabilities(
-        str(input_dir), tta=use_tta
+        str(input_dir), tta=TTA_FLIP_AXES if use_tta else False
     )
     segmentation, probabilities = validate_prediction_outputs(
         segmentation, probabilities
@@ -346,7 +360,7 @@ def run_inference(
     total_voxels = segmentation.numel()
     print("=" * 60)
     print(f"INFERENCE COMPLETE: {label}")
-    print(f"TTA: {'on' if use_tta else 'off'}")
+    print(f"TTA: {TTA_DESCRIPTION if use_tta else 'off'}")
     print(f"Tumor voxels: {tumor_voxels}")
     print(f"Total voxels: {total_voxels}")
     print(f"Tumor percentage: {100 * tumor_voxels / total_voxels:.4f}%")
@@ -365,7 +379,7 @@ def main(argv=None):
         "--tta",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable or disable 8-flip TTA (default: enabled)",
+        help=f"Enable or disable 2-flip TTA, {TTA_DESCRIPTION} (default: enabled)",
     )
     args = parser.parse_args(argv)
     run_inference(
