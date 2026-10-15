@@ -22,7 +22,7 @@ class CommandLineTests(unittest.TestCase):
     def test_model_tta_options_and_image_version(self):
         cases = [
             ([], "dynunet", True),
-            (["--model-type", "unet", "--tta"], "unet", True),
+            (["--model-type", "dynunet", "--tta"], "dynunet", True),
             (["--no-tta"], "dynunet", False),
         ]
         for options, model_type, use_tta in cases:
@@ -45,8 +45,8 @@ class PredictionOutputTests(unittest.TestCase):
     def deployment(self):
         return {
             "patch_config": SimpleNamespace(patch_size=[16, 16, 16]),
-            "model_type": "unet",
-            "bundle_sha256": "4d8991eff16c90ad0eb185757df9cfccf5615cb7a5d7a9d3304c61e65ad9d172",
+            "model_type": "dynunet",
+            "bundle_sha256": "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
             "predictor": object(),
             "members": [{"member_id": "all_data"}],
         }
@@ -84,7 +84,7 @@ class PredictionOutputTests(unittest.TestCase):
                 pacs.run_inference(
                     input_output_dir,
                     input_output_dir,
-                    "unet",
+                    "dynunet",
                     use_tta=True,
                     version="release",
                     work_dir=work_dir,
@@ -120,7 +120,7 @@ class PredictionOutputTests(unittest.TestCase):
                     pacs.run_inference(
                         "/dicom",
                         "/output",
-                        "unet",
+                        "dynunet",
                         version="release",
                         pr2mask_dir=Path(directory),
                     )
@@ -144,7 +144,7 @@ class PredictionOutputTests(unittest.TestCase):
                             pacs.run_inference(
                                 "/dicom",
                                 output,
-                                "unet",
+                                "dynunet",
                                 version="release",
                                 work_dir=root / "work",
                             )
@@ -179,7 +179,7 @@ class PredictionOutputTests(unittest.TestCase):
                     pacs.run_inference(
                         "/dicom",
                         output,
-                        "unet",
+                        "dynunet",
                         version="release",
                         work_dir=work,
                     )
@@ -201,7 +201,7 @@ class PredictionOutputTests(unittest.TestCase):
                     pacs.run_inference(
                         root / "input",
                         root / "output",
-                        "unet",
+                        "dynunet",
                         version="release",
                         work_dir=root / "work",
                     )
@@ -228,7 +228,7 @@ class PredictionOutputTests(unittest.TestCase):
                     pacs.run_inference(
                         "/dicom",
                         root / "output",
-                        "unet",
+                        "dynunet",
                         version="release",
                         work_dir=root / "work",
                     )
@@ -328,7 +328,7 @@ class PostprocessingTests(unittest.TestCase):
             labels_series = work_dir / "labels" / "1.2.3.4.5"
 
             deployment = {
-                "model_type": "unet",
+                "model_type": "dynunet",
                 "bundle_sha256": "a" * 64,
                 "members": [{"member_id": f"fold_{number}"} for number in range(5)],
             }
@@ -356,7 +356,7 @@ class PostprocessingTests(unittest.TestCase):
                 use_tta=True,
             )
             self.assertEqual(len(calls), 3)
-            identity = "20260817T120000Z_unet_tta"
+            identity = "20260817T120000Z_dynunet_tta"
             self.assertLessEqual(len(identity), 64)
             self.assertEqual(
                 [command[2] for command in calls],
@@ -366,7 +366,7 @@ class PostprocessingTests(unittest.TestCase):
             self.assertTrue(all("-i" not in command for command in calls[1:]))
             titles = {command[command.index("-t") + 1] for command in calls}
             self.assertEqual(len(titles), 1)
-            self.assertRegex(titles.pop(), r"^unet 5-model ensemble, [A-Z][a-z]{2}\d{6} $")
+            self.assertRegex(titles.pop(), r"^dynunet 5-model ensemble, [A-Z][a-z]{2}\d{6} $")
             self.assertIn(identity + "_report", calls[0])
             self.assertIn(identity + "_fused", calls[1])
             self.assertIn(identity + "_votemap", calls[2])

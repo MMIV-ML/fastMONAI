@@ -24,7 +24,7 @@ class ArtifactSelectionTests(unittest.TestCase):
         return bundle.make_parser().parse_args(
             [
                 "--model-type",
-                "unet",
+                "dynunet",
                 "--run",
                 "all_data=run-id",
                 "--artifact-role",
@@ -44,7 +44,7 @@ class ArtifactSelectionTests(unittest.TestCase):
         *,
         role="final",
         run_id="run-id",
-        arch_id="monai.unet",
+        arch_id="monai.dynunet",
         arch_kwargs=None,
         patch_config=None,
     ):
@@ -68,7 +68,7 @@ class ArtifactSelectionTests(unittest.TestCase):
         }
 
     def local_args(self, root: Path, *member_ids: str):
-        argv = ["--model-type", "unet"]
+        argv = ["--model-type", "dynunet"]
         for member_id in member_ids:
             artifact = root / f"source-{member_id}.safetensors"
             artifact.write_bytes(member_id.encode())
@@ -84,13 +84,13 @@ class ArtifactSelectionTests(unittest.TestCase):
         return bundle.make_parser().parse_args(argv)
 
     def test_registry_preserves_existing_models_and_unique_codes(self):
-        self.assertEqual(MODEL_CONFIGS["unet"]["arch_ids"], frozenset({"monai.unet"}))
         self.assertEqual(
             MODEL_CONFIGS["dynunet"]["arch_ids"],
             frozenset({"monai.dynunet"}),
         )
-        self.assertEqual(MODEL_CONFIGS["unet"]["dicom_model_code"], 1)
         self.assertEqual(MODEL_CONFIGS["dynunet"]["dicom_model_code"], 2)
+        # Code 1 belonged to the retired UNet bundle and must stay unused.
+        self.assertNotIn(1, [config["dicom_model_code"] for config in MODEL_CONFIGS.values()])
 
         model_codes = [config["dicom_model_code"] for config in MODEL_CONFIGS.values()]
         self.assertTrue(all(type(code) is int and code > 0 for code in model_codes))
@@ -108,7 +108,7 @@ class ArtifactSelectionTests(unittest.TestCase):
                 patch.object(
                     bundle,
                     "read_safetensors_metadata",
-                    return_value=self.metadata(arch_id="monai.dynunet"),
+                    return_value=self.metadata(arch_id="monai.unet"),
                 ),
                 patch.object(bundle, "load_safetensors_model") as strict_load,
                 self.assertRaisesRegex(ValueError, "does not match model type"),
@@ -292,7 +292,7 @@ class ArtifactSelectionTests(unittest.TestCase):
                     set(declaration["members"][0]), {"member_id", "sha256"}
                 )
                 self.assertEqual(declaration["schema_version"], 1)
-                self.assertEqual(declaration["model_type"], "unet")
+                self.assertEqual(declaration["model_type"], "dynunet")
                 self.assertTrue((output / "all_data.safetensors").is_file())
                 self.assertEqual(output.stat().st_mode & 0o777, 0o750)
 
@@ -308,7 +308,7 @@ class ArtifactSelectionTests(unittest.TestCase):
         artifact.write_bytes(model_bytes)
         argv = [
             "--model-type",
-            "unet",
+            "dynunet",
             "--artifact",
             f"{member_id}={artifact}",
             "--artifact-role",
@@ -353,9 +353,9 @@ class ArtifactSelectionTests(unittest.TestCase):
 
     def test_bundle_identity_changes_with_model_type_and_member_order(self):
         hashes = ["a" * 64, "b" * 64]
-        original = bundle._bundle_sha256(1, "unet", hashes)
-        self.assertNotEqual(original, bundle._bundle_sha256(1, "dynunet", hashes))
-        self.assertNotEqual(original, bundle._bundle_sha256(1, "unet", hashes[::-1]))
+        original = bundle._bundle_sha256(1, "dynunet", hashes)
+        self.assertNotEqual(original, bundle._bundle_sha256(1, "other", hashes))
+        self.assertNotEqual(original, bundle._bundle_sha256(1, "dynunet", hashes[::-1]))
 
     def test_copy_failure_leaves_no_partial_bundle_or_staging_directory(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -369,7 +369,7 @@ class ArtifactSelectionTests(unittest.TestCase):
             args = bundle.make_parser().parse_args(
                 [
                     "--model-type",
-                    "unet",
+                    "dynunet",
                     *sources,
                     "--artifact-role",
                     "final",
@@ -415,7 +415,7 @@ class ArtifactSelectionTests(unittest.TestCase):
             args = bundle.make_parser().parse_args(
                 [
                     "--model-type",
-                    "unet",
+                    "dynunet",
                     "--artifact",
                     f"all_data={artifact}",
                     "--artifact-role",
@@ -448,7 +448,7 @@ class ArtifactSelectionTests(unittest.TestCase):
             args = bundle.make_parser().parse_args(
                 [
                     "--model-type",
-                    "unet",
+                    "dynunet",
                     "--artifact",
                     f"all_data={artifact}",
                     "--artifact-role",

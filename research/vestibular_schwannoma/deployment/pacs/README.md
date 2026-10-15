@@ -1,7 +1,7 @@
 # Vestibular Schwannoma ROR/PACS Container
 
-Build the CE-T1w vestibular schwannoma container with `dynunet`, `unet`, or both.
-DynUNet is the default model.
+Build the CE-T1w vestibular schwannoma container with the five-fold DynUNet ensemble. The
+UNet bundle was retired in October 2026 because it had more false positives than DynUNet.
 Multiple Safetensors members run concurrently in separate CPU workers with three
 threads per model. Five-fold deployment therefore requires at least 15 available CPU
 threads; the qualified target has 16. TTA is enabled by default and averages two passes, the
@@ -17,15 +17,6 @@ for the general build, qualification, export, and handoff workflow.
 Use the environment pinned in `requirements.yml` to prepare bundles. Strict model
 metadata checks also depend on the PyTorch version; matching fastMONAI alone is
 insufficient. Provide complete MLflow run IDs.
-
-One model trained on all data:
-
-```bash
-python prepare_model_bundle.py \
-  --model-type unet \
-  --run "all_data=${ALL_DATA_RUN_ID}" \
-  --artifact-role final
-```
 
 Five-fold ensemble:
 
@@ -74,9 +65,6 @@ Qualify and deliver the dated tag:
 
 ```bash
 ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
-  -envs '{"model-type":"unet","tta":true}'
-
-ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
   -envs '{"model-type":"dynunet","tta":true}'
 ```
 
@@ -84,7 +72,7 @@ ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
 
 `ROR_CONT_OPTIONS` accepts:
 
-- `model-type`: `dynunet` (default) or `unet`.
+- `model-type`: `dynunet` (the default and only model).
 - `tta`: JSON Boolean, default `true`.
 
 Unknown keys and invalid values fail before inference. Header preflight rejects
@@ -146,9 +134,10 @@ surface distances or a documented resampling step.
 `redcap_model_instances.json` assigns each full bundle SHA-256 a permanent positive
 integer of at least 2. Instance 1 of the `pr2mask` instrument holds the original (manual)
 mask, and REDCap instances are filled in order, so model instances follow it without gaps.
-The current UNet bundle uses instance 2 and DynUNet uses instance 3. Instance 4 is reserved
-for the next fastMONAI model, and 5 is used by the nnU-Net medium container in its separate
-repository; keep allocations unique across both projects.
+DynUNet uses instance 3. Instance 2 is used by the nnU-Net large container and 5 by nnU-Net
+medium, both in the separate nnU-Net repository. Instance 4 is reserved for the next model.
+Keep allocations unique across both projects. The retired UNet bundle was registered at
+instance 2 before nnU-Net large took it over.
 Never renumber or reuse entries. Register each new bundle with an unused integer
 before building a release; unknown bundles and duplicate allocations fail closed.
 The registry is copied into the container and validated before inference.

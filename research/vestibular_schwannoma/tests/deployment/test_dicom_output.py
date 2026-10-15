@@ -157,7 +157,7 @@ class DicomInputValidationTests(unittest.TestCase):
 
         deployment = {
             "schema_version": 1,
-            "model_type": "unet",
+            "model_type": "dynunet",
             "bundle_sha256": "a" * 64,
             "members": [{}],
         }
@@ -291,7 +291,7 @@ class DicomInputValidationTests(unittest.TestCase):
 
 
 class DicomUIDTests(unittest.TestCase):
-    def deployment(self, *, bundle_hash="a" * 64, model_type="unet"):
+    def deployment(self, *, bundle_hash="a" * 64, model_type="dynunet"):
         return {
             "schema_version": 1,
             "model_type": model_type,
@@ -324,7 +324,7 @@ class DicomUIDTests(unittest.TestCase):
 
         self.assertEqual(
             mask_series,
-            "2.25.279307575913214821815280391887400559925",
+            "2.25.217211912232160888609364671412008920695",
         )
         self.assertEqual(mask_series, repeated)
         values = {
@@ -351,7 +351,7 @@ class DicomUIDTests(unittest.TestCase):
         )
         self.assertEqual(
             first,
-            "2.25.91692261918121449464758301100525040869",
+            "2.25.192503050826460639977181018022166104705",
         )
         self.assertEqual(first, repeated)
         self.assertNotEqual(first, changed_source)
@@ -524,10 +524,10 @@ class DicomUIDTests(unittest.TestCase):
                 )
                 self.assertEqual(series.attributes["ImageType"][-1], marker)
                 self.assertIn(
-                    "UNet 5-model ensemble", series.attributes["SeriesDescription"]
+                    "DynUNet 5-model ensemble", series.attributes["SeriesDescription"]
                 )
                 derivation = series.attributes["DerivationDescription"]
-                self.assertIn("model=unet", derivation)
+                self.assertIn("model=dynunet", derivation)
                 self.assertIn("members=5", derivation)
                 self.assertIn("bundle_sha256=" + "a" * 64, derivation)
                 self.assertIn("tta=on", derivation)
@@ -574,7 +574,7 @@ class DicomUIDTests(unittest.TestCase):
         for index, dataset in enumerate(written):
             self.assertEqual(
                 dataset.SeriesDescription,
-                "fastMONAI UNet 5-model ensemble segmentation mask",
+                "fastMONAI DynUNet 5-model ensemble segmentation mask",
             )
             self.assertEqual(
                 str(dataset.SoftwareVersions),
@@ -583,7 +583,7 @@ class DicomUIDTests(unittest.TestCase):
             self.assertEqual(
                 list(dataset.ImageType), ["DERIVED", "SECONDARY", "OTHER", "MASK"]
             )
-            self.assertIn("model=unet", dataset.DerivationDescription)
+            self.assertIn("model=dynunet", dataset.DerivationDescription)
             self.assertIn("tta=on", dataset.DerivationDescription)
             self.assertEqual(str(dataset.StudyInstanceUID), HEX_STUDY_UID)
             self.assertEqual(str(dataset.StudyID), HEX_STUDY_UID)

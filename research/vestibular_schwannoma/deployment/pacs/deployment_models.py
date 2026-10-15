@@ -21,12 +21,8 @@ DICOM_OUTPUT_CODES = {
 }
 
 
+# Model code 1 belonged to the retired UNet bundle. Do not reuse it.
 MODEL_CONFIGS = {
-    "unet": {
-        "arch_ids": frozenset({"monai.unet"}),
-        "display_name": "UNet",
-        "dicom_model_code": 1,
-    },
     "dynunet": {
         "arch_ids": frozenset({"monai.dynunet"}),
         "display_name": "DynUNet",

@@ -16,7 +16,7 @@ class DeploymentLoadingTests(unittest.TestCase):
     def metadata(self, run_id="run-1", patch_config=None):
         return {
             "artifact_schema": "1",
-            "arch_id": "monai.unet",
+            "arch_id": "monai.dynunet",
             "arch_kwargs": {"out_channels": 2},
             "wrapper_spec": [],
             "artifact_role": "final",
@@ -35,7 +35,7 @@ class DeploymentLoadingTests(unittest.TestCase):
         *,
         member_ids=("member_1",),
         create_models=True,
-        model_type="unet",
+        model_type="dynunet",
     ) -> tuple[Path, dict]:
         models_dir = script_dir / "model_bundles" / model_type
         models_dir.mkdir(parents=True)
@@ -62,14 +62,14 @@ class DeploymentLoadingTests(unittest.TestCase):
             config_path, deployment = self.write_bundle(root)
             for field, value, message in (
                 ("schema_version", 2, "unsupported deployment schema"),
-                ("model_type", "dynunet", "bundle declares model_type"),
+                ("model_type", "other", "bundle declares model_type"),
             ):
                 with self.subTest(field=field):
                     changed = dict(deployment)
                     changed[field] = value
                     config_path.write_text(json.dumps(changed), encoding="utf-8")
                     with self.assertRaisesRegex(RuntimeError, message):
-                        runtime_bundle._read_packaged_deployment(config_path, "unet")
+                        runtime_bundle._read_packaged_deployment(config_path, "dynunet")
 
     def test_packaged_manifest_requires_safe_unique_members(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -90,13 +90,13 @@ class DeploymentLoadingTests(unittest.TestCase):
                     changed["members"] = members
                     config_path.write_text(json.dumps(changed), encoding="utf-8")
                     with self.assertRaisesRegex(RuntimeError, message):
-                        runtime_bundle._read_packaged_deployment(config_path, "unet")
+                        runtime_bundle._read_packaged_deployment(config_path, "dynunet")
 
     def test_missing_manifest_and_declared_model_fail_before_loading(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaisesRegex(FileNotFoundError, "no declared"):
-                runtime_bundle.load_deployment("unet", script_dir=root)
+                runtime_bundle.load_deployment("dynunet", script_dir=root)
 
             self.write_bundle(root, create_models=False)
             with (
@@ -104,7 +104,7 @@ class DeploymentLoadingTests(unittest.TestCase):
                 patch.object(runtime_bundle, "load_safetensors_model") as load,
                 self.assertRaisesRegex(FileNotFoundError, "packaged model files"),
             ):
-                runtime_bundle.load_deployment("unet", script_dir=root)
+                runtime_bundle.load_deployment("dynunet", script_dir=root)
             metadata.assert_not_called()
             load.assert_not_called()
 
@@ -129,7 +129,7 @@ class DeploymentLoadingTests(unittest.TestCase):
                         runtime_bundle, "load_safetensors_model", side_effect=models
                     ),
                 ):
-                    loaded = runtime_bundle.load_deployment("unet", script_dir=root)
+                    loaded = runtime_bundle.load_deployment("dynunet", script_dir=root)
                 self.assertEqual(loaded["members"], declaration["members"])
                 self.assertEqual(
                     loaded["predictor"], models[0] if len(models) == 1 else models

@@ -5,12 +5,12 @@ Examples
 --------
 One model trained on all data::
 
-    python prepare_model_bundle.py --model-type unet \
+    python prepare_model_bundle.py --model-type dynunet \
         --run all_data=RUN_ID --artifact-role final
 
 An intentional ensemble (the member names need not be folds)::
 
-    python prepare_model_bundle.py --model-type unet \
+    python prepare_model_bundle.py --model-type dynunet \
         --run fold_1=RUN_ID_1 --run fold_2=RUN_ID_2 --artifact-role best
 
 A five-fold DynUNet deployment declares all five fold-best models::

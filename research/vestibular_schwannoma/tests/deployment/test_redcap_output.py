@@ -27,8 +27,8 @@ import redcap_output  # noqa: E402
 from vestibular_schwannoma.tests.deployment.test_dicom_output import _write_test_image  # noqa: E402
 
 DEPLOYMENT = {
-    "model_type": "unet",
-    "bundle_sha256": "4d8991eff16c90ad0eb185757df9cfccf5615cb7a5d7a9d3304c61e65ad9d172",
+    "model_type": "dynunet",
+    "bundle_sha256": "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
     "members": [{"member_id": "all_data"}],
 }
 
@@ -149,7 +149,7 @@ class DicomExportTests(unittest.TestCase):
                 payload["model"]["bundle_sha256"], DEPLOYMENT["bundle_sha256"]
             )
             self.assertEqual(values["vs_prediction_id"], payload["prediction_id"])
-            self.assertTrue(all(r["redcap_repeat_instance"] == "2" for r in rows))
+            self.assertTrue(all(r["redcap_repeat_instance"] == "3" for r in rows))
             with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
                 self.assertEqual(z.read("OriginID.txt"), b"PR2MASK")
                 fields = {
@@ -189,35 +189,41 @@ class DicomExportTests(unittest.TestCase):
                 mask,
             )
 
+    def test_live_registry_holds_only_the_dynunet_bundle(self):
+        self.assertEqual(
+            json.loads(redcap_output.MODEL_INSTANCES_PATH.read_text()),
+            {DEPLOYMENT["bundle_sha256"]: 3},
+        )
+
     def test_models_have_distinct_destinations_and_reruns_replace_complete_result(self):
         stored = {}
-        dynunet = dict(
-            DEPLOYMENT,
-            model_type="dynunet",
-            bundle_sha256="c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
-        )
-        for deployment, tta, version, empty in [
-            (DEPLOYMENT, True, "v1", False),
-            (dynunet, True, "v1", False),
-            (DEPLOYMENT, False, "v2", True),
-        ]:
-            with tempfile.TemporaryDirectory() as tmp:
-                source, work, _, report, _ = fixture(Path(tmp), empty=empty)
-                write_redcap_mask(
-                    work, source, deployment, version=version, use_tta=tta
-                )
-                for row in json.loads((report / "output.json").read_text()):
-                    key = tuple(
-                        row[k]
-                        for k in (
-                            "record_id",
-                            "redcap_event_name",
-                            "redcap_repeat_instrument",
-                            "redcap_repeat_instance",
-                            "field_name",
+        other = dict(DEPLOYMENT, bundle_sha256="d" * 64)
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "registry.json"
+            registry.write_text(json.dumps({DEPLOYMENT["bundle_sha256"]: 2, "d" * 64: 3}))
+            with patch.object(redcap_output, "MODEL_INSTANCES_PATH", registry):
+                for deployment, tta, version, empty in [
+                    (DEPLOYMENT, True, "v1", False),
+                    (other, True, "v1", False),
+                    (DEPLOYMENT, False, "v2", True),
+                ]:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        source, work, _, report, _ = fixture(Path(tmp), empty=empty)
+                        write_redcap_mask(
+                            work, source, deployment, version=version, use_tta=tta
                         )
-                    )
-                    stored[key] = row["value"]
+                        for row in json.loads((report / "output.json").read_text()):
+                            key = tuple(
+                                row[k]
+                                for k in (
+                                    "record_id",
+                                    "redcap_event_name",
+                                    "redcap_repeat_instrument",
+                                    "redcap_repeat_instance",
+                                    "field_name",
+                                )
+                            )
+                            stored[key] = row["value"]
         by_instance = {}
         for key, value in stored.items():
             by_instance.setdefault(key[3], {})[key[4]] = value
