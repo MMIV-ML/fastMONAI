@@ -134,8 +134,8 @@ surface distances or a documented resampling step.
 `redcap_model_instances.json` assigns each full bundle SHA-256 a permanent positive
 integer of at least 2. Instance 1 of the `pr2mask` instrument holds the original (manual)
 mask, and REDCap instances are filled in order, so model instances follow it without gaps.
-DynUNet uses instance 3. Instance 2 is used by the nnU-Net large container and 5 by nnU-Net
-medium, both in the separate nnU-Net repository. Instance 4 is reserved for the next model.
+DynUNet uses instance 3. Instance 2 is used by the nnU-Net large container in the separate
+nnU-Net repository. Instance 4 is reserved for the next model.
 Keep allocations unique across both projects. The retired UNet bundle was registered at
 instance 2 before nnU-Net large took it over.
 Never renumber or reuse entries. Register each new bundle with an unused integer
