@@ -151,12 +151,13 @@ All fields for a model share its repeat instance. Within the same record/event:
 
 pr2mask's per-region measurements are preserved in `vs_measurements_json`, a JSON
 list of `{redcap_repeat_instance, field_name, value}` entries. The instance inside
-this list is the original **region** number, not the model destination. Measurements
-are no longer emitted as separate top-level region instances or scalar measurement
-fields: consumers of those fields must read this list instead. This avoids collisions
-and ensures that reruns with fewer regions (or an empty mask) replace the entire old
-measurement list without leaving stale regions. Existing dictionary definitions
-remain alongside the new fields.
+this list is the original **region** number, not the model destination. Regions are
+not emitted as separate top-level repeat instances, which would collide with the
+model instances. Instead, pr2mask's own measurement columns in the model instance
+hold the **largest** region (most voxels; ties keep the lower region number), and the
+list holds every region. pr2mask numbers regions in scan order, so the largest is not
+always region 1. When the mask is empty the columns are sent blank, so the importer
+must overwrite blanks to clear values from an earlier run.
 
 Install the extended dictionary in the receiving REDCap project and qualify a
 PACS-to-REDCap round trip before use. The importer must honor the supplied numeric

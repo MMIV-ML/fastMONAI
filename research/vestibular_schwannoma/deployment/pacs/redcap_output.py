@@ -240,7 +240,8 @@ def _extend_dictionary(path):
     if not names or any(k not in names for k in required):
         raise ValueError("Unsupported pr2mask data dictionary")
     rows = list(reader)
-    if any(row["Variable / Field Name"] in FIELDS for row in rows):
+    columns = [row["Variable / Field Name"] for row in rows]
+    if any(name in FIELDS for name in columns):
         raise ValueError("Mask fields already present in data dictionary")
     for field, (kind, label) in FIELDS.items():
         rows.append(dict(zip(required, [field, "pr2mask", kind, label])))
@@ -252,6 +253,21 @@ def _extend_dictionary(path):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in contents.items():
             archive.writestr(name, data)
+    return columns
+
+
+def _largest_region(measurements):
+    """Values of the region with the most voxels; ties keep the lowest region number."""
+    regions = {}
+    for row in measurements:
+        regions.setdefault(int(row["redcap_repeat_instance"]), {})[
+            row["field_name"]
+        ] = row["value"]
+    return max(
+        (regions[n] for n in sorted(regions)),
+        key=lambda r: float(r["number_of_pixel"]),
+        default={},
+    )
 
 
 def write_redcap_mask(work_dir, input_dir, deployment, *, version, use_tta):
@@ -307,8 +323,11 @@ def write_redcap_mask(work_dir, input_dir, deployment, *, version, use_tta):
         vs_tta=str(int(use_tta)),
         vs_created_at=payload["created_at"],
     )
+    # pr2mask's own columns hold the largest region and are blanked when there is none.
+    columns = _extend_dictionary(path.with_name("output_data_dictionary.zip"))
+    largest = _largest_region(measurements)
+    values.update({name: largest.get(name, "") for name in columns})
     rows = [
         dict(destination, field_name=key, value=value) for key, value in values.items()
     ]
-    _extend_dictionary(path.with_name("output_data_dictionary.zip"))
     path.write_text(_json(rows) + "\n")

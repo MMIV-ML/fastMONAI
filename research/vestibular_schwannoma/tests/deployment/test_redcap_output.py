@@ -70,17 +70,20 @@ def fixture(root, empty=False):
             redcap_event_name="test_arm_1",
             redcap_repeat_instrument="pr2mask",
             redcap_repeat_instance=str(i),
-            field_name="physical_size",
-            value="1",
+            field_name=name,
+            value=value,
         )
-        for i in [1, 2]
+        for i, size in [(1, "20"), (2, "50"), (3, "50")]
+        for name, value in [("number_of_pixel", size), ("physical_size", f"{size}.{i}")]
     ]
     (report / "output.json").write_text(json.dumps([] if empty else rows))
     with zipfile.ZipFile(report / "output_data_dictionary.zip", "w") as z:
         z.writestr("OriginID.txt", "PR2MASK")
         z.writestr(
             "instrument.csv",
-            "Variable / Field Name,Form Name,Field Type,Field Label\nphysical_size,pr2mask,text,Physical size\n",
+            "Variable / Field Name,Form Name,Field Type,Field Label\n"
+            "number_of_pixel,pr2mask,text,Number of pixel\n"
+            "physical_size,pr2mask,text,Physical size\n",
         )
     return source, work, mask, report, ([] if empty else rows)
 
@@ -133,7 +136,12 @@ class DicomExportTests(unittest.TestCase):
                     for r in original
                 ],
             )
-            self.assertEqual(set(values), set(FIELDS))
+            self.assertEqual(set(values), set(FIELDS) | {"number_of_pixel", "physical_size"})
+            self.assertEqual(len(rows), len(values))
+            # Regions 2 and 3 tie on size: the lower region number fills the columns.
+            self.assertEqual(
+                (values["number_of_pixel"], values["physical_size"]), ("50", "50.2")
+            )
             payload = json.loads(values["vs_mask_json"])
             np.testing.assert_array_equal(decode_mask(payload), mask)
             self.assertEqual(
@@ -176,6 +184,8 @@ class DicomExportTests(unittest.TestCase):
             rows = json.loads((report / "output.json").read_text())
             self.assertEqual(rows[0]["record_id"], "SYNTHETIC")
             self.assertEqual(rows[0]["redcap_event_name"], "test_arm_1")
+            values = {r["field_name"]: r["value"] for r in rows}
+            self.assertEqual((values["number_of_pixel"], values["physical_size"]), ("", ""))
             np.testing.assert_array_equal(
                 decode_mask(
                     json.loads(
@@ -231,6 +241,8 @@ class DicomExportTests(unittest.TestCase):
         self.assertEqual(by_instance["2"]["vs_tta"], "0")
         self.assertEqual(by_instance["2"]["vs_deployment_version"], "v2")
         self.assertEqual(json.loads(by_instance["2"]["vs_measurements_json"]), [])
+        self.assertEqual(by_instance["2"]["physical_size"], "")
+        self.assertEqual(by_instance["3"]["physical_size"], "50.2")
         self.assertEqual(
             json.loads(by_instance["2"]["vs_mask_json"])["foreground_voxels"], 0
         )
