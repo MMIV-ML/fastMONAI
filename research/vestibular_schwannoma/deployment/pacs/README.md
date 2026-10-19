@@ -68,6 +68,19 @@ ror trigger -cont "fastmonai-vsseg:$BUILD_VERSION" -each -keep \
   -envs '{"model-type":"dynunet","tta":true}'
 ```
 
+As a ror workflow, add this entry to the ror configuration:
+
+```json
+"VSFastMONAI": {
+  "select": "<VS CE-T1 series selector>",
+  "ROR_CONT_OPTIONS": "{}",
+  "docker_image": "fastmonai-vsseg:<BUILD_VERSION>"
+},
+```
+
+`"{}"` runs the defaults. Use `"{\"tta\":false}"` to turn TTA off. Don't write `"\"\""`
+here: that passes two quote characters and is rejected.
+
 ## Runtime contract
 
 `ROR_CONT_OPTIONS` accepts:
