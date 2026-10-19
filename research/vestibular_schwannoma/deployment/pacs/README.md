@@ -56,15 +56,15 @@ BUILD_VERSION="$(date -u +%Y%m%dT%H%M%SZ)"
 docker build --pull \
   --build-arg VERSION="$BUILD_VERSION" \
   -f .ror/virt/Dockerfile \
-  -t "vs-seg:$BUILD_VERSION" \
-  -t "vs-seg:latest" \
+  -t "fastmonai-vsseg:$BUILD_VERSION" \
+  -t "fastmonai-vsseg:latest" \
   .
 ```
 
 Qualify and deliver the dated tag:
 
 ```bash
-ror trigger -cont "vs-seg:$BUILD_VERSION" -each -keep \
+ror trigger -cont "fastmonai-vsseg:$BUILD_VERSION" -each -keep \
   -envs '{"model-type":"dynunet","tta":true}'
 ```
 
