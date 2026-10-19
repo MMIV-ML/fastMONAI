@@ -68,10 +68,12 @@ ror trigger -cont "fastmonai-vsseg:$BUILD_VERSION" -each -keep \
   -envs '{"model-type":"dynunet","tta":true}'
 ```
 
-As a ror workflow, add this entry to the ror configuration:
+As a ror workflow, add this entry to the select statements. Release packages also
+include it as `ror_select_entry.txt`. Replace `ENTRY_NAME` with the workflow `name`
+in the PACS `config.json` and fill in the series selector:
 
 ```json
-"VSFastMONAI": {
+"ENTRY_NAME": {
   "select": "<VS CE-T1 series selector>",
   "ROR_CONT_OPTIONS": "{}",
   "docker_image": "fastmonai-vsseg:<BUILD_VERSION>"
