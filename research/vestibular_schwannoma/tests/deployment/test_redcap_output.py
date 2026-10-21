@@ -157,7 +157,7 @@ class DicomExportTests(unittest.TestCase):
                 payload["model"]["bundle_sha256"], DEPLOYMENT["bundle_sha256"]
             )
             self.assertEqual(values["vs_prediction_id"], payload["prediction_id"])
-            self.assertTrue(all(r["redcap_repeat_instance"] == "3" for r in rows))
+            self.assertTrue(all(r["redcap_repeat_instance"] == "11" for r in rows))
             with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
                 self.assertEqual(z.read("OriginID.txt"), b"PR2MASK")
                 fields = {
@@ -202,7 +202,7 @@ class DicomExportTests(unittest.TestCase):
     def test_live_registry_holds_only_the_dynunet_bundle(self):
         self.assertEqual(
             json.loads(redcap_output.MODEL_INSTANCES_PATH.read_text()),
-            {DEPLOYMENT["bundle_sha256"]: 3},
+            {DEPLOYMENT["bundle_sha256"]: 11},
         )
 
     def test_models_have_distinct_destinations_and_reruns_replace_complete_result(self):
@@ -210,7 +210,7 @@ class DicomExportTests(unittest.TestCase):
         other = dict(DEPLOYMENT, bundle_sha256="d" * 64)
         with tempfile.TemporaryDirectory() as tmp:
             registry = Path(tmp) / "registry.json"
-            registry.write_text(json.dumps({DEPLOYMENT["bundle_sha256"]: 2, "d" * 64: 3}))
+            registry.write_text(json.dumps({DEPLOYMENT["bundle_sha256"]: 10, "d" * 64: 11}))
             with patch.object(redcap_output, "MODEL_INSTANCES_PATH", registry):
                 for deployment, tta, version, empty in [
                     (DEPLOYMENT, True, "v1", False),
@@ -237,24 +237,24 @@ class DicomExportTests(unittest.TestCase):
         by_instance = {}
         for key, value in stored.items():
             by_instance.setdefault(key[3], {})[key[4]] = value
-        self.assertEqual(set(by_instance), {"2", "3"})
-        self.assertEqual(by_instance["2"]["vs_tta"], "0")
-        self.assertEqual(by_instance["2"]["vs_deployment_version"], "v2")
-        self.assertEqual(json.loads(by_instance["2"]["vs_measurements_json"]), [])
-        self.assertEqual(by_instance["2"]["physical_size"], "")
-        self.assertEqual(by_instance["3"]["physical_size"], "50.2")
+        self.assertEqual(set(by_instance), {"10", "11"})
+        self.assertEqual(by_instance["10"]["vs_tta"], "0")
+        self.assertEqual(by_instance["10"]["vs_deployment_version"], "v2")
+        self.assertEqual(json.loads(by_instance["10"]["vs_measurements_json"]), [])
+        self.assertEqual(by_instance["10"]["physical_size"], "")
+        self.assertEqual(by_instance["11"]["physical_size"], "50.2")
         self.assertEqual(
-            json.loads(by_instance["2"]["vs_mask_json"])["foreground_voxels"], 0
+            json.loads(by_instance["10"]["vs_mask_json"])["foreground_voxels"], 0
         )
-        self.assertEqual(by_instance["3"]["vs_tta"], "1")
-        self.assertTrue(json.loads(by_instance["3"]["vs_measurements_json"]))
+        self.assertEqual(by_instance["11"]["vs_tta"], "1")
+        self.assertTrue(json.loads(by_instance["11"]["vs_measurements_json"]))
 
     def test_unknown_and_colliding_registry_entries_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unregistered"):
             model_repeat_instance("f" * 64)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "registry.json"
-            for registry in ({"a" * 64: 2, "b" * 64: 2}, {"a" * 64: 1}):
+            for registry in ({"a" * 64: 10, "b" * 64: 10}, {"a" * 64: 9}):
                 with self.subTest(registry=registry):
                     path.write_text(json.dumps(registry))
                     with patch.object(redcap_output, "MODEL_INSTANCES_PATH", path):

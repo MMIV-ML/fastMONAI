@@ -24,9 +24,9 @@ from pydicom.misc import is_dicom
 ENCODING = "packbits-gzip-base64-v1"
 MAX_VOXELS = 256 * 1024 * 1024
 MODEL_INSTANCES_PATH = Path(__file__).with_name("redcap_model_instances.json")
-# Instance 1 of the pr2mask instrument holds the original (manual) mask, so model
-# instances start at 2. REDCap users fill instances in order, so keep them consecutive.
-FIRST_MODEL_INSTANCE = 2
+# Instances 1-9 of the pr2mask instrument are left to the original (manual) mask
+# and pr2mask's own region numbering, so model instances start at 10.
+FIRST_MODEL_INSTANCE = 10
 
 
 def model_repeat_instance(bundle_sha256):

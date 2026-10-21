@@ -147,14 +147,14 @@ surface distances or a documented resampling step.
 ### Stable model destinations and overwrites
 
 `redcap_model_instances.json` assigns each full bundle SHA-256 a permanent positive
-integer of at least 2. Instance 1 of the `pr2mask` instrument holds the original (manual)
-mask, and REDCap instances are filled in order, so model instances follow it without gaps.
-DynUNet uses instance 3. Instance 2 is used by the nnU-Net large container in the separate
-nnU-Net repository. Instance 4 is reserved for the next model.
-Keep allocations unique across both projects. The retired UNet bundle was registered at
-instance 2 before nnU-Net large took it over.
-Never renumber or reuse entries. Register each new bundle with an unused integer
-before building a release; unknown bundles and duplicate allocations fail closed.
+integer of at least 10. Instances 1-9 of the `pr2mask` instrument are left to the original
+(manual) mask and pr2mask's own region numbering. DynUNet uses instance 11, and the nnU-Net
+large container in the separate nnU-Net repository uses 10. Instance 12 is free for the next
+model. They moved from 3 and 2 on 2026-10-21, and results imported before that stay at the
+old instances. The retired UNet bundle was registered at instance 2.
+Keep allocations unique across both projects, and don't renumber or reuse entries after
+REDCap imports. Register each new bundle with an unused integer before building a release;
+unknown bundles, duplicate allocations and instances below 10 fail closed.
 The registry is copied into the container and validated before inference.
 
 All fields for a model share its repeat instance. Within the same record/event:
