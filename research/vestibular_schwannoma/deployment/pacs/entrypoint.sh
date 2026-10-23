@@ -23,8 +23,8 @@ if ! jq -e '
     and (if has("model-type") then (.["model-type"] | type == "string") else true end)
     and (if has("tta") then (.tta | type == "boolean") else true end)
   ' >/dev/null <<< "$ror_options"; then
-    echo "Error: invalid ROR_CONT_OPTIONS." >&2
-    echo "Supported options: model-type (string), tta (Boolean)." >&2
+    printf 'Error: invalid ROR_CONT_OPTIONS: %s\n' "${ror_options}" >&2
+    echo 'Use {} or {"tta":true} (TTA on, the default) or {"tta":false}. Optional "model-type" must be "dynunet".' >&2
     exit 2
 fi
 

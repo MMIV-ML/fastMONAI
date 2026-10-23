@@ -134,6 +134,14 @@ class EntrypointTests(unittest.TestCase):
         self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
         self.assertFalse(self.capture.exists())
 
+    def test_rejected_options_are_shown(self):
+        for options in ('""', '{"tta":""}', '{"--tta":""}'):
+            with self.subTest(options=options):
+                result = self.run_entrypoint(options)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f"invalid ROR_CONT_OPTIONS: {options}", result.stderr)
+                self.assertFalse(self.capture.exists())
+
     def test_only_json_boolean_tta_is_accepted(self):
         for value in ("false", 0, 1, None, [], {}):
             with self.subTest(value=value):
