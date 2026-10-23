@@ -30,7 +30,7 @@ ENV CONTAINER_VERSION="fastmonai-vsseg:${VERSION}"
 
 COPY deployment_hashing.py deployment_models.py deployment_bundle.py \
     parallel_inference.py dicom_output.py redcap_output.py pacs_inference.py entrypoint.sh ./
-COPY redcap_model_instances.json ./
+COPY redcap_model_instances.json pr2mask_dictionary.csv ./
 COPY model_bundles/ ./model_bundles/
 
 # The code to run when container is started:

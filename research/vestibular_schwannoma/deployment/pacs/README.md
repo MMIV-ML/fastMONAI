@@ -171,8 +171,19 @@ not emitted as separate top-level repeat instances, which would collide with the
 model instances. Instead, pr2mask's own measurement columns in the model instance
 hold the **largest** region (most voxels; ties keep the lower region number), and the
 list holds every region. pr2mask numbers regions in scan order, so the largest is not
-always region 1. When the mask is empty the columns are sent blank, so the importer
-must overwrite blanks to clear values from an earlier run.
+always region 1. An empty mask has no regions, so pr2mask lists no columns; the exporter
+then takes them from `pr2mask_dictionary.csv` and sends them blank, so the importer must
+overwrite blanks to clear values from an earlier run.
+
+Since the Fiona base of 2026-10-19, pr2mask also stores each region's mask in seven
+`mask_*` fields. These fill the columns for the largest region but are left out of
+`vs_measurements_json`: the mask alone is about 84,000 characters for a 512×512×120 scan,
+and REDCap cuts values longer than 65,535 characters, so it only decodes for small volumes.
+`vs_mask_json` holds the lossless mask in about 22,000 characters.
+
+`pr2mask_dictionary.csv` holds the `instrument.csv` rows (without the `vs_*` fields) of a
+non-empty run of the packaged pr2mask. When the Fiona base changes, regenerate it from a
+smoke test and check that a non-empty run lists the same columns.
 
 Install the extended dictionary in the receiving REDCap project and qualify a
 PACS-to-REDCap round trip before use. The importer must honor the supplied numeric
