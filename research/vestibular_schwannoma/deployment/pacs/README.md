@@ -101,7 +101,9 @@ SoftwareVersions, DerivationDescription, and a `MASK` ImageType value) is added 
 `labels` series before it is published. Its study identity, window, and UIDs stay as pr2mask
 wrote them, so the PACS files the mask with the other pr2mask outputs. `model_mask` and
 `vote_map` are not published. Vote-map probabilities are `round(probability x 65535)`.
-Existing `fused`, `fused_vote_map`, `reports`, `labels`, and `redcap` directories are rejected
+pr2mask draws values from 32768 up in blue, so values inside the mask are raised to at
+least 32768 and values outside it lowered to at most 32767: the blue region is exactly the
+mask, and yellow marks voxels with some foreground probability outside it. Existing `fused`, `fused_vote_map`, `reports`, `labels`, and `redcap` directories are rejected
 to prevent overwrites.
 
 ### Recoverable masks in REDCap JSON
