@@ -13,9 +13,11 @@ dependencies:
     - torch==2.12.1+cpu
     - torchvision==0.27.1+cpu
     # fastMONAI 0.11.0 adds TTA with a chosen subset of flips, used for the
-    # original + AP+IS pair. Keep the deployment stack pinned; requirements plus the
-    # built image digest are the runtime contract.
-    - fastMONAI==0.11.0
+    # original + AP+IS pair. 0.12.0 restores the mask to the scan grid with
+    # shape-based interpolation instead of copying the nearest model slice. Keep
+    # the deployment stack pinned; requirements plus the built image digest are
+    # the runtime contract.
+    - fastMONAI==0.12.0
     - fastai==2.8.7
     # Keep the fastai/fastMONAI dispatch stack on the known-good versions from
     # the previously qualified PACS image. plum-dispatch 2.10.0 makes the fastai
