@@ -24,9 +24,14 @@ from pydicom.misc import is_dicom
 ENCODING = "packbits-gzip-base64-v1"
 MAX_VOXELS = 256 * 1024 * 1024
 MODEL_INSTANCES_PATH = Path(__file__).with_name("redcap_model_instances.json")
-# Instance 1 of the pr2mask instrument holds the original (manual) mask, so model
-# instances start at 2. REDCap users fill instances in order, so keep them consecutive.
-FIRST_MODEL_INSTANCE = 2
+PR2MASK_DICTIONARY_PATH = Path(__file__).with_name("pr2mask_dictionary.csv")
+DICTIONARY_REQUIRED = ["Variable / Field Name", "Form Name", "Field Type", "Field Label"]
+# pr2mask's per-region mask fields fill the columns only. In the measurement list
+# they would push it past REDCap's 65,535-character limit, where values are cut.
+PR2MASK_MASK_PREFIX = "mask_"
+# Instances 1-9 of the pr2mask instrument are left to the original (manual) mask
+# and pr2mask's own region numbering, so model instances start at 10.
+FIRST_MODEL_INSTANCE = 10
 
 
 def model_repeat_instance(bundle_sha256):
@@ -231,19 +236,31 @@ def build_mask_payload(mask_dir, input_dir, deployment, *, version, use_tta):
     return payload, source[0]
 
 
+def _read_instrument(text):
+    reader = csv.DictReader(io.StringIO(text))
+    names = reader.fieldnames
+    if not names or any(k not in names for k in DICTIONARY_REQUIRED):
+        raise ValueError("Unsupported pr2mask data dictionary")
+    return names, list(reader)
+
+
+def pr2mask_dictionary_rows():
+    """pr2mask's dictionary rows, taken from a non-empty run of the packaged pr2mask."""
+    return _read_instrument(PR2MASK_DICTIONARY_PATH.read_text(encoding="utf-8"))[1]
+
+
 def _extend_dictionary(path):
     with zipfile.ZipFile(path) as archive:
         contents = {name: archive.read(name) for name in archive.namelist()}
-    reader = csv.DictReader(io.StringIO(contents["instrument.csv"].decode("utf-8-sig")))
-    names = reader.fieldnames
-    required = ["Variable / Field Name", "Form Name", "Field Type", "Field Label"]
-    if not names or any(k not in names for k in required):
-        raise ValueError("Unsupported pr2mask data dictionary")
-    rows = list(reader)
-    if any(row["Variable / Field Name"] in FIELDS for row in rows):
+    names, rows = _read_instrument(contents["instrument.csv"].decode("utf-8-sig"))
+    if not rows:
+        # pr2mask lists its columns from the first region, so an empty mask has none.
+        rows = [{k: row.get(k, "") for k in names} for row in pr2mask_dictionary_rows()]
+    columns = [row["Variable / Field Name"] for row in rows]
+    if any(name in FIELDS for name in columns):
         raise ValueError("Mask fields already present in data dictionary")
     for field, (kind, label) in FIELDS.items():
-        rows.append(dict(zip(required, [field, "pr2mask", kind, label])))
+        rows.append(dict(zip(DICTIONARY_REQUIRED, [field, "pr2mask", kind, label])))
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=names)
     writer.writeheader()
@@ -252,6 +269,21 @@ def _extend_dictionary(path):
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in contents.items():
             archive.writestr(name, data)
+    return columns
+
+
+def _largest_region(measurements):
+    """Values of the region with the most voxels; ties keep the lowest region number."""
+    regions = {}
+    for row in measurements:
+        regions.setdefault(int(row["redcap_repeat_instance"]), {})[
+            row["field_name"]
+        ] = row["value"]
+    return max(
+        (regions[n] for n in sorted(regions)),
+        key=lambda r: float(r["number_of_pixel"]),
+        default={},
+    )
 
 
 def write_redcap_mask(work_dir, input_dir, deployment, *, version, use_tta):
@@ -297,8 +329,9 @@ def write_redcap_mask(work_dir, input_dir, deployment, *, version, use_tta):
         for row in rows
     ]
     destination["redcap_repeat_instance"] = instance
+    listed = [m for m in measurements if not m["field_name"].startswith(PR2MASK_MASK_PREFIX)]
     values = dict(
-        vs_measurements_json=_json(measurements),
+        vs_measurements_json=_json(listed),
         vs_mask_json=_json(payload),
         vs_model_type=deployment["model_type"],
         vs_bundle_sha256=deployment["bundle_sha256"],
@@ -307,8 +340,11 @@ def write_redcap_mask(work_dir, input_dir, deployment, *, version, use_tta):
         vs_tta=str(int(use_tta)),
         vs_created_at=payload["created_at"],
     )
+    # pr2mask's own columns hold the largest region and are blanked when there is none.
+    columns = _extend_dictionary(path.with_name("output_data_dictionary.zip"))
+    largest = _largest_region(measurements)
+    values.update({name: largest.get(name, "") for name in columns})
     rows = [
         dict(destination, field_name=key, value=value) for key, value in values.items()
     ]
-    _extend_dictionary(path.with_name("output_data_dictionary.zip"))
     path.write_text(_json(rows) + "\n")

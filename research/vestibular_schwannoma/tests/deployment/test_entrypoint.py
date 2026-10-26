@@ -103,27 +103,27 @@ class EntrypointTests(unittest.TestCase):
 
     def test_shell_metacharacters_are_rejected_without_execution(self):
         marker = self.root / "injected"
-        result = self.run_entrypoint(json.dumps({"model-type": f"unet;touch {marker}"}))
+        result = self.run_entrypoint(json.dumps({"model-type": f"dynunet;touch {marker}"}))
         self.assertEqual(result.returncode, 2)
         self.assertFalse(marker.exists())
         self.assertFalse(self.capture.exists())
 
     def test_missing_input_directory_is_rejected(self):
         self.input_dir.rmdir()
-        result = self.run_entrypoint(json.dumps({"model-type": "unet"}))
+        result = self.run_entrypoint(json.dumps({"model-type": "dynunet"}))
         self.assertEqual(result.returncode, 2)
         self.assertIn("expected an input DICOM directory", result.stderr)
         self.assertFalse(self.capture.exists())
 
     def test_missing_inference_script_is_rejected(self):
         (self.root / "pacs_inference.py").unlink()
-        result = self.run_entrypoint(json.dumps({"model-type": "unet"}))
+        result = self.run_entrypoint(json.dumps({"model-type": "dynunet"}))
         self.assertEqual(result.returncode, 1)
         self.assertIn("bundled inference script is missing", result.stderr)
         self.assertFalse(self.capture.exists())
 
     def test_unknown_option_is_rejected(self):
-        result = self.run_entrypoint(json.dumps({"model-tpye": "unet"}))
+        result = self.run_entrypoint(json.dumps({"model-tpye": "dynunet"}))
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
         self.assertFalse(self.capture.exists())
@@ -133,6 +133,14 @@ class EntrypointTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("invalid ROR_CONT_OPTIONS", result.stderr)
         self.assertFalse(self.capture.exists())
+
+    def test_rejected_options_are_shown(self):
+        for options in ('""', '{"tta":""}', '{"--tta":""}'):
+            with self.subTest(options=options):
+                result = self.run_entrypoint(options)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(f"invalid ROR_CONT_OPTIONS: {options}", result.stderr)
+                self.assertFalse(self.capture.exists())
 
     def test_only_json_boolean_tta_is_accepted(self):
         for value in ("false", 0, 1, None, [], {}):

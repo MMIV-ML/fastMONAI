@@ -26,9 +26,16 @@ from redcap_output import (  # noqa: E402
 import redcap_output  # noqa: E402
 from vestibular_schwannoma.tests.deployment.test_dicom_output import _write_test_image  # noqa: E402
 
+DICTIONARY_HEADER = "Variable / Field Name,Form Name,Field Type,Field Label\n"
+DICTIONARY_ROWS = (
+    "mask_base64_gzip_compressed,pr2mask,text,mask_base64_gzip_compressed\n"
+    "number_of_pixel,pr2mask,text,Number of pixel\n"
+    "physical_size,pr2mask,text,Physical size\n"
+)
+PR2MASK_COLUMNS = {"mask_base64_gzip_compressed", "number_of_pixel", "physical_size"}
 DEPLOYMENT = {
-    "model_type": "unet",
-    "bundle_sha256": "4d8991eff16c90ad0eb185757df9cfccf5615cb7a5d7a9d3304c61e65ad9d172",
+    "model_type": "dynunet",
+    "bundle_sha256": "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
     "members": [{"member_id": "all_data"}],
 }
 
@@ -70,19 +77,31 @@ def fixture(root, empty=False):
             redcap_event_name="test_arm_1",
             redcap_repeat_instrument="pr2mask",
             redcap_repeat_instance=str(i),
-            field_name="physical_size",
-            value="1",
+            field_name=name,
+            value=value,
         )
-        for i in [1, 2]
+        for i, size in [(1, "20"), (2, "50"), (3, "50")]
+        for name, value in [
+            ("mask_base64_gzip_compressed", f"m{i}"),
+            ("number_of_pixel", size),
+            ("physical_size", f"{size}.{i}"),
+        ]
     ]
     (report / "output.json").write_text(json.dumps([] if empty else rows))
     with zipfile.ZipFile(report / "output_data_dictionary.zip", "w") as z:
         z.writestr("OriginID.txt", "PR2MASK")
-        z.writestr(
-            "instrument.csv",
-            "Variable / Field Name,Form Name,Field Type,Field Label\nphysical_size,pr2mask,text,Physical size\n",
-        )
+        # Like pr2mask, list the columns only when there is a region.
+        z.writestr("instrument.csv", DICTIONARY_HEADER + ("" if empty else DICTIONARY_ROWS))
     return source, work, mask, report, ([] if empty else rows)
+
+
+class Pr2maskDictionaryTests(unittest.TestCase):
+    def test_shipped_dictionary_lists_pr2mask_columns(self):
+        names = [row["Variable / Field Name"] for row in redcap_output.pr2mask_dictionary_rows()]
+        self.assertIn("number_of_pixel", names)
+        self.assertIn("physical_size", names)
+        self.assertEqual(len(names), len(set(names)))
+        self.assertFalse(set(names) & set(FIELDS))
 
 
 class CodecTests(unittest.TestCase):
@@ -120,6 +139,15 @@ class CodecTests(unittest.TestCase):
 
 
 class DicomExportTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        reference = Path(tmp.name) / "pr2mask_dictionary.csv"
+        reference.write_text(DICTIONARY_HEADER + DICTIONARY_ROWS)
+        patcher = patch.object(redcap_output, "PR2MASK_DICTIONARY_PATH", reference)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_dicom_pixels_geometry_rows_and_dictionary_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, work, mask, report, original = fixture(Path(tmp))
@@ -131,9 +159,16 @@ class DicomExportTests(unittest.TestCase):
                 [
                     {k: r[k] for k in ("redcap_repeat_instance", "field_name", "value")}
                     for r in original
+                    if r["field_name"] != "mask_base64_gzip_compressed"
                 ],
             )
-            self.assertEqual(set(values), set(FIELDS))
+            self.assertEqual(set(values), set(FIELDS) | PR2MASK_COLUMNS)
+            self.assertEqual(len(rows), len(values))
+            # Regions 2 and 3 tie on size: the lower region number fills the columns.
+            self.assertEqual(
+                (values["number_of_pixel"], values["physical_size"]), ("50", "50.2")
+            )
+            self.assertEqual(values["mask_base64_gzip_compressed"], "m2")
             payload = json.loads(values["vs_mask_json"])
             np.testing.assert_array_equal(decode_mask(payload), mask)
             self.assertEqual(
@@ -149,7 +184,7 @@ class DicomExportTests(unittest.TestCase):
                 payload["model"]["bundle_sha256"], DEPLOYMENT["bundle_sha256"]
             )
             self.assertEqual(values["vs_prediction_id"], payload["prediction_id"])
-            self.assertTrue(all(r["redcap_repeat_instance"] == "2" for r in rows))
+            self.assertTrue(all(r["redcap_repeat_instance"] == "11" for r in rows))
             with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
                 self.assertEqual(z.read("OriginID.txt"), b"PR2MASK")
                 fields = {
@@ -176,6 +211,19 @@ class DicomExportTests(unittest.TestCase):
             rows = json.loads((report / "output.json").read_text())
             self.assertEqual(rows[0]["record_id"], "SYNTHETIC")
             self.assertEqual(rows[0]["redcap_event_name"], "test_arm_1")
+            values = {r["field_name"]: r["value"] for r in rows}
+            self.assertEqual(set(values), set(FIELDS) | PR2MASK_COLUMNS)
+            self.assertEqual((values["number_of_pixel"], values["physical_size"]), ("", ""))
+            self.assertEqual(values["mask_base64_gzip_compressed"], "")
+            with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
+                fields = [
+                    r["Variable / Field Name"]
+                    for r in csv.DictReader(io.StringIO(z.read("instrument.csv").decode()))
+                ]
+            self.assertEqual(
+                fields,
+                ["mask_base64_gzip_compressed", "number_of_pixel", "physical_size", *FIELDS],
+            )
             np.testing.assert_array_equal(
                 decode_mask(
                     json.loads(
@@ -189,54 +237,62 @@ class DicomExportTests(unittest.TestCase):
                 mask,
             )
 
+    def test_live_registry_holds_only_the_dynunet_bundle(self):
+        self.assertEqual(
+            json.loads(redcap_output.MODEL_INSTANCES_PATH.read_text()),
+            {DEPLOYMENT["bundle_sha256"]: 11},
+        )
+
     def test_models_have_distinct_destinations_and_reruns_replace_complete_result(self):
         stored = {}
-        dynunet = dict(
-            DEPLOYMENT,
-            model_type="dynunet",
-            bundle_sha256="c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
-        )
-        for deployment, tta, version, empty in [
-            (DEPLOYMENT, True, "v1", False),
-            (dynunet, True, "v1", False),
-            (DEPLOYMENT, False, "v2", True),
-        ]:
-            with tempfile.TemporaryDirectory() as tmp:
-                source, work, _, report, _ = fixture(Path(tmp), empty=empty)
-                write_redcap_mask(
-                    work, source, deployment, version=version, use_tta=tta
-                )
-                for row in json.loads((report / "output.json").read_text()):
-                    key = tuple(
-                        row[k]
-                        for k in (
-                            "record_id",
-                            "redcap_event_name",
-                            "redcap_repeat_instrument",
-                            "redcap_repeat_instance",
-                            "field_name",
+        other = dict(DEPLOYMENT, bundle_sha256="d" * 64)
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "registry.json"
+            registry.write_text(json.dumps({DEPLOYMENT["bundle_sha256"]: 10, "d" * 64: 11}))
+            with patch.object(redcap_output, "MODEL_INSTANCES_PATH", registry):
+                for deployment, tta, version, empty in [
+                    (DEPLOYMENT, True, "v1", False),
+                    (other, True, "v1", False),
+                    (DEPLOYMENT, False, "v2", True),
+                ]:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        source, work, _, report, _ = fixture(Path(tmp), empty=empty)
+                        write_redcap_mask(
+                            work, source, deployment, version=version, use_tta=tta
                         )
-                    )
-                    stored[key] = row["value"]
+                        for row in json.loads((report / "output.json").read_text()):
+                            key = tuple(
+                                row[k]
+                                for k in (
+                                    "record_id",
+                                    "redcap_event_name",
+                                    "redcap_repeat_instrument",
+                                    "redcap_repeat_instance",
+                                    "field_name",
+                                )
+                            )
+                            stored[key] = row["value"]
         by_instance = {}
         for key, value in stored.items():
             by_instance.setdefault(key[3], {})[key[4]] = value
-        self.assertEqual(set(by_instance), {"2", "3"})
-        self.assertEqual(by_instance["2"]["vs_tta"], "0")
-        self.assertEqual(by_instance["2"]["vs_deployment_version"], "v2")
-        self.assertEqual(json.loads(by_instance["2"]["vs_measurements_json"]), [])
+        self.assertEqual(set(by_instance), {"10", "11"})
+        self.assertEqual(by_instance["10"]["vs_tta"], "0")
+        self.assertEqual(by_instance["10"]["vs_deployment_version"], "v2")
+        self.assertEqual(json.loads(by_instance["10"]["vs_measurements_json"]), [])
+        self.assertEqual(by_instance["10"]["physical_size"], "")
+        self.assertEqual(by_instance["11"]["physical_size"], "50.2")
         self.assertEqual(
-            json.loads(by_instance["2"]["vs_mask_json"])["foreground_voxels"], 0
+            json.loads(by_instance["10"]["vs_mask_json"])["foreground_voxels"], 0
         )
-        self.assertEqual(by_instance["3"]["vs_tta"], "1")
-        self.assertTrue(json.loads(by_instance["3"]["vs_measurements_json"]))
+        self.assertEqual(by_instance["11"]["vs_tta"], "1")
+        self.assertTrue(json.loads(by_instance["11"]["vs_measurements_json"]))
 
     def test_unknown_and_colliding_registry_entries_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unregistered"):
             model_repeat_instance("f" * 64)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "registry.json"
-            for registry in ({"a" * 64: 2, "b" * 64: 2}, {"a" * 64: 1}):
+            for registry in ({"a" * 64: 10, "b" * 64: 10}, {"a" * 64: 9}):
                 with self.subTest(registry=registry):
                     path.write_text(json.dumps(registry))
                     with patch.object(redcap_output, "MODEL_INSTANCES_PATH", path):

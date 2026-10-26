@@ -14,7 +14,7 @@ project's values.
 | `<PROJECT_DIR>` | Path to your local fastMONAI checkout | `~/ml_projects/fastMONAI` |
 | `<PROJECT>` | Research project folder under `research/` | `vestibular_schwannoma` |
 | `<CONTAINER_NAME>` | Docker image name you build | `vs-seg` |
-| `<MODEL_TYPE>` | Registered model key | `unet`, `dynunet` |
+| `<MODEL_TYPE>` | Registered model key | `dynunet` |
 | `<BUILD_VERSION>` | UTC build identifier | `20260812T140500Z` |
 
 The canonical project deployment directory is
@@ -147,7 +147,7 @@ to use the container's default):
 ror trigger -cont "<CONTAINER_NAME>:$BUILD_VERSION" -each -keep -envs '{"model-type":"<MODEL_TYPE>"}'
 ```
 
-For vestibular schwannoma, run this once with `unet` and once with `dynunet`. The dated and
+For vestibular schwannoma, run it with `dynunet`. The dated and
 `latest` tags behave identically while they point to the same image; no test tag is needed.
 
 Check that every shipped model loads and runs, all expected derived DICOM products are created,

@@ -157,7 +157,7 @@ class DicomInputValidationTests(unittest.TestCase):
 
         deployment = {
             "schema_version": 1,
-            "model_type": "unet",
+            "model_type": "dynunet",
             "bundle_sha256": "a" * 64,
             "members": [{}],
         }
@@ -291,7 +291,7 @@ class DicomInputValidationTests(unittest.TestCase):
 
 
 class DicomUIDTests(unittest.TestCase):
-    def deployment(self, *, bundle_hash="a" * 64, model_type="unet"):
+    def deployment(self, *, bundle_hash="a" * 64, model_type="dynunet"):
         return {
             "schema_version": 1,
             "model_type": model_type,
@@ -324,7 +324,7 @@ class DicomUIDTests(unittest.TestCase):
 
         self.assertEqual(
             mask_series,
-            "2.25.279307575913214821815280391887400559925",
+            "2.25.217211912232160888609364671412008920695",
         )
         self.assertEqual(mask_series, repeated)
         values = {
@@ -351,7 +351,7 @@ class DicomUIDTests(unittest.TestCase):
         )
         self.assertEqual(
             first,
-            "2.25.91692261918121449464758301100525040869",
+            "2.25.192503050826460639977181018022166104705",
         )
         self.assertEqual(first, repeated)
         self.assertNotEqual(first, changed_source)
@@ -524,10 +524,10 @@ class DicomUIDTests(unittest.TestCase):
                 )
                 self.assertEqual(series.attributes["ImageType"][-1], marker)
                 self.assertIn(
-                    "UNet 5-model ensemble", series.attributes["SeriesDescription"]
+                    "DynUNet 5-model ensemble", series.attributes["SeriesDescription"]
                 )
                 derivation = series.attributes["DerivationDescription"]
-                self.assertIn("model=unet", derivation)
+                self.assertIn("model=dynunet", derivation)
                 self.assertIn("members=5", derivation)
                 self.assertIn("bundle_sha256=" + "a" * 64, derivation)
                 self.assertIn("tta=on", derivation)
@@ -574,7 +574,7 @@ class DicomUIDTests(unittest.TestCase):
         for index, dataset in enumerate(written):
             self.assertEqual(
                 dataset.SeriesDescription,
-                "fastMONAI UNet 5-model ensemble segmentation mask",
+                "fastMONAI DynUNet 5-model ensemble segmentation mask",
             )
             self.assertEqual(
                 str(dataset.SoftwareVersions),
@@ -583,7 +583,7 @@ class DicomUIDTests(unittest.TestCase):
             self.assertEqual(
                 list(dataset.ImageType), ["DERIVED", "SECONDARY", "OTHER", "MASK"]
             )
-            self.assertIn("model=unet", dataset.DerivationDescription)
+            self.assertIn("model=dynunet", dataset.DerivationDescription)
             self.assertIn("tta=on", dataset.DerivationDescription)
             self.assertEqual(str(dataset.StudyInstanceUID), HEX_STUDY_UID)
             self.assertEqual(str(dataset.StudyID), HEX_STUDY_UID)
@@ -602,13 +602,33 @@ class DicomUIDTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "mask series is empty"):
                 dicom.tag_pr2mask_mask(directory, self.deployment(), use_tta=False)
 
+    def test_vote_map_blue_is_exactly_the_mask(self):
+        probability = np.array([0.0, 0.2, 0.49999, 0.5, 0.9, 0.0, 0.3, 0.6, 1.0])
+        inside = np.array([False] * 5 + [True] * 4)
+        stored = dicom.vote_map_values(probability, inside)
+        np.testing.assert_array_equal(stored >= dicom.VOTE_MAP_BLUE, inside)
+        # Values already on the right side of the threshold are kept, and an
+        # outside zero stays transparent.
+        self.assertEqual(stored[:2].tolist(), [0, 13107])
+        self.assertEqual(stored[-1], 65535)
+        self.assertEqual(stored[5], dicom.VOTE_MAP_BLUE)
+        self.assertEqual(stored[4], dicom.VOTE_MAP_BLUE - 1)
+        # pr2mask draws blue from votemapagree * votemapmax up.
+        self.assertGreaterEqual(dicom.VOTE_MAP_BLUE, 0.5 * dicom.VOTE_MAP_MAX)
+        self.assertLess(dicom.VOTE_MAP_BLUE - 1, 0.5 * dicom.VOTE_MAP_MAX)
+
     def test_probability_map_is_stored_as_scaled_uint16(self):
         class FakePrediction:
+            def __init__(self, values):
+                self.values = values
+
             def numpy(self):
-                return np.array(
-                    [[[[0.0, 0.5], [1.0, 0.25]], [[0.75, 0.1], [0.9, 0.2]]]],
-                    dtype=np.float32,
-                )
+                return np.array(self.values, dtype=np.float32)
+
+        probability = FakePrediction(
+            [[[[0.0, 0.5], [1.0, 0.25]], [[0.75, 0.1], [0.9, 0.2]]]]
+        )
+        mask = FakePrediction([[[[0, 1], [1, 0]], [[0, 0], [1, 1]]]])
 
         class FakeSeries:
             def __init__(self, *args, **kwargs):
@@ -631,16 +651,31 @@ class DicomUIDTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as directory,
         ):
             dicom.create_dicom_probability_map(
-                FakePrediction(),
+                probability,
                 "/input",
                 directory,
                 self.deployment(),
+                mask=mask,
                 use_tta=False,
             )
-        expected = np.rint(
-            np.transpose(FakePrediction().numpy().squeeze(), (-1, 1, 0)) * 65535
+            with self.assertRaisesRegex(ValueError, "does not match the mask grid"):
+                dicom.create_dicom_probability_map(
+                    probability,
+                    "/input",
+                    directory,
+                    self.deployment(),
+                    mask=FakePrediction([[[[0, 1], [1, 0]]]]),
+                    use_tta=False,
+                )
+        scaled = np.rint(
+            np.transpose(probability.numpy().squeeze(), (-1, 1, 0)) * 65535
+        )
+        inside = np.transpose(mask.numpy().squeeze(), (-1, 1, 0)) > 0
+        expected = np.where(
+            inside, np.maximum(scaled, 32768), np.minimum(scaled, 32767)
         ).astype("<u2")
         np.testing.assert_array_equal(fake_series.data, expected)
+        np.testing.assert_array_equal(fake_series.data >= 32768, inside)
         self.assertEqual(fake_series.data.dtype, np.dtype("<u2"))
         save.assert_called_once()
 

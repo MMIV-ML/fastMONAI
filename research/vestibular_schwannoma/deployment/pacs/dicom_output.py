@@ -39,6 +39,11 @@ _IMAGE_TYPE_MARKERS = {
     PROBABILITY_MAP: "PROBABILITY",
 }
 
+# pr2mask draws the vote map (--votemapmax 65535 --votemapagree 0.5) blue from
+# a stored value of 0.5 * 65535 up, yellow below and transparent at 0.
+VOTE_MAP_MAX = 65535
+VOTE_MAP_BLUE = 32768
+
 
 @contextmanager
 def _suppress_invalid_ui_warnings():
@@ -493,7 +498,10 @@ def _provenance_tags(
         f"tta={f'on ({TTA_DESCRIPTION})' if use_tta else 'off'}"
     )
     if prediction_representation == PROBABILITY_MAP:
-        derivation += "; foreground probability = stored uint16 value / 65535"
+        derivation += (
+            "; foreground probability = stored uint16 value / 65535, "
+            "at least 32768 inside the mask and at most 32767 outside it"
+        )
     return {
         "SoftwareVersions": build_software_versions(),
         "ImageType": ["DERIVED", "SECONDARY"]
@@ -544,6 +552,22 @@ def tag_pr2mask_mask(series_dir, deployment, *, use_tta):
             dataset.save_as(str(path))
 
 
+def vote_map_values(probability, inside):
+    """Scale probabilities to stored vote-map values, blue exactly where `inside` is.
+
+    The mask is restored with shape-based interpolation and the probabilities
+    linearly, so their 0.5 outlines differ slightly. Raising values inside the mask
+    to the blue threshold and lowering the rest below it keeps pr2mask's blue region
+    equal to the mask.
+    """
+    stored = np.rint(np.clip(probability, 0.0, 1.0) * VOTE_MAP_MAX)
+    return np.where(
+        inside,
+        np.maximum(stored, VOTE_MAP_BLUE),
+        np.minimum(stored, VOTE_MAP_BLUE - 1),
+    )
+
+
 def _create_prediction_series(
     pred,
     dicom_input_path,
@@ -552,13 +576,21 @@ def _create_prediction_series(
     prediction_representation,
     *,
     use_tta,
+    mask=None,
 ):
     with _suppress_invalid_ui_warnings():
         series_obj = Series(str(dicom_input_path), opts={"slice_tolerance": 1e-2})
     _set_derived_metadata(series_obj, deployment, prediction_representation, use_tta)
-    data = np.transpose(pred.numpy().squeeze(), (-1, 1, 0)).copy()
+    data = pred.numpy().squeeze()
     if prediction_representation == PROBABILITY_MAP:
-        data = np.rint(data * 65535)
+        inside = mask.numpy().squeeze() > 0
+        if inside.shape != data.shape:
+            raise ValueError(
+                f"Probability grid {data.shape} does not match the mask grid "
+                f"{inside.shape}"
+            )
+        data = vote_map_values(data, inside)
+    data = np.transpose(data, (-1, 1, 0)).copy()
     stored_data = data.astype("<u2")
     series_obj[:] = stored_data
     output_path = Path(output_dir)
@@ -598,8 +630,10 @@ def create_dicom_probability_map(
     output_dir,
     deployment,
     *,
+    mask,
     use_tta,
 ):
+    """Write the vote-map series; `mask` is the segmentation on the same grid."""
     return _create_prediction_series(
         pred,
         dicom_input_path,
@@ -607,6 +641,7 @@ def create_dicom_probability_map(
         deployment,
         PROBABILITY_MAP,
         use_tta=use_tta,
+        mask=mask,
     )
 
 
@@ -637,6 +672,7 @@ def write_prediction_outputs(
         dicom_input_path,
         output_path / "vote_map",
         deployment,
+        mask=segmentation,
         use_tta=use_tta,
     )
     return mask_path, probability_path
