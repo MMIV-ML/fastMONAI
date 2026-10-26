@@ -24,7 +24,7 @@ from fastai.data.all import *
 from fastai.learner import Learner
 from .vision_core import MedImage, MedMask, med_img_reader
 from .vision_plot import find_max_slice
-from .vision_inference import _do_resize
+from .vision_inference import _do_resize, _resize_labels
 from .dataset_info import MedDataset, suggest_patch_size
 from .vision_augmentation import transforms_to_specs, transforms_from_specs
 from .utils import unwrap_compiled_model
@@ -1261,6 +1261,10 @@ class PatchInferenceEngine:
         amp: If True, use automatic mixed precision (bfloat16) for the forward pass.
             Only supported on CUDA devices; ignored with a warning on CPU/MPS.
             Defaults to False.
+        label_interpolation: How decoded masks are restored to the original grid.
+            'shape' (default) uses shape-based interpolation, so a slice between two
+            model slices gets an outline between theirs. 'nearest' copies the nearest
+            voxel, which repeats slices when the original slices are thinner.
     
     Example:
         >>> # normalization is read from config.normalization; amp=True for faster GPU
@@ -1278,10 +1282,15 @@ class PatchInferenceEngine:
         # Memory-safe for large 3D patches; tune upward after benchmarking.
         sw_batch_size: int = 1,
         pre_inference_tfms: list = None,
-        amp: bool = False
+        amp: bool = False,
+        label_interpolation: str = 'shape'
     ):
         if sw_batch_size <= 0:
             raise ValueError(f"sw_batch_size must be positive, got {sw_batch_size}")
+        if label_interpolation not in ('shape', 'nearest'):
+            raise ValueError(
+                f"label_interpolation must be 'shape' or 'nearest', got {label_interpolation!r}")
+        self.label_interpolation = label_interpolation
         
         # We check for Learner explicitly because some models (e.g., MONAI UNet) have a
         # .model attribute that is NOT the full model but an internal Sequential.
@@ -1428,7 +1437,7 @@ class PatchInferenceEngine:
         """Post-process the aggregated output (threshold/argmax, resize, reorient); returns (result, affine).
 
         return_probabilities keeps the probability map and restores it with linear
-        interpolation. Decoded labels are restored with nearest-neighbor interpolation.
+        interpolation. Decoded labels are restored with self.label_interpolation.
         """
         valid_slices = getattr(prepared, "valid_slices", None)
         if valid_slices is not None:
@@ -1465,12 +1474,10 @@ class PatchInferenceEngine:
         else:
             pred_img = tio.LabelMap(tensor=result.float(), affine=prepared.input_img.affine)
 
-        # Continuous probabilities use linear interpolation; discrete labels stay nearest.
-        image_interpolation = 'linear' if return_probabilities else 'nearest'
-        pred_img = _do_resize(
-            pred_img, prepared.org_size, image_interpolation=image_interpolation,
-            label_interpolation='nearest'
-        )
+        if return_probabilities:
+            pred_img = _do_resize(pred_img, prepared.org_size, image_interpolation='linear')
+        else:
+            pred_img = _resize_labels(pred_img, prepared.org_size, self.label_interpolation)
 
         # Reorient to original orientation (if reorder was applied)
         if self.apply_reorder:
@@ -1532,7 +1539,7 @@ class PatchInferenceEngine:
         """Predict a configured mask and probability map from one model inference.
 
         The mask is decoded from the aggregated probabilities before resizing and restored
-        with nearest-neighbor interpolation. Probability channels are restored independently
+        with self.label_interpolation. Probability channels are restored independently
         with linear interpolation.
 
         Returns:
@@ -1608,7 +1615,8 @@ def patch_inference(
     pre_inference_tfms: list = None,
     tta: bool | tuple | list = False,
     prefetch: bool = True,
-    amp: bool = False
+    amp: bool = False,
+    label_interpolation: str = 'shape'
 ) -> list:
     """Batch patch-based inference on multiple volumes.
 
@@ -1642,6 +1650,8 @@ def patch_inference(
             environments processing very large volumes.
         amp: If True, use automatic mixed precision (bfloat16) for the forward pass.
             Only supported on CUDA devices; ignored with a warning on CPU/MPS.
+        label_interpolation: How decoded masks are restored to the original grid:
+            'shape' (default) or 'nearest'. See PatchInferenceEngine.
 
     Returns:
         List of predicted tensors.
@@ -1659,7 +1669,7 @@ def patch_inference(
 
     engine = PatchInferenceEngine(
         learner, config, _apply_reorder, _target_spacing, sw_batch_size, pre_inference_tfms,
-        amp=amp
+        amp=amp, label_interpolation=label_interpolation
     )
 
     save_path = None

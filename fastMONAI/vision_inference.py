@@ -9,9 +9,9 @@ from copy import copy
 from pathlib import Path
 import torch
 import numpy as np
-from scipy.ndimage import label
+from scipy.ndimage import distance_transform_edt, label
 from skimage.morphology import remove_small_objects
-from torchio import Resize, Image
+from torchio import Resize, Image, ScalarImage
 from .vision_core import *
 from .vision_augmentation import do_pad_or_crop, transforms_from_specs
 from fastMONAI.utils import (
@@ -65,6 +65,61 @@ def _do_resize(o, target_shape, image_interpolation='linear',
     )
     
     return resize(o)
+
+# %% ../nbs/06_vision_inference.ipynb #shape-based-label-resize
+def _signed_depth(mask: np.ndarray, spacing, margin: int = 8) -> np.ndarray:
+    """Signed distance to the mask edge in mm: positive inside, negative outside.
+
+    Computed on the mask's bounding box plus margin voxels, which is wide enough for cubic
+    interpolation to match a full-volume distance map. Voxels outside the box get a value
+    below every value inside it, so they stay outside.
+    """
+    outside = -4.0 * float(max(spacing))
+    if not mask.any():
+        return np.full(mask.shape, outside, dtype=np.float32)
+    if mask.all():
+        return np.full(mask.shape, -outside, dtype=np.float32)
+    coords = np.argwhere(mask)
+    lo = np.maximum(coords.min(0) - margin, 0)
+    hi = np.minimum(coords.max(0) + margin + 1, mask.shape)
+    box = tuple(slice(a, b) for a, b in zip(lo, hi))
+    inner = mask[box]
+    inner_depth = (distance_transform_edt(inner, sampling=spacing)
+                   - distance_transform_edt(~inner, sampling=spacing))
+    depth = np.full(mask.shape, min(outside, float(inner_depth.min())), dtype=np.float32)
+    depth[box] = inner_depth
+    return depth
+
+
+def _resize_labels(o, target_shape, label_interpolation='shape'):
+    """Resize a single-channel label image so its shape matches target_shape.
+
+    'shape' uses shape-based interpolation: the signed distance to each label's edge is
+    resized with cubic B-spline interpolation and every voxel takes the label it lies
+    deepest inside. A slice that falls between two source slices then gets an outline
+    between theirs instead of a copy of the nearest one. 'nearest' copies the nearest
+    source voxel.
+    """
+    if label_interpolation == 'nearest':
+        return _do_resize(o, target_shape, image_interpolation='nearest')
+    if label_interpolation != 'shape':
+        raise ValueError(
+            f"label_interpolation must be 'shape' or 'nearest', got {label_interpolation!r}")
+    if tuple(o.spatial_shape) == tuple(target_shape):
+        return o
+    if o.data.shape[0] != 1:
+        raise ValueError(f"Expected a single-channel label image, got {o.data.shape[0]} channels")
+    labels = o.data[0].numpy()
+    values = [v for v in np.unique(labels) if v != 0]
+    if not values:
+        return _do_resize(o, target_shape, image_interpolation='nearest')
+    depth = np.stack([_signed_depth(labels == v, o.spacing) for v in values])
+    resized = _do_resize(ScalarImage(tensor=torch.from_numpy(depth), affine=o.affine),
+                         target_shape, image_interpolation='bspline')
+    best, idx = resized.data.max(0)
+    restored = torch.where(best > 0, torch.as_tensor(values, dtype=torch.float32)[idx], 0.)
+    return type(o)(tensor=restored.unsqueeze(0).to(o.data.dtype), affine=resized.affine)
+
 
 # %% ../nbs/06_vision_inference.ipynb #ee89fef9-1e9d-4d70-8c93-e44e2d600c70
 def load_system_resources(models_path, learner_fn, variables_fn):
@@ -142,8 +197,12 @@ def predict_from_config(model, inference_config, input):
 # %% ../nbs/06_vision_inference.ipynb #model-only-spatial-inference
 def inference_from_config(model, inference_config, fn: (str, Path) = '',
                           save_path: (str, Path) = None, org_img=None,
-                          input_img=None, org_size=None):
-    """Run model-only binary/multiclass segmentation and restore original image space."""
+                          input_img=None, org_size=None, label_interpolation='shape'):
+    """Run model-only binary/multiclass segmentation and restore original image space.
+
+    The mask is restored with shape-based interpolation; pass
+    label_interpolation='nearest' to copy the nearest voxel instead.
+    """
     output_spec = inference_config.get('output') if isinstance(inference_config, dict) else None
     output_kind = output_spec.get('kind') if isinstance(output_spec, dict) else None
     if output_kind not in {'binary_segmentation', 'multiclass_segmentation'}:
@@ -176,7 +235,7 @@ def inference_from_config(model, inference_config, fn: (str, Path) = '',
         pred.float(), input_img.shape[1:], padding_mode=0, mask_name=None
     )
     input_img.set_data(pred_mask)
-    input_img = _do_resize(input_img, org_size, image_interpolation='nearest')
+    input_img = _resize_labels(input_img, org_size, label_interpolation)
     reoriented_array = _to_original_orientation(
         input_img.as_sitk(), ''.join(org_img.orientation)
     )
@@ -203,8 +262,12 @@ def inference_from_config(model, inference_config, fn: (str, Path) = '',
 # %% ../nbs/06_vision_inference.ipynb #2ba94a55-2cd1-4fae-b8b4-e82051be0cdc
 def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
               save_path: (str, Path) = None, org_img=None, input_img=None,
-              org_size=None): 
-    """Predict on new data using exported model."""
+              org_size=None, label_interpolation='shape'):
+    """Predict on new data using exported model.
+
+    The mask is restored with shape-based interpolation; pass
+    label_interpolation='nearest' to copy the nearest voxel instead.
+    """
 
     learn_inf = unwrap_compiled_model(learn_inf)
 
@@ -220,7 +283,7 @@ def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
                                mask_name=None)
     input_img.set_data(pred_mask)
     
-    input_img = _do_resize(input_img, org_size, image_interpolation='nearest')
+    input_img = _resize_labels(input_img, org_size, label_interpolation)
     
     reoriented_array = _to_original_orientation(input_img.as_sitk(), 
                                                 ('').join(org_img.orientation))
