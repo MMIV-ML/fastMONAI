@@ -7,7 +7,7 @@ license: cc-by-4.0
 17 newly drawn tumour masks for Queen Square scans whose original annotations
 contained errors. These are the NL masks used in our study.
 
-**Contributors:** Njål Lura and Satheshkumar Kaliyugarassan.
+**Contributors:** Njål Lura and Satheshkumar Kaliyugarasan.
 
 Download [vs_corrected_labels_v1.zip](vs_corrected_labels_v1.zip). It contains
 binary NIfTI masks in native CE-T1 geometry (**0: background, 1: tumour**), a case

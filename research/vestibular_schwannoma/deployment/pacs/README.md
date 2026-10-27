@@ -40,11 +40,11 @@ Published series keep pr2mask's UIDs.
 
 ## Test and build
 
-Run the deployment tests first:
+Run the deployment tests first (the test discovery runs from `research/`):
 
 ```bash
 conda activate fastmonai
-python -m unittest discover -s ../../tests/deployment -p 'test_*.py'
+(cd ../../.. && python -m unittest discover -s vestibular_schwannoma/tests/deployment -t .)
 bash -n entrypoint.sh
 ```
 

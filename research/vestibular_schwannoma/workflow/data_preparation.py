@@ -29,7 +29,7 @@ HUMAN_CORRECTED_CASES = tuple(
     f"vs_gk_{i}"
     for i in [4, 5, 29, 35, 43, 44, 45, 47, 55, 56, 61, 63, 71, 74, 76, 96, 119]
 )
-LABEL_CONTRIBUTORS = ("Njål Lura", "Satheshkumar Kaliyugarassan")
+LABEL_CONTRIBUTORS = ("Njål Lura", "Satheshkumar Kaliyugarasan")
 LABEL_RELEASE_LICENSE = "CC BY 4.0"
 LABEL_RELEASE_LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
 COMPONENT_SIGNATURES = {

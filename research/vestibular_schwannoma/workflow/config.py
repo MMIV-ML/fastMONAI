@@ -11,11 +11,7 @@ from fastMONAI.vision_all import (
     make_output_spec,
 )
 from .models import TRAINING_MODEL_CONFIGS
-from .run_selection import (
-    CROSS_VALIDATION_FOLDS,
-    INFERENCE_RUN_IDS_FILENAME as INFERENCE_RUN_IDS_FILENAME,
-    INFERENCE_RUN_IDS_SCHEMA as INFERENCE_RUN_IDS_SCHEMA,
-)
+from .run_selection import CROSS_VALIDATION_FOLDS
 
 
 VS_OUTPUT_SPEC = make_output_spec("multiclass_segmentation", classes=2)

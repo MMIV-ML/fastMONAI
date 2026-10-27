@@ -23,7 +23,7 @@ _, apply_reorder, target_spacing = load_variables(config_fn=vars_fn)
 
 # Set file name from command line argument
 img_fn = args.fn
-save_fn = fn.split('.nii')[0] + '_pred.nii.gz'
+save_fn = img_fn.split('.nii')[0] + '_pred.nii.gz'
 
 #pred_items
 org_img, input_img, org_size = med_img_reader(img_fn, apply_reorder, target_spacing, only_tensor=False)

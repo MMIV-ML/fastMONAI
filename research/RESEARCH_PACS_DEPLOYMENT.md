@@ -13,7 +13,7 @@ project's values.
 |-------------|---------|--------------------|
 | `<PROJECT_DIR>` | Path to your local fastMONAI checkout | `~/ml_projects/fastMONAI` |
 | `<PROJECT>` | Research project folder under `research/` | `vestibular_schwannoma` |
-| `<CONTAINER_NAME>` | Docker image name you build | `vs-seg` |
+| `<CONTAINER_NAME>` | Docker image name you build | `fastmonai-vsseg` |
 | `<MODEL_TYPE>` | Registered model key | `dynunet` |
 | `<BUILD_VERSION>` | UTC build identifier | `20260812T140500Z` |
 
@@ -113,7 +113,7 @@ docker build --pull \
   .
 ```
 
-For vestibular schwannoma, substitute `vs-seg` and use the project's
+For vestibular schwannoma, substitute `fastmonai-vsseg` and use the project's
 `deployment/pacs/` directory.
 
 The date must be a Docker tag, not only part of the exported archive filename. An archive
@@ -256,11 +256,16 @@ identity, while `SoftwareVersions` records the producing fastMONAI version.
 
 ## Project Structure
 
+The vestibular schwannoma project is laid out as follows. The `redcap_*` and `pr2mask_*` files
+are specific to its REDCap and pr2mask outputs.
+
 ```
 research/<PROJECT>/
 ├── README.md
+├── data/
 ├── deployment/
 │   └── pacs/
+│       ├── .dockerignore
 │       ├── .ror/
 │       │   └── virt/
 │       │       └── Dockerfile
@@ -271,10 +276,15 @@ research/<PROJECT>/
 │       ├── deployment_bundle.py
 │       ├── deployment_models.py
 │       ├── dicom_output.py
-│       ├── prepare_model_bundle.py
 │       ├── pacs_inference.py
+│       ├── parallel_inference.py
+│       ├── prepare_model_bundle.py
+│       ├── redcap_output.py
+│       ├── redcap_model_instances.json
+│       ├── pr2mask_dictionary.csv
 │       └── model_bundles/<model>/  # generated locally and ignored by Git
 ├── notebooks/
+├── scripts/
 ├── workflow/
 └── tests/
 ```
