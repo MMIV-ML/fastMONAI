@@ -335,7 +335,7 @@ class PostprocessingTests(unittest.TestCase):
             with (
                 patch.object(pacs.subprocess, "run", side_effect=run),
                 patch.object(pacs, "tag_pr2mask_mask") as tag_mask,
-                patch.object(pacs, "write_redcap_mask") as export_mask,
+                patch.object(pacs, "write_redcap_output") as export_redcap,
             ):
                 pacs._run_postprocessing(
                     input_dir,
@@ -348,13 +348,7 @@ class PostprocessingTests(unittest.TestCase):
                 )
 
             tag_mask.assert_called_once_with(labels_series, deployment, use_tta=True)
-            export_mask.assert_called_once_with(
-                work_dir,
-                input_dir,
-                deployment,
-                version="20260817T120000Z",
-                use_tta=True,
-            )
+            export_redcap.assert_called_once_with(work_dir, input_dir, deployment)
             self.assertEqual(len(calls), 3)
             identity = "20260817T120000Z_dynunet_tta"
             self.assertLessEqual(len(identity), 64)
