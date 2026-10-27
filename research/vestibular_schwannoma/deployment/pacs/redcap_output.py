@@ -1,34 +1,19 @@
-"""Lossless DICOM mask transport in pr2mask REDCap EAV JSON.
-
-Schema v1: distances are millimetres, coordinates are DICOM LPS, and the
-array axes are (slice, row, column). Per-slice positions are authoritative.
-"""
+"""pr2mask REDCap EAV rows, routed to the model's repeat instance of the pr2mask instrument."""
 
 from __future__ import annotations
 
-import base64
 import csv
-import gzip
-import hashlib
 import io
 import json
-import math
 import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
 from pydicom import dcmread
 from pydicom.misc import is_dicom
 
-ENCODING = "packbits-gzip-base64-v1"
-MAX_VOXELS = 256 * 1024 * 1024
 MODEL_INSTANCES_PATH = Path(__file__).with_name("redcap_model_instances.json")
 PR2MASK_DICTIONARY_PATH = Path(__file__).with_name("pr2mask_dictionary.csv")
 DICTIONARY_REQUIRED = ["Variable / Field Name", "Form Name", "Field Type", "Field Label"]
-# pr2mask's per-region mask fields fill the columns only. In the measurement list
-# they would push it past REDCap's 65,535-character limit, where values are cut.
-PR2MASK_MASK_PREFIX = "mask_"
 # Instances 1-9 of the pr2mask instrument are left to the original (manual) mask
 # and pr2mask's own region numbering, so model instances start at 10.
 FIRST_MODEL_INSTANCE = 10
@@ -57,183 +42,8 @@ def model_repeat_instance(bundle_sha256):
     return str(registry[bundle_sha256])
 
 
-FIELDS = {
-    "vs_measurements_json": ("notes", "Complete pr2mask region measurements (JSON)"),
-    "vs_mask_json": (
-        "notes",
-        "Lossless binary mask and geometry (schema v1; distances in mm)",
-    ),
-    "vs_model_type": ("text", "Model type"),
-    "vs_bundle_sha256": ("text", "Model bundle SHA-256"),
-    "vs_prediction_id": ("text", "Prediction identity SHA-256"),
-    "vs_deployment_version": ("text", "Deployment version"),
-    "vs_tta": ("text", "Test-time augmentation enabled"),
-    "vs_created_at": ("text", "Prediction export time (UTC)"),
-}
-
-
 def _json(value):
     return json.dumps(value, separators=(",", ":"), sort_keys=True, allow_nan=False)
-
-
-def encode_mask(mask):
-    array = np.asarray(mask)
-    if array.ndim != 3 or not 0 < array.size <= MAX_VOXELS:
-        raise ValueError("Invalid mask dimensions or size")
-    if not np.all((array == 0) | (array == 1)):
-        raise ValueError("Expected binary DICOM mask")
-    array = np.ascontiguousarray(array, dtype=np.uint8)
-    packed = np.packbits(array.ravel(), bitorder="little").tobytes()
-    return dict(
-        schema_version=1,
-        encoding=ENCODING,
-        shape=list(array.shape),
-        axis_order=["slice", "row", "column"],
-        flatten_order="C",
-        bit_order="little",
-        foreground_value=1,
-        foreground_voxels=int(array.sum()),
-        mask_sha256=hashlib.sha256(array.tobytes()).hexdigest(),
-        data=base64.b64encode(gzip.compress(packed, mtime=0)).decode("ascii"),
-    )
-
-
-def decode_mask(payload):
-    """Recover uint8 voxels; geometry is in payload['geometry'] (all lengths mm)."""
-    expected = dict(
-        schema_version=1,
-        encoding=ENCODING,
-        axis_order=["slice", "row", "column"],
-        flatten_order="C",
-        bit_order="little",
-        foreground_value=1,
-    )
-    if any(payload.get(k) != v for k, v in expected.items()):
-        raise ValueError("Unsupported mask schema")
-    shape = payload["shape"]
-    if len(shape) != 3 or any(type(n) is not int or n <= 0 for n in shape):
-        raise ValueError("Invalid mask shape")
-    count = math.prod(shape)
-    if count > MAX_VOXELS:
-        raise ValueError("Mask exceeds size limit")
-    size = (count + 7) // 8
-    # Bound both the compressed input and decompressed output.
-    if len(payload["data"]) > 4 * (size + 65536):
-        raise ValueError("Encoded mask exceeds size limit")
-    compressed = base64.b64decode(payload["data"], validate=True)
-    with gzip.GzipFile(fileobj=io.BytesIO(compressed)) as stream:
-        raw = stream.read(size + 1)
-    if len(raw) != size:
-        raise ValueError("Mask length mismatch")
-    bits = np.unpackbits(np.frombuffer(raw, dtype=np.uint8), bitorder="little")
-    if bits[count:].any():
-        raise ValueError("Nonzero mask padding")
-    array = bits[:count].reshape(shape)
-    if hashlib.sha256(array.tobytes()).hexdigest() != payload["mask_sha256"]:
-        raise ValueError("Mask checksum mismatch")
-    if int(array.sum()) != payload["foreground_voxels"]:
-        raise ValueError("Foreground count mismatch")
-    return array
-
-
-def _series(directory, *, pixels=False):
-    datasets = [
-        dcmread(p, stop_before_pixels=not pixels)
-        for p in Path(directory).rglob("*")
-        if p.is_file() and is_dicom(p)
-    ]
-    datasets = [
-        d for d in datasets if hasattr(d, "ImagePositionPatient") and hasattr(d, "Rows")
-    ]
-    if not datasets:
-        raise ValueError("No DICOM image slices found")
-    first = datasets[0]
-    orientation = np.asarray(first.ImageOrientationPatient, dtype=float)
-    spacing = np.asarray(first.PixelSpacing, dtype=float)
-    if (
-        orientation.shape != (6,)
-        or spacing.shape != (2,)
-        or not np.isfinite(orientation).all()
-        or not np.isfinite(spacing).all()
-        or (spacing <= 0).any()
-    ):
-        raise ValueError("Invalid DICOM geometry")
-    x, y = orientation[:3], orientation[3:]
-    if not (
-        np.isclose(np.linalg.norm(x), 1)
-        and np.isclose(np.linalg.norm(y), 1)
-        and np.isclose(np.dot(x, y), 0, atol=1e-5)
-    ):
-        raise ValueError("Invalid DICOM orientation")
-    for d in datasets:
-        if any(
-            str(d.get(k, "")) != str(first.get(k, ""))
-            for k in (
-                "StudyInstanceUID",
-                "SeriesInstanceUID",
-                "FrameOfReferenceUID",
-                "Rows",
-                "Columns",
-            )
-        ):
-            raise ValueError("Mixed DICOM series or dimensions")
-        if not (
-            np.allclose(d.ImageOrientationPatient, orientation)
-            and np.allclose(d.PixelSpacing, spacing)
-        ):
-            raise ValueError("Inconsistent DICOM geometry")
-        if not np.isfinite(np.asarray(d.ImagePositionPatient, dtype=float)).all():
-            raise ValueError("Invalid slice position")
-    normal = np.cross(x, y)
-    datasets.sort(key=lambda d: np.dot(d.ImagePositionPatient, normal))
-    positions = np.asarray([d.ImagePositionPatient for d in datasets], dtype=float)
-    if len(datasets) > 1 and (np.diff(positions @ normal) <= 1e-6).any():
-        raise ValueError("Duplicate slice positions")
-    return datasets
-
-
-def build_mask_payload(mask_dir, input_dir, deployment, *, version, use_tta):
-    """Read final DICOM pixels and match them to source slices by patient geometry."""
-    masks, source = _series(mask_dir, pixels=True), _series(input_dir)
-    if len(masks) != len(source):
-        raise ValueError("Source and mask slice counts differ")
-    for m, s in zip(masks, source):
-        if (m.Rows, m.Columns) != (s.Rows, s.Columns):
-            raise ValueError("Source and mask dimensions differ")
-        for key in ("ImagePositionPatient", "ImageOrientationPatient", "PixelSpacing"):
-            if not np.allclose(m.get(key), s.get(key), rtol=0, atol=1e-4):
-                raise ValueError(f"Source and mask geometry differ: {key}")
-        for key in ("StudyInstanceUID", "FrameOfReferenceUID"):
-            if str(m.get(key, "")) != str(s.get(key, "")):
-                raise ValueError(f"Source and mask identifiers differ: {key}")
-    payload = encode_mask(np.stack([d.pixel_array for d in masks]))
-    payload["geometry"] = {
-        "coordinate_system": "LPS",
-        "pixel_spacing": [float(x) for x in masks[0].PixelSpacing],
-        "image_orientation_patient": [
-            float(x) for x in masks[0].ImageOrientationPatient
-        ],
-        "image_positions_patient": [
-            [float(x) for x in d.ImagePositionPatient] for d in masks
-        ],
-    }
-    payload["source"] = {
-        "study_uid": str(source[0].StudyInstanceUID),
-        "series_uid": str(source[0].SeriesInstanceUID),
-        "frame_of_reference_uid": str(source[0].get("FrameOfReferenceUID", "")),
-        "sop_instance_uids": [str(d.SOPInstanceUID) for d in source],
-    }
-    payload["mask_series_uid"] = str(masks[0].SeriesInstanceUID)
-    payload["model"] = dict(
-        model_type=deployment["model_type"],
-        bundle_sha256=deployment["bundle_sha256"],
-        deployment_version=version,
-        tta=bool(use_tta),
-        member_ids=[m["member_id"] for m in deployment["members"]],
-    )
-    payload["prediction_id"] = hashlib.sha256(_json(payload).encode()).hexdigest()
-    payload["created_at"] = datetime.now(timezone.utc).isoformat()
-    return payload, source[0]
 
 
 def _read_instrument(text):
@@ -249,33 +59,29 @@ def pr2mask_dictionary_rows():
     return _read_instrument(PR2MASK_DICTIONARY_PATH.read_text(encoding="utf-8"))[1]
 
 
-def _extend_dictionary(path):
+def _dictionary_columns(path):
+    """pr2mask's column names; an empty mask gets them from the shipped dictionary."""
     with zipfile.ZipFile(path) as archive:
         contents = {name: archive.read(name) for name in archive.namelist()}
     names, rows = _read_instrument(contents["instrument.csv"].decode("utf-8-sig"))
     if not rows:
         # pr2mask lists its columns from the first region, so an empty mask has none.
         rows = [{k: row.get(k, "") for k in names} for row in pr2mask_dictionary_rows()]
-    columns = [row["Variable / Field Name"] for row in rows]
-    if any(name in FIELDS for name in columns):
-        raise ValueError("Mask fields already present in data dictionary")
-    for field, (kind, label) in FIELDS.items():
-        rows.append(dict(zip(DICTIONARY_REQUIRED, [field, "pr2mask", kind, label])))
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=names)
-    writer.writeheader()
-    writer.writerows(rows)
-    contents["instrument.csv"] = buffer.getvalue().encode()
-    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name, data in contents.items():
-            archive.writestr(name, data)
-    return columns
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=names)
+        writer.writeheader()
+        writer.writerows(rows)
+        contents["instrument.csv"] = buffer.getvalue().encode()
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, data in contents.items():
+                archive.writestr(name, data)
+    return [row["Variable / Field Name"] for row in rows]
 
 
-def _largest_region(measurements):
+def _largest_region(rows):
     """Values of the region with the most voxels; ties keep the lowest region number."""
     regions = {}
-    for row in measurements:
+    for row in rows:
         regions.setdefault(int(row["redcap_repeat_instance"]), {})[
             row["field_name"]
         ] = row["value"]
@@ -286,65 +92,46 @@ def _largest_region(measurements):
     )
 
 
-def write_redcap_mask(work_dir, input_dir, deployment, *, version, use_tta):
-    """Store the complete prediction in its permanently allocated model instance."""
+def _source_dataset(input_dir):
+    for path in sorted(Path(input_dir).rglob("*")):
+        if path.is_file() and is_dicom(path):
+            return dcmread(path, stop_before_pixels=True)
+    raise ValueError("No DICOM source images found")
+
+
+def write_redcap_output(work_dir, input_dir, deployment):
+    """Store pr2mask's columns for the largest region in the model's permanent instance."""
     instance = model_repeat_instance(deployment["bundle_sha256"])
-    work_dir = Path(work_dir)
-    paths = list((work_dir / "redcap").glob("*/output.json"))
+    paths = list((Path(work_dir) / "redcap").glob("*/output.json"))
     if len(paths) != 1:
         raise ValueError("Expected exactly one pr2mask REDCap output.json")
     path = paths[0]
     rows = json.loads(path.read_text())
     if not isinstance(rows, list):
         raise ValueError("Expected pr2mask EAV rows")
-    payload, source = build_mask_payload(
-        work_dir / "labels", input_dir, deployment, version=version, use_tta=use_tta
-    )
-    destination = dict(
-        record_id=str(source.get("PatientID", "")).rstrip(),
-        redcap_event_name=str(source.get("ReferringPhysicianName", "")).removeprefix(
-            "EventName:"
-        ),
-        redcap_repeat_instrument="pr2mask",
-        redcap_repeat_instance="1",
-    )
+    keys = ("record_id", "redcap_event_name", "redcap_repeat_instrument")
     if rows:
-        destination = {k: rows[0][k] for k in destination}
-        destination["redcap_repeat_instance"] = "1"
+        destination = {k: rows[0][k] for k in keys}
         if destination["redcap_repeat_instrument"] != "pr2mask":
             raise ValueError("Unexpected REDCap instrument")
-        if any(
-            any(
-                row[k] != destination[k]
-                for k in ("record_id", "redcap_event_name", "redcap_repeat_instrument")
-            )
-            for row in rows
-        ):
+        if any(row[k] != destination[k] for row in rows for k in keys):
             raise ValueError("Mixed REDCap destinations")
-    if any(row.get("field_name") in FIELDS for row in rows):
-        raise ValueError("Mask fields already present in output.json")
-    # Region instances belong inside the measurement list, not in model routing.
-    measurements = [
-        {k: row[k] for k in ("redcap_repeat_instance", "field_name", "value")}
-        for row in rows
-    ]
+    else:
+        # An empty mask has no rows, so route it from the source images like pr2mask.
+        source = _source_dataset(input_dir)
+        destination = dict(
+            record_id=str(source.get("PatientID", "")).rstrip(),
+            redcap_event_name=str(source.get("ReferringPhysicianName", "")).removeprefix(
+                "EventName:"
+            ),
+            redcap_repeat_instrument="pr2mask",
+        )
+    # Region instances would collide with the model instances, so pr2mask's columns
+    # hold the largest region and are blanked when there is none.
     destination["redcap_repeat_instance"] = instance
-    listed = [m for m in measurements if not m["field_name"].startswith(PR2MASK_MASK_PREFIX)]
-    values = dict(
-        vs_measurements_json=_json(listed),
-        vs_mask_json=_json(payload),
-        vs_model_type=deployment["model_type"],
-        vs_bundle_sha256=deployment["bundle_sha256"],
-        vs_prediction_id=payload["prediction_id"],
-        vs_deployment_version=version,
-        vs_tta=str(int(use_tta)),
-        vs_created_at=payload["created_at"],
-    )
-    # pr2mask's own columns hold the largest region and are blanked when there is none.
-    columns = _extend_dictionary(path.with_name("output_data_dictionary.zip"))
-    largest = _largest_region(measurements)
-    values.update({name: largest.get(name, "") for name in columns})
+    columns = _dictionary_columns(path.with_name("output_data_dictionary.zip"))
+    largest = _largest_region(rows)
     rows = [
-        dict(destination, field_name=key, value=value) for key, value in values.items()
+        dict(destination, field_name=name, value=largest.get(name, "")) for name in columns
     ]
     path.write_text(_json(rows) + "\n")

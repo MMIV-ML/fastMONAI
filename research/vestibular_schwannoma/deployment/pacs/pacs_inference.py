@@ -29,7 +29,7 @@ from parallel_inference import (
     TTA_FLIP_AXES,
     ParallelEnsemblePatchInferenceEngine,
 )
-from redcap_output import write_redcap_mask, model_repeat_instance
+from redcap_output import write_redcap_output, model_repeat_instance
 
 
 SW_BATCH_SIZE = 1
@@ -286,7 +286,7 @@ def _run_postprocessing(
                 check=True,
             )
     _tag_pr2mask_labels(work_dir, deployment, use_tta=use_tta)
-    write_redcap_mask(work_dir, input_dir, deployment, version=version, use_tta=use_tta)
+    write_redcap_output(work_dir, input_dir, deployment)
     _copy_final_outputs(work_dir, output_dir)
     _publish_log(log_path, output_dir)
 

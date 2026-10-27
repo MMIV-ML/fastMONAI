@@ -1,6 +1,4 @@
-import base64
 import csv
-import gzip
 import io
 import json
 import sys
@@ -10,19 +8,11 @@ from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
-import numpy as np
 from pydicom import dcmread
 
 PACS_DIR = Path(__file__).resolve().parents[2] / "deployment" / "pacs"
 sys.path.insert(0, str(PACS_DIR))
-from redcap_output import (  # noqa: E402
-    encode_mask,
-    decode_mask,
-    build_mask_payload,
-    write_redcap_mask,
-    FIELDS,
-    model_repeat_instance,
-)
+from redcap_output import write_redcap_output, model_repeat_instance  # noqa: E402
 import redcap_output  # noqa: E402
 from vestibular_schwannoma.tests.deployment.test_dicom_output import _write_test_image  # noqa: E402
 
@@ -32,7 +22,8 @@ DICTIONARY_ROWS = (
     "number_of_pixel,pr2mask,text,Number of pixel\n"
     "physical_size,pr2mask,text,Physical size\n"
 )
-PR2MASK_COLUMNS = {"mask_base64_gzip_compressed", "number_of_pixel", "physical_size"}
+PR2MASK_COLUMNS = ["mask_base64_gzip_compressed", "number_of_pixel", "physical_size"]
+ROUTING = ("record_id", "redcap_event_name", "redcap_repeat_instrument", "redcap_repeat_instance")
 DEPLOYMENT = {
     "model_type": "dynunet",
     "bundle_sha256": "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
@@ -43,31 +34,11 @@ DEPLOYMENT = {
 def fixture(root, empty=False):
     source, work = root / "source", root / "work"
     source.mkdir()
-    (work / "labels" / "1.2.8").mkdir(parents=True)
-    mask = np.zeros((3, 2, 3), dtype=np.uint16)
-    if not empty:
-        mask[0, 0, 2] = mask[2, 1, 0] = 1
-    # Oblique to the usual axial grid, anisotropic and irregular slice positions.
-    for i, offset in enumerate([0.0, 2.0, 5.0]):
-        kwargs = dict(
-            orientation=(0, 1, 0, 0, 0, 1),
-            pixel_spacing=(0.7, 0.9),
-            position=(offset, 12, 31),
-        )
-        p = _write_test_image(source / f"{2 - i}", i, **kwargs)
+    for i in range(3):
+        p = _write_test_image(source / f"{i}", i, position=(0, 0, i))
         d = dcmread(p)
         d.PatientID = "SYNTHETIC"
         d.ReferringPhysicianName = "EventName:test_arm_1"
-        d.save_as(p)
-        p = _write_test_image(
-            work / "labels" / "1.2.8" / f"{2 - i}",
-            i,
-            series_uid="1.2.8",
-            sop_uid=f"1.2.8.{i + 1}",
-            **kwargs,
-        )
-        d = dcmread(p)
-        d.PixelData = mask[i].astype("<u2").tobytes()
         d.save_as(p)
     report = work / "redcap" / "1.2.9"
     report.mkdir(parents=True)
@@ -92,7 +63,13 @@ def fixture(root, empty=False):
         z.writestr("OriginID.txt", "PR2MASK")
         # Like pr2mask, list the columns only when there is a region.
         z.writestr("instrument.csv", DICTIONARY_HEADER + ("" if empty else DICTIONARY_ROWS))
-    return source, work, mask, report, ([] if empty else rows)
+    return source, work, report
+
+
+def dictionary_fields(report):
+    with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
+        rows = csv.DictReader(io.StringIO(z.read("instrument.csv").decode()))
+        return z.read("OriginID.txt"), [r["Variable / Field Name"] for r in rows]
 
 
 class Pr2maskDictionaryTests(unittest.TestCase):
@@ -101,44 +78,10 @@ class Pr2maskDictionaryTests(unittest.TestCase):
         self.assertIn("number_of_pixel", names)
         self.assertIn("physical_size", names)
         self.assertEqual(len(names), len(set(names)))
-        self.assertFalse(set(names) & set(FIELDS))
+        self.assertFalse([name for name in names if name.startswith("vs_")])
 
 
-class CodecTests(unittest.TestCase):
-    def test_empty_full_and_random_masks_with_padding(self):
-        rng = np.random.default_rng(10)
-        for mask in [
-            np.zeros((1, 1, 1)),
-            np.ones((3, 5, 7)),
-            rng.integers(0, 2, (3, 5, 7)),
-        ]:
-            payload = json.loads(json.dumps(encode_mask(mask)))
-            np.testing.assert_array_equal(decode_mask(payload), mask)
-            self.assertNotIn("spatial_units", payload)
-
-    def test_corruption_and_invalid_input(self):
-        payload = encode_mask(np.ones((3, 5, 7)))
-        for key, value in [
-            ("mask_sha256", "0" * 64),
-            ("data", "bad!"),
-            ("shape", [1, 1, 1]),
-            ("foreground_voxels", 0),
-            ("encoding", "unknown"),
-            ("shape", [999999999, 1, 1]),
-        ]:
-            with self.subTest(key=key):
-                changed = dict(payload, **{key: value})
-                with self.assertRaises(ValueError):
-                    decode_mask(changed)
-        with self.assertRaises(ValueError):
-            encode_mask(np.full((2, 2, 2), 2))
-        payload = encode_mask(np.ones((1, 1, 1)))
-        payload["data"] = base64.b64encode(gzip.compress(bytes([255]))).decode()
-        with self.assertRaisesRegex(ValueError, "padding"):
-            decode_mask(payload)
-
-
-class DicomExportTests(unittest.TestCase):
+class RedcapOutputTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -148,94 +91,46 @@ class DicomExportTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_dicom_pixels_geometry_rows_and_dictionary_round_trip(self):
+    def test_largest_region_fills_pr2mask_columns_in_model_instance(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source, work, mask, report, original = fixture(Path(tmp))
-            write_redcap_mask(work, source, DEPLOYMENT, version="test", use_tta=True)
+            source, work, report = fixture(Path(tmp))
+            original = (report / "output_data_dictionary.zip").read_bytes()
+            write_redcap_output(work, source, DEPLOYMENT)
             rows = json.loads((report / "output.json").read_text())
-            values = {r["field_name"]: r["value"] for r in rows}
+            self.assertEqual([r["field_name"] for r in rows], PR2MASK_COLUMNS)
             self.assertEqual(
-                json.loads(values["vs_measurements_json"]),
-                [
-                    {k: r[k] for k in ("redcap_repeat_instance", "field_name", "value")}
-                    for r in original
-                    if r["field_name"] != "mask_base64_gzip_compressed"
-                ],
+                {tuple(r[k] for k in ROUTING) for r in rows},
+                {("SYNTHETIC", "test_arm_1", "pr2mask", "11")},
             )
-            self.assertEqual(set(values), set(FIELDS) | PR2MASK_COLUMNS)
-            self.assertEqual(len(rows), len(values))
+            values = {r["field_name"]: r["value"] for r in rows}
             # Regions 2 and 3 tie on size: the lower region number fills the columns.
             self.assertEqual(
-                (values["number_of_pixel"], values["physical_size"]), ("50", "50.2")
+                [values[name] for name in PR2MASK_COLUMNS], ["m2", "50", "50.2"]
             )
-            self.assertEqual(values["mask_base64_gzip_compressed"], "m2")
-            payload = json.loads(values["vs_mask_json"])
-            np.testing.assert_array_equal(decode_mask(payload), mask)
-            self.assertEqual(
-                payload["geometry"]["image_positions_patient"],
-                [[0, 12, 31], [2, 12, 31], [5, 12, 31]],
-            )
-            self.assertEqual(payload["geometry"]["pixel_spacing"], [0.7, 0.9])
-            self.assertEqual(
-                payload["source"]["sop_instance_uids"],
-                ["1.2.3.4.1", "1.2.3.4.2", "1.2.3.4.3"],
-            )
-            self.assertEqual(
-                payload["model"]["bundle_sha256"], DEPLOYMENT["bundle_sha256"]
-            )
-            self.assertEqual(values["vs_prediction_id"], payload["prediction_id"])
-            self.assertTrue(all(r["redcap_repeat_instance"] == "11" for r in rows))
-            with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
-                self.assertEqual(z.read("OriginID.txt"), b"PR2MASK")
-                fields = {
-                    r["Variable / Field Name"]: r
-                    for r in csv.DictReader(
-                        io.StringIO(z.read("instrument.csv").decode())
-                    )
-                }
-                self.assertEqual(fields["vs_mask_json"]["Field Type"], "notes")
-                self.assertIn("physical_size", fields)
-            again, _ = build_mask_payload(
-                work / "labels" / "1.2.8", source, DEPLOYMENT, version="test", use_tta=True
-            )
-            self.assertEqual(again["prediction_id"], payload["prediction_id"])
-            changed, _ = build_mask_payload(
-                work / "labels" / "1.2.8", source, DEPLOYMENT, version="test", use_tta=False
-            )
-            self.assertNotEqual(changed["prediction_id"], payload["prediction_id"])
+            # pr2mask's dictionary already lists its columns and is left as written.
+            self.assertEqual((report / "output_data_dictionary.zip").read_bytes(), original)
 
-    def test_empty_mask_and_no_measurements(self):
+    def test_empty_mask_sends_blank_columns(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source, work, mask, report, _ = fixture(Path(tmp), empty=True)
-            write_redcap_mask(work, source, DEPLOYMENT, version="test", use_tta=False)
+            source, work, report = fixture(Path(tmp), empty=True)
+            write_redcap_output(work, source, DEPLOYMENT)
             rows = json.loads((report / "output.json").read_text())
-            self.assertEqual(rows[0]["record_id"], "SYNTHETIC")
-            self.assertEqual(rows[0]["redcap_event_name"], "test_arm_1")
-            values = {r["field_name"]: r["value"] for r in rows}
-            self.assertEqual(set(values), set(FIELDS) | PR2MASK_COLUMNS)
-            self.assertEqual((values["number_of_pixel"], values["physical_size"]), ("", ""))
-            self.assertEqual(values["mask_base64_gzip_compressed"], "")
-            with zipfile.ZipFile(report / "output_data_dictionary.zip") as z:
-                fields = [
-                    r["Variable / Field Name"]
-                    for r in csv.DictReader(io.StringIO(z.read("instrument.csv").decode()))
-                ]
+            self.assertEqual([r["field_name"] for r in rows], PR2MASK_COLUMNS)
             self.assertEqual(
-                fields,
-                ["mask_base64_gzip_compressed", "number_of_pixel", "physical_size", *FIELDS],
+                {tuple(r[k] for k in ROUTING) for r in rows},
+                {("SYNTHETIC", "test_arm_1", "pr2mask", "11")},
             )
-            np.testing.assert_array_equal(
-                decode_mask(
-                    json.loads(
-                        next(
-                            r["value"]
-                            for r in rows
-                            if r["field_name"] == "vs_mask_json"
-                        )
-                    )
-                ),
-                mask,
-            )
+            self.assertEqual({r["value"] for r in rows}, {""})
+            self.assertEqual(dictionary_fields(report), (b"PR2MASK", PR2MASK_COLUMNS))
+
+    def test_mixed_destinations_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, work, report = fixture(Path(tmp))
+            rows = json.loads((report / "output.json").read_text())
+            rows[-1]["record_id"] = "OTHER"
+            (report / "output.json").write_text(json.dumps(rows))
+            with self.assertRaisesRegex(ValueError, "Mixed REDCap destinations"):
+                write_redcap_output(work, source, DEPLOYMENT)
 
     def test_live_registry_holds_only_the_dynunet_bundle(self):
         self.assertEqual(
@@ -250,42 +145,19 @@ class DicomExportTests(unittest.TestCase):
             registry = Path(tmp) / "registry.json"
             registry.write_text(json.dumps({DEPLOYMENT["bundle_sha256"]: 10, "d" * 64: 11}))
             with patch.object(redcap_output, "MODEL_INSTANCES_PATH", registry):
-                for deployment, tta, version, empty in [
-                    (DEPLOYMENT, True, "v1", False),
-                    (other, True, "v1", False),
-                    (DEPLOYMENT, False, "v2", True),
-                ]:
+                for deployment, empty in [(DEPLOYMENT, False), (other, False), (DEPLOYMENT, True)]:
                     with tempfile.TemporaryDirectory() as tmp:
-                        source, work, _, report, _ = fixture(Path(tmp), empty=empty)
-                        write_redcap_mask(
-                            work, source, deployment, version=version, use_tta=tta
-                        )
+                        source, work, report = fixture(Path(tmp), empty=empty)
+                        write_redcap_output(work, source, deployment)
                         for row in json.loads((report / "output.json").read_text()):
-                            key = tuple(
-                                row[k]
-                                for k in (
-                                    "record_id",
-                                    "redcap_event_name",
-                                    "redcap_repeat_instrument",
-                                    "redcap_repeat_instance",
-                                    "field_name",
-                                )
-                            )
+                            key = tuple(row[k] for k in ROUTING) + (row["field_name"],)
                             stored[key] = row["value"]
         by_instance = {}
         for key, value in stored.items():
             by_instance.setdefault(key[3], {})[key[4]] = value
         self.assertEqual(set(by_instance), {"10", "11"})
-        self.assertEqual(by_instance["10"]["vs_tta"], "0")
-        self.assertEqual(by_instance["10"]["vs_deployment_version"], "v2")
-        self.assertEqual(json.loads(by_instance["10"]["vs_measurements_json"]), [])
-        self.assertEqual(by_instance["10"]["physical_size"], "")
+        self.assertEqual(by_instance["10"], dict.fromkeys(PR2MASK_COLUMNS, ""))
         self.assertEqual(by_instance["11"]["physical_size"], "50.2")
-        self.assertEqual(
-            json.loads(by_instance["10"]["vs_mask_json"])["foreground_voxels"], 0
-        )
-        self.assertEqual(by_instance["11"]["vs_tta"], "1")
-        self.assertTrue(json.loads(by_instance["11"]["vs_measurements_json"]))
 
     def test_unknown_and_colliding_registry_entries_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unregistered"):
@@ -298,30 +170,6 @@ class DicomExportTests(unittest.TestCase):
                     with patch.object(redcap_output, "MODEL_INSTANCES_PATH", path):
                         with self.assertRaisesRegex(ValueError, "Invalid"):
                             model_repeat_instance("a" * 64)
-
-    def test_geometry_mismatch_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source, work, *_ = fixture(Path(tmp))
-            p = work / "labels" / "1.2.8" / "0"
-            d = dcmread(p)
-            d.ImagePositionPatient = [6, 12, 31]
-            d.save_as(p)
-            with self.assertRaisesRegex(ValueError, "geometry differ"):
-                build_mask_payload(
-                    work / "labels" / "1.2.8", source, DEPLOYMENT, version="test", use_tta=True
-                )
-
-    def test_duplicate_slice_rejected(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source, work, *_ = fixture(Path(tmp))
-            p = work / "labels" / "1.2.8" / "0"
-            d = dcmread(p)
-            d.ImagePositionPatient = [2, 12, 31]
-            d.save_as(p)
-            with self.assertRaisesRegex(ValueError, "Duplicate slice"):
-                build_mask_payload(
-                    work / "labels" / "1.2.8", source, DEPLOYMENT, version="test", use_tta=True
-                )
 
 
 if __name__ == "__main__":
