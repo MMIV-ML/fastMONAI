@@ -13,6 +13,7 @@ import torchio as tio
 import pandas as pd
 import numpy as np
 import warnings
+import numbers
 import copy as _copy
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -21,10 +22,12 @@ from dataclasses import dataclass, field
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from fastai.data.all import *
+# keep below the fastai star import, which exports fastcore's ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from fastai.learner import Learner
 from .vision_core import MedImage, MedMask, med_img_reader
 from .vision_plot import find_max_slice
-from .vision_inference import _do_resize, _resize_labels
+from .vision_inference import _do_resize, _resize_labels, keep_largest
 from .dataset_info import MedDataset, suggest_patch_size
 from .vision_augmentation import transforms_to_specs, transforms_from_specs
 from .utils import unwrap_compiled_model
@@ -240,7 +243,7 @@ class PatchConfig:
             - Int >= 1: pixel overlap (e.g., 48 = 48 pixel overlap)
             - List: per-dimension overlap in pixels
         samples_per_volume: Number of patches to extract per volume during training.
-        sampler_type: Type of sampler ('uniform', 'label', 'weighted').
+        sampler_type: Type of sampler ('uniform' or 'label').
         label_probabilities: For LabelSampler, dict mapping label values to probabilities.
         queue_length: Maximum number of patches to store in queue.
         queue_num_workers: Number of workers for parallel patch extraction.
@@ -305,7 +308,7 @@ class PatchConfig:
     
     def __post_init__(self):
         """Validate configuration."""
-        valid_samplers = ['uniform', 'label', 'weighted']
+        valid_samplers = ['uniform', 'label']
         if self.sampler_type not in valid_samplers:
             raise ValueError(f"sampler_type must be one of {valid_samplers}")
         
@@ -511,13 +514,6 @@ def create_patch_sampler(config: PatchConfig) -> tio.data.PatchSampler:
             label_probabilities=config.label_probabilities
         )
     
-    elif config.sampler_type == 'weighted':
-        raise NotImplementedError(
-            "WeightedSampler requires a pre-computed probability map which is not currently supported. "
-            "Use 'label' sampler with label_probabilities for weighted sampling based on segmentation labels, "
-            "or 'uniform' for random patch extraction."
-        )
-    
     raise ValueError(f"Unknown sampler type: {config.sampler_type}")
 
 # %% ../nbs/10_vision_patch.ipynb #cell-14
@@ -536,7 +532,7 @@ class MedPatchDataLoader:
             raw TorchIO transforms. fastMONAI wrappers are automatically normalized
             to raw TorchIO for internal use. Mutually exclusive with gpu_augmentation.
         gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation.
-            Operates on [B,C,D,H,W] tensors already on GPU, avoiding per-sample CPU
+            Operates on [B, C, X, Y, Z] tensors already on GPU, avoiding per-sample CPU
             overhead. Mutually exclusive with patch_tfms. Training only.
         shuffle: Whether to shuffle subjects and patches.
         drop_last: Whether to drop last incomplete batch.
@@ -594,7 +590,7 @@ class MedPatchDataLoader:
     def __iter__(self):
         """Iterate over batches, yielding (image, mask) tuples."""
         for batch in self._dl:
-            img = batch['image'][tio.DATA]  # [B, C, H, W, D]
+            img = batch['image'][tio.DATA]  # [B, C, X, Y, Z]
             has_mask = 'mask' in batch
 
             # Apply CPU patch transforms if provided (per-sample TorchIO loop)
@@ -726,19 +722,17 @@ def _build_pre_patch_tfms(patch_config, apply_reorder, target_spacing, pre_patch
 
 
 def _stash_from_df_metadata(instance, img_col, mask_col, pre_patch_tfms, apply_reorder,
-                            target_spacing, ensure_affine_consistency, patch_config,
-                            train_df, valid_df):
-    """Record the de-facto metadata contract attributes consumed by research/vs_seg scripts.
+                            target_spacing, patch_config, train_df, valid_df):
+    """Record the from_df inputs on the instance for MLflow logging and split tracking.
 
-    Stores the RAW pre_patch_tfms (not the normalized list), matching how the train_final*.py
-    scripts set dls._pre_patch_tfms manually.
+    Stores pre_patch_tfms as given (fastMONAI wrappers are not unwrapped to TorchIO).
+    Code that builds MedPatchDataLoaders directly can set the same attributes.
     """
     instance._img_col = img_col
     instance._mask_col = mask_col
     instance._pre_patch_tfms = pre_patch_tfms
     instance._apply_reorder = apply_reorder
     instance._target_spacing = target_spacing
-    instance._ensure_affine_consistency = ensure_affine_consistency
     instance._patch_config = patch_config
     instance._train_source_df = train_df
     instance._valid_source_df = valid_df
@@ -759,10 +753,10 @@ class MedPatchDataLoaders:
     for full-volume sliding window inference.
 
     Example:
-        >>> config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.5, 0.5, 0.5])
+        >>> config = PatchConfig(patch_size=[96, 96, 96], apply_reorder=True, target_spacing=[0.5, 0.5, 0.5],
+        ...                      normalization=[ZNormalization(masking_method='foreground')])
         >>> dls = MedPatchDataLoaders.from_df(
-        ...     df, img_col='image', mask_col='label', valid_pct=0.2,
-        ...     patch_config=config, pre_patch_tfms=[tio.ZNormalization()], bs=4
+        ...     df, img_col='image', mask_col='label', valid_pct=0.2, patch_config=config, bs=4
         ... )
         >>> learn = Learner(dls, model, loss_func=DiceLoss())
     """
@@ -919,7 +913,7 @@ class MedPatchDataLoaders:
         instance = cls(train_dl, valid_dl, device)
         return _stash_from_df_metadata(
             instance, img_col, mask_col, _norm_tfms, _apply_reorder, _target_spacing,
-            ensure_affine_consistency, patch_config, train_df, valid_df
+            patch_config, train_df, valid_df
         )
 
     @property
@@ -954,18 +948,27 @@ class MedPatchDataLoaders:
 
     @property
     def apply_reorder(self):
-        """Whether reordering to RAS+ is enabled."""
-        return getattr(self, '_apply_reorder', False)
+        """Whether reordering to RAS+ is enabled (from from_df, else patch_config)."""
+        if hasattr(self, '_apply_reorder'):
+            return self._apply_reorder
+        config = self.patch_config
+        return config.apply_reorder if config is not None else False
 
     @property
     def target_spacing(self):
-        """Target voxel spacing for resampling."""
-        return getattr(self, '_target_spacing', None)
+        """Target voxel spacing for resampling (from from_df, else patch_config)."""
+        if hasattr(self, '_target_spacing'):
+            return self._target_spacing
+        config = self.patch_config
+        return config.target_spacing if config is not None else None
 
     @property
     def patch_config(self):
-        """The PatchConfig used for this DataLoaders."""
-        return getattr(self, '_patch_config', None)
+        """The PatchConfig used for this DataLoaders (from from_df, else the train loader's config)."""
+        config = getattr(self, '_patch_config', None)
+        if config is None:
+            config = getattr(getattr(self, '_train_dl', None), 'config', None)
+        return config
 
     @property
     def split_df(self):
@@ -1024,7 +1027,10 @@ class MedPatchDataLoaders:
     def show_batch(self, dl_idx=0, max_n=6, figsize=None, channel=0,
                    slice_index=None, anatomical_plane=0, overlay=False,
                    voxel_size=None, **kwargs):
-        """Show a batch of patch samples for visualization."""
+        """Show a batch of patch samples for visualization.
+
+        Extra keyword arguments are accepted for compatibility with fastai's show_batch and ignored.
+        """
 
         dl = self[dl_idx]
         x, y = dl.one_batch()
@@ -1063,9 +1069,9 @@ class MedPatchDataLoaders:
             slice_idxs.extend([idx] * len(im_channels))
 
         _voxel_size = voxel_size if voxel_size is not None else self.target_spacing
-        ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane,
-                        voxel_size=_voxel_size)
-                for im, ax, idx in zip(imgs, flat_axs, slice_idxs)]
+        for im, ax, idx in zip(imgs, flat_axs, slice_idxs):
+            im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane,
+                    voxel_size=_voxel_size)
 
         if overlay and has_mask:
             for mask, ax, idx in zip(masks_for_overlay, flat_axs, slice_idxs):
@@ -1126,15 +1132,13 @@ class MedPatchDataLoaders:
             pass
 
 # %% ../nbs/10_vision_patch.ipynb #cell-17
-import numbers
-
 def _normalize_patch_overlap(patch_overlap: 'int | float | list', patch_size: list) -> tuple:
     """Convert patch_overlap (fraction 0-1, pixel int, numpy scalar, or sequence) to a tuple of even pixel ints for TorchIO's GridSampler.
 
     Format conversion only; value validation (negatives, overlap >= patch_size) lives in PatchConfig.__post_init__().
     """
     # Scalar fraction (0 < x < 1); excludes 1.0 since 100% overlap creates step_size=0 (infinite patches)
-    if isinstance(patch_overlap, (int, float, numbers.Number)) and 0 < float(patch_overlap) < 1:
+    if isinstance(patch_overlap, numbers.Number) and 0 < float(patch_overlap) < 1:
         result = []
         for ps in patch_size:
             pixels = int(int(ps) * float(patch_overlap))
@@ -1144,7 +1148,7 @@ def _normalize_patch_overlap(patch_overlap: 'int | float | list', patch_size: li
         return tuple(result)
 
     # Scalar int (incl. numpy scalars): pixel count
-    if isinstance(patch_overlap, (int, float, numbers.Number)):
+    if isinstance(patch_overlap, numbers.Number):
         val = int(patch_overlap)
         if val % 2 != 0:
             val = val - 1 if val > 0 else 0
@@ -1191,8 +1195,8 @@ def _resolve_tta(tta) -> tuple | None:
 def _logits_to_probs(logits: torch.Tensor) -> torch.Tensor:
     """Logits -> probabilities: sigmoid for 1 channel (binary), else softmax over the channel dim.
 
-    Upcasts to float32 (logits may be bfloat16 under AMP). Does NOT move to CPU; callers decide
-    placement (TTA keeps tensors on-device to flip back; the non-TTA path moves to CPU immediately).
+    Upcasts to float32 (logits may be bfloat16 under AMP). Does not move to CPU: callers sum the
+    passes (flips and models) on the device and move the average to CPU once.
     """
     return torch.sigmoid(logits.float()) if logits.shape[1] == 1 else torch.softmax(logits.float(), dim=1)
 
@@ -1201,8 +1205,9 @@ def _predict_patch_tta(models, patch_input, amp_context=None, flip_axes=_TTA_FLI
     """Mirror TTA (with optional model ensemble): average probabilities over `flip_axes` and all models.
 
     models is a single model or a list of models; a list soft-votes (averages probabilities).
-    Uses a running sum (2x memory, not 9x per model). Each pass: flip -> forward -> activate ->
-    flip back -> accumulate. Returns the averaged probability tensor [B, C, D, H, W] on CPU.
+    Keeps a running sum, so memory holds two probability tensors instead of one per pass
+    (8 per model with all flips). Each pass: flip -> forward -> activate -> flip back ->
+    accumulate. Returns the averaged probability tensor [B, C, X, Y, Z] on CPU.
     amp_context, if given, wraps each forward pass.
     """
     if amp_context is None: amp_context = nullcontext()
@@ -1466,7 +1471,6 @@ class PatchInferenceEngine:
                     f"models, or post-process each class separately."
                 )
             else:
-                from fastMONAI.vision_inference import keep_largest
                 result = keep_largest(result.squeeze(0)).unsqueeze(0)
 
         if return_probabilities:
@@ -1489,10 +1493,6 @@ class PatchInferenceEngine:
             result = result.long()
 
         # Use original affine matrix for correct spatial alignment
-        if not (hasattr(prepared.org_img, 'affine') and prepared.org_img.affine is not None):
-            raise RuntimeError(
-                "org_img.affine not available. This should never happen - please report this bug."
-            )
         affine = prepared.org_img.affine.copy()
 
         return result, affine
@@ -1544,8 +1544,8 @@ class PatchInferenceEngine:
 
         Returns:
             ``(mask, probabilities)`` or ``(mask, probabilities, affine)`` when
-            ``return_affine=True``. The mask has shape ``[1, D, H, W]`` and dtype
-            ``torch.long``; probabilities have shape ``[C, D, H, W]`` and floating dtype.
+            ``return_affine=True``. The mask has shape ``[1, X, Y, Z]`` and dtype
+            ``torch.long``; probabilities have shape ``[C, X, Y, Z]`` and floating dtype.
         """
         prepared = self._prepare_subject(img_path)
         output = self._run_inference(prepared, tta=tta)
@@ -1563,9 +1563,6 @@ class PatchInferenceEngine:
         return self
 
 # %% ../nbs/10_vision_patch.ipynb #cell-18
-from concurrent.futures import ThreadPoolExecutor
-
-
 def prediction_filename(input_path: str | Path) -> str:
     """Return the filename used by patch inference for a saved prediction."""
     input_path = Path(input_path)
