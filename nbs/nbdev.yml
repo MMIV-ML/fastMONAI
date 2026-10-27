@@ -4,6 +4,6 @@ project:
 website:
   title: "fastMONAI"
   site-url: "https://fastmonai.no/"
-  description: "fastMONAI library"
+  description: "A low-code deep learning library for 3D medical image analysis, built on fastai, MONAI and TorchIO"
   repo-branch: main
   repo-url: "https://github.com/MMIV-ML/fastMONAI"

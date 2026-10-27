@@ -140,7 +140,7 @@ The bundled masks are used automatically if they have not already been extracted
 
 ```bash
 python scripts/prepare_data.py prepare \
-  --from-existing /home/sathiesh/ml_projects/VS_Seg \
+  --from-existing /path/to/VS_Seg \
   --output data/prepared
 ```
 
@@ -186,14 +186,14 @@ Correction cases: **4, 5, 29, 35, 43, 44, 45, 47, 55, 56, 61, 63, 71, 74, 76,
 96, 119**. These are new NL masks drawn for scans whose original tumour
 annotations contained errors.
 
-Contributors: **Njål Lura** and **Satheshkumar Kaliyugarassan**.
+Contributors: **Njål Lura** and **Satheshkumar Kaliyugarasan**.
 The release uses **CC BY 4.0** and asks readers to cite the accompanying study
 paper when available.
 
 The [`corrected_labels/`](corrected_labels/) folder contains one ZIP,
 a [short README](corrected_labels/README.md), and a [license notice](corrected_labels/LICENSE.txt).
 These small masks are versioned with the preparation code on GitHub. Model
-weights are distributed separately on Hugging Face. Use a tagged repository
+weights are not part of this release. Use a tagged repository
 release to identify the code, case index, and masks used for a study.
 
 Maintainer packaging command:

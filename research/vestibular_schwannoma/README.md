@@ -16,7 +16,7 @@ with five-fold cross-validation, optional all-data training, inference, and PACS
 
 ## Setup and data
 
-Use fastMONAI 0.10.1 or a matching development checkout. From the fastMONAI repository root:
+Use fastMONAI 0.12.0 or a matching development checkout. From the fastMONAI repository root:
 
 ```bash
 pip install -e '.[dev]'
@@ -25,8 +25,9 @@ pip install -e '.[dev]'
 Download and prepare the 344-case dataset with `scripts/prepare_data.py`; see
 [data/README.md](data/README.md) for scripted acquisition, corrected labels, and
 reference verification. The default prepared layout is `../nii_data/`, matching
-the shared CSV. UNet and DynUNet use MONAI. The training notebook provides
-setup instructions for optional SegMamba support.
+the shared CSV. UNet and DynUNet use MONAI. SegMamba is optional; the install
+commands are in `SEGMAMBA_INSTALL_HINT` in `workflow/models.py`, and training prints
+them when SegMamba is requested but not installed.
 
 ## Training
 

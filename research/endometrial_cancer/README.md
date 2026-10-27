@@ -2,8 +2,8 @@
 The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf) and to integrate this model into research PACS (see [Results for VIBE](#results-for-vibe) section). 
 In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) (see [Results for multi-sequence (T2, VIBE, and ADC)](#results-for-multi-sequence-t2-vibe-and-adc) section).
 
-The trained weights and exported learner are available on [Huggin Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
-Test our model live with the Gradio app for VIBE on [Hugging Face Spaces](https://skaliy-endometrial-cancer-segmentation-app.hf.space). To run the application on your local system, follow the instructions in the [Getting started](#getting-started) section.
+The trained weights and exported learner are available on [Hugging Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
+A Gradio app for VIBE is included in `src/app.py`. To run it on your local system, follow the instructions in the [Getting started](#getting-started) section.
 
 ## Structure overview
 ```
@@ -44,11 +44,11 @@ chmod +x inference_script.py
 python inference_script.py IMG_PATH
 ```
 
-If you choose to use `app.py`, please execute the following command in the terminal:
+If you choose to use `app.py`, install `gradio` and `opencv-python` (they are not fastMONAI dependencies) and execute the following command in the terminal:
 ```bash
 gradio app.py
 ```
-The predicted maske will be stored in folder `ec_pred` in the `src` folder. 
+The predicted mask will be stored in folder `ec_pred` in the `src` folder. 
 
 ## Results for VIBE
 Note that our results are not directly comparable with the results reported in [study](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf), as we opted to use the test set for validation to allocate more data to training. Unlike the approach detailed in the study, we refrained from post-processing steps, such as retaining only the largest object. Predictions from new test cases indicate that this method could occasionally eliminate the tumor. Below is the box plot showcasing predictions on the validation set:

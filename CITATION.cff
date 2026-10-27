@@ -13,8 +13,8 @@ authors:
       and Mathematical Sciences, Western Norway University
       of Applied Sciences, Bergen, Norway
     orcid: 'https://orcid.org/0000-0002-0038-5540'
-  - given-names: Lundervold
-    family-names: Alexander Selvikvåg
+  - given-names: Alexander Selvikvåg
+    family-names: Lundervold
     email: allu@hvl.no
     affiliation: >-
       Department of Computer Science, Electrical Engineering
@@ -38,7 +38,7 @@ license: Apache-2.0
 preferred-citation:
   type: article
   authors:
-  - family-names: " Kaliyugarasan"
+  - family-names: "Kaliyugarasan"
     given-names: "Satheshkumar"
     orcid: "https://orcid.org/0000-0002-0038-5540"
   - family-names: "Lundervold"

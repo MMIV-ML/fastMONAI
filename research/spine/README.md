@@ -1,10 +1,10 @@
 # Multi-Center CNN-based spine segmentation from T2w MRI using small amounts of data
 The source code, designed to reproduce our test results and facilitate training and running inference on your own data. 
-The trained weights and exported learners are available on [Huggin Face](https://huggingface.co/skaliy/spine-segmentation).
+The trained weights and exported learners are available on [Hugging Face](https://huggingface.co/skaliy/spine-segmentation).
 
 ## Getting started
 ### Quick Start
-Yyou can run the notebooks directly in Google Colab.
+You can run the notebooks directly in Google Colab.
 
 ### Local Setup (Optional)
 1. Clone this repository:
