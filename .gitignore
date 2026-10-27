@@ -3,8 +3,6 @@ _docs/
 *.bak
 .gitattributes
 .last_checked
-.gitconfig
-*.bak
 *.log
 *~
 ~*
@@ -66,7 +64,6 @@ coverage.xml
 *.pot
 
 # Django stuff:
-*.log
 local_settings.py
 
 # Flask stuff:
@@ -178,7 +175,7 @@ _proc/
 
 # MLflow
 mlruns/
-mlruns.db
+mlruns.db*
 mlflow.db
 
 # Reports
@@ -189,7 +186,7 @@ reports/
 *.nii
 *.nii.gz
 # Exception: keep test image used in vision_core
-!images/IXI002-Guys-0828-T1.nii.gz
+!nbs/images/IXI002-Guys-0828-T1.nii.gz
 
 # research/ holds patient data, so it denies by default and allows code back by
 # type. PACS exports name DICOM files without an extension, so the *.dcm rule
@@ -228,3 +225,4 @@ research/vs_seg/
 
 # Local working notes
 TODO.md
+todo.html
