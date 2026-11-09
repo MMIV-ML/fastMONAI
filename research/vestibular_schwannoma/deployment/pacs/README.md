@@ -133,12 +133,11 @@ goes to the PACS as the `labels` series, whose DICOM header also records the ful
 and the TTA setting.
 
 pr2mask stores each region's mask in seven `mask_*` fields. `mask_base64_gzip_compressed`
-covers the whole scan, so its length depends on the scan size, not the region: about 84,000
-characters for a 512×512×120 scan. REDCap cuts values longer than 65,535 characters, so a
-region's mask only fits for scans under about 24.5 million voxels (about 93 slices at
-512×512). A cut mask can't be decoded, so the exporter sends any value over 65,535 bytes
-blank and says so in the container log. The other fields are unaffected, and the full mask
-is always in the PACS `labels` series.
+covers the whole scan at 16 bits per voxel, so its length depends on the scan size, not the
+region: about 84,000 characters for a 512×512×120 scan and 105,000 for 512×448×176. REDCap may
+cut values longer than 65,535 characters; this has not been checked in the receiving project.
+The exporter sends the value as pr2mask wrote it, and the full mask is always in the PACS
+`labels` series.
 
 `pr2mask_dictionary.csv` holds the `instrument.csv` rows of a non-empty run of the packaged
 pr2mask. An empty mask, where pr2mask lists no columns, takes them from there. When the Fiona

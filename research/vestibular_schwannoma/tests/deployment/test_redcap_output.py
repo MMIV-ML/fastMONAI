@@ -162,24 +162,6 @@ class RedcapOutputTests(unittest.TestCase):
             self.assertEqual({v["model_version"] for v in values.values()}, {MODEL_VERSION})
             self.assertEqual(dictionary_fields(report), (b"PR2MASK", COLUMNS))
 
-    def test_values_redcap_would_cut_are_sent_blank(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            source, work, report = fixture(Path(tmp))
-            rows = json.loads((report / "output.json").read_text())
-            limit = redcap_output.MAX_VALUE_BYTES
-            for row in rows:
-                if row["field_name"] == "mask_base64_gzip_compressed":
-                    fits = row["redcap_repeat_instance"] == "1"
-                    row["value"] = "m" * (limit if fits else limit + 1)
-            (report / "output.json").write_text(json.dumps(rows))
-            export(work, source)
-            _, values = instances(report)
-            self.assertEqual(
-                [values[n]["mask_base64_gzip_compressed"] for n in ("201", "202", "203")],
-                ["m" * limit, "", ""],
-            )
-            self.assertEqual(values["202"]["number_of_pixel"], "50")
-
     def test_region_outside_the_block_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, work, report = fixture(Path(tmp))
