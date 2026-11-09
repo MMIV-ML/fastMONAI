@@ -115,55 +115,63 @@ to prevent overwrites.
 The final output includes pr2mask's `redcap/<mask-series-UID>/output.json` and
 `output_data_dictionary.zip`, in pr2mask's EAV row format and instrument. `redcap` is an
 owned output directory and must not already exist. There is no direct REDCap uploader.
-The exporter sends only pr2mask's own columns, in the model's permanent `pr2mask` repeat
-instance. An empty measurement list is routed with the source PatientID and
-ReferringPhysicianName (`EventName:` prefix removed), matching pr2mask routing. The mask
-itself goes to the PACS as the `labels` series.
+
+pr2mask splits the mask into connected regions (26-connected) and numbers them 1, 2, 3, ...
+in scan order. The exporter writes each region to its own repeat instance of the `pr2mask`
+instrument: region k goes to the model's block base + k. DynUNet's base is 200, so a mask
+with one region fills instance 201, and a mask with two regions fills 201 and 202. Instance
+200 + k always holds pr2mask's "label k of N" (`mask_label_info`). Only instances that have a
+region are written. An empty mask fills instance 201 with blank pr2mask columns, which records
+that the model ran and found nothing. It is routed with the source PatientID and
+ReferringPhysicianName (`EventName:` prefix removed), matching pr2mask routing.
+
+Every written instance has all of pr2mask's columns plus `model_version`, for example
+`dynunet 5-fold, fastmonai-vsseg:20261110T081500Z`. pr2mask itself has no such field. It is on
+the REDCap form, and the exporter adds it to `output_data_dictionary.zip` as a text field. If
+pr2mask ever writes its own `model_version`, the exporter's value replaces it. The mask itself
+goes to the PACS as the `labels` series, whose DICOM header also records the full bundle hash
+and the TTA setting.
+
+pr2mask stores each region's mask in seven `mask_*` fields. `mask_base64_gzip_compressed`
+covers the whole scan, so its length depends on the scan size, not the region: about 84,000
+characters for a 512×512×120 scan. REDCap cuts values longer than 65,535 characters, so a
+region's mask only decodes for scans under about 24.5 million voxels (about 93 slices at
+512×512). The full mask is in the PACS `labels` series.
+
+`pr2mask_dictionary.csv` holds the `instrument.csv` rows of a non-empty run of the packaged
+pr2mask. An empty mask, where pr2mask lists no columns, takes them from there. When the Fiona
+base changes, regenerate it from a smoke test and check that a non-empty run lists the same
+columns.
 
 Up to 20261026T134845Z the exporter also sent eight `vs_*` fields, among them the mask as
 `vs_mask_json`. They are no longer sent.
 
 ### Stable model destinations and overwrites
 
-`redcap_model_instances.json` assigns each full bundle SHA-256 a permanent positive
-integer of at least 10. Instances 1-9 of the `pr2mask` instrument are left to the original
-(manual) mask and pr2mask's own region numbering. DynUNet uses instance 11, and the nnU-Net
-large container in the separate nnU-Net repository uses 10. Instance 12 is free for the next
-model. They moved from 3 and 2 on 2026-10-21, and results imported before that stay at the
-old instances. The retired UNet bundle was registered at instance 2.
-Keep allocations unique across both projects, and don't renumber or reuse entries after
-REDCap imports. Register each new bundle with an unused integer before building a release;
-unknown bundles, duplicate allocations and instances below 10 fail closed.
-The registry is copied into the container and validated before inference.
+`redcap_model_instances.json` gives each full bundle SHA-256 a permanent block of 100
+instances, stored as the block's base (a multiple of 100, at least 100). The DynUNet bundle
+has block 200 (instances 201-299). Instances below 100 belong to the original (manual) mask
+at 1, pr2mask's own region numbering and the earlier one-instance-per-model scheme: the nnU-Net
+large container in the separate nnU-Net repository still writes its largest region to 10.
+DynUNet wrote its largest region to 11 up to 20261027T083045Z (3 before 2026-10-21; the
+retired UNet used 2); those results are removed in REDCap. Block 100 is planned for nnU-Net.
+Keep blocks unique across both projects, and don't renumber or reuse them after REDCap
+imports. Register each new bundle with an unused block before building a release. Unknown
+bundles, duplicate blocks, invalid bases and region numbers of 100 or more fail closed. The
+registry is copied into the container and validated before inference.
 
-All fields for a model share its repeat instance. Within the same record/event:
+Within the same record/event:
 
-- The same bundle overwrites its previous result, including when TTA, deployment
-  version, timestamp or the predicted mask changes.
-- A different bundle uses a different instance, including different weights of
-  the same architecture.
+- The same bundle overwrites its earlier instances, including when TTA, deployment version,
+  timestamp or the predicted mask changes. A rerun that finds fewer regions leaves the higher
+  instances of the earlier run as they were. The same bundle with the same TTA setting finds
+  the same regions.
+- A different bundle uses a different block, including different weights of the same
+  architecture.
 
-pr2mask writes each region as its own repeat instance (1, 2, 3, ...), which would collide
-with the model instances, so regions are not sent as separate instances. pr2mask's columns
-in the model instance hold the **largest** region (most voxels; ties keep the lower region
-number). pr2mask numbers regions in scan order, so the largest is not always region 1. An
-empty mask has no regions, so pr2mask lists no columns; the exporter then takes them from
-`pr2mask_dictionary.csv` and sends them blank, so the importer must overwrite blanks to
-clear values from an earlier run.
-
-Since the Fiona base of 2026-10-19, pr2mask also stores the mask in seven `mask_*` fields,
-which fill the columns for the largest region. `mask_base64_gzip_compressed` is about 84,000
-characters for a 512×512×120 scan, and REDCap cuts values longer than 65,535 characters, so
-it only decodes for small volumes. The full mask is in the PACS `labels` series.
-
-`pr2mask_dictionary.csv` holds the `instrument.csv` rows of a non-empty run of the packaged
-pr2mask. When the Fiona base changes, regenerate it from a smoke test and check that a
-non-empty run lists the same columns.
-
-Install pr2mask's dictionary in the receiving REDCap project and qualify a
-PACS-to-REDCap round trip before use. The importer must honor the supplied numeric
-repeat instance and update existing values. Live importer behavior and field limits
-have not been verified. The record/event must already identify the intended case/scan;
-multiple scans routed to the same record/event and model intentionally share a slot.
-If earlier prototype exports were imported, reconcile those old instances before
-using the permanent mapping.
+Install pr2mask's dictionary plus `model_version` in the receiving REDCap project. The import
+of the one-instance release 20261027T083045Z has been confirmed; confirm instances 201+ and
+`model_version` with a PACS-to-REDCap round trip. The importer must honor the supplied numeric
+repeat instance and update existing values. The record/event must already identify the
+intended case/scan; multiple scans routed to the same record/event and model intentionally
+share the same instances.
