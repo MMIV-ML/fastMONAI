@@ -155,7 +155,7 @@ has block 200 (instances 201-299). Instances below 100 belong to the original (m
 at 1, pr2mask's own region numbering and the earlier one-instance-per-model scheme: the nnU-Net
 large container in the separate nnU-Net repository still writes its largest region to 10.
 DynUNet wrote its largest region to 11 up to 20261027T083045Z (3 before 2026-10-21; the
-retired UNet used 2); those results are removed in REDCap. Block 100 is planned for nnU-Net.
+retired UNet used 2); those results are no longer updated. Block 100 is planned for nnU-Net.
 Keep blocks unique across both projects, and don't renumber or reuse them after REDCap
 imports. Register each new bundle with an unused block before building a release. Unknown
 bundles, duplicate blocks, invalid bases and region numbers of 100 or more fail closed. The
