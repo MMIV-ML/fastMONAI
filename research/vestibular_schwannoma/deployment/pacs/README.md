@@ -76,9 +76,13 @@ in the PACS `config.json` and fill in the series selector:
 "ENTRY_NAME": {
   "select": "<VS CE-T1 series selector>",
   "ROR_CONT_OPTIONS": "{}",
-  "docker_image": "fastmonai-vsseg:<BUILD_VERSION>"
+  "docker_image": "fastmonai-vsseg:latest"
 },
 ```
+
+The entry uses `latest`, so a new release needs no config change. The release archive
+carries both tags, and loading it moves `latest` to the new image. The dated tag shows
+which release `latest` is.
 
 `"{}"` runs the defaults. Use `"{\"tta\":false}"` to turn TTA off. Don't write `"\"\""`
 here: that passes two quote characters and is rejected.
