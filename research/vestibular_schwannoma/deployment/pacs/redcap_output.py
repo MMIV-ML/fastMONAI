@@ -21,6 +21,8 @@ MODEL_VERSION_FIELD = "model_version"
 # numbering and earlier single-instance models.
 REGION_BLOCK = 100
 MAX_INSTANCE = 2147483647
+# REDCap cuts longer values, which leaves pr2mask's mask text undecodable.
+MAX_VALUE_BYTES = 65535
 
 
 def model_instance_base(bundle_sha256):
@@ -151,6 +153,10 @@ def write_redcap_output(work_dir, input_dir, deployment, *, model_version):
     rows = []
     for number, region in sorted(regions.items()):
         values = region | {MODEL_VERSION_FIELD: model_version}
+        for name, value in values.items():
+            if len(value.encode("utf-8")) > MAX_VALUE_BYTES:
+                print(f"REDCap: {name} of region {number} is over {MAX_VALUE_BYTES} bytes, sent blank")
+                values[name] = ""
         instance = str(base + number)
         rows += [
             dict(
