@@ -1261,8 +1261,10 @@ class GpuPatchAugmentation:
             down_size = list(orig_size)
             down_size[axis] = max(1, round(orig_size[axis] / factor))
 
-            # Downsample with nearest, upsample with trilinear
-            down = F.interpolate(sample, size=down_size, mode='nearest')
+            # Downsample with nearest at the sample centres, so the image moves at
+            # most half a voxel against the mask (as in TorchIO), then upsample with
+            # trilinear
+            down = F.interpolate(sample, size=down_size, mode='nearest-exact')
             up = F.interpolate(down, size=orig_size, mode='trilinear',
                                align_corners=False)
             img[i:i+1] = up
