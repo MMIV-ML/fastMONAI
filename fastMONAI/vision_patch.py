@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastai.learner import Learner
 from .vision_core import MedImage, MedMask, med_img_reader
 from .vision_plot import find_max_slice
-from .vision_inference import _do_resize, _resize_labels, keep_largest
+from .vision_inference import _resample_to_grid, _resample_labels, keep_largest
 from .dataset_info import MedDataset, suggest_patch_size
 from .vision_augmentation import transforms_to_specs, transforms_from_specs
 from .utils import unwrap_compiled_model
@@ -1232,7 +1232,6 @@ class _PreparedSubject:
     subject: tio.Subject
     org_img: tio.Image
     input_img: tio.Image
-    org_size: tuple
     padding: tuple
     valid_slices: tuple
     grid_sampler: tio.GridSampler
@@ -1355,8 +1354,8 @@ class PatchInferenceEngine:
 
         Thread-safe: creates only new local objects and reads only immutable self config.
         """
-        # Keep org_img and org_size for post-processing
-        org_img, input_img, org_size = med_img_reader(
+        # Keep org_img: predictions are restored onto its grid
+        org_img, input_img, _ = med_img_reader(
             img_path, apply_reorder=self.apply_reorder, target_spacing=self.target_spacing, only_tensor=False
         )
 
@@ -1398,7 +1397,7 @@ class PatchInferenceEngine:
 
         return _PreparedSubject(
             subject=subject, org_img=org_img, input_img=input_img,
-            org_size=org_size, padding=padding, valid_slices=valid_slices,
+            padding=padding, valid_slices=valid_slices,
             grid_sampler=grid_sampler, aggregator=aggregator,
             patch_loader=patch_loader
         )
@@ -1439,7 +1438,7 @@ class PatchInferenceEngine:
         prepared: _PreparedSubject,
         return_probabilities: bool = False
     ) -> tuple[torch.Tensor, np.ndarray]:
-        """Post-process the aggregated output (threshold/argmax, resize, reorient); returns (result, affine).
+        """Post-process the aggregated output (threshold/argmax, restore to the original grid); returns (result, affine).
 
         return_probabilities keeps the probability map and restores it with linear
         interpolation. Decoded labels are restored with self.label_interpolation.
@@ -1478,15 +1477,13 @@ class PatchInferenceEngine:
         else:
             pred_img = tio.LabelMap(tensor=result.float(), affine=prepared.input_img.affine)
 
+        # Resample onto the original image's grid, which also undoes the reordering
+        org_shape, org_affine = prepared.org_img.spatial_shape, prepared.org_img.affine
         if return_probabilities:
-            pred_img = _do_resize(pred_img, prepared.org_size, image_interpolation='linear')
+            pred_img = _resample_to_grid(pred_img, org_shape, org_affine,
+                                         image_interpolation='linear')
         else:
-            pred_img = _resize_labels(pred_img, prepared.org_size, self.label_interpolation)
-
-        # Reorient to original orientation (if reorder was applied)
-        if self.apply_reorder:
-            target_orientation = ''.join(prepared.org_img.orientation)
-            pred_img = tio.ToOrientation(target_orientation)(pred_img)
+            pred_img = _resample_labels(pred_img, org_shape, org_affine, self.label_interpolation)
 
         result = pred_img.data.cpu()
         if not return_probabilities:
