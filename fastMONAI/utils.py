@@ -950,6 +950,25 @@ def _read_preprocessing_manifest(path, dataset_version=None):
 
 
 # %% ../nbs/07_utils.ipynb #030876d2
+# IDs of runs started by a ModelTrackingCallback and not ended yet. A fit that raises
+# or is interrupted before after_fit leaves its run active; the next fit ends it as
+# FAILED instead of joining it.
+_OPEN_CALLBACK_RUNS = set()
+
+
+def _fail_open_callback_run():
+    """End the active run as FAILED if a ModelTrackingCallback started it and never ended it.
+
+    Returns True if a run was ended.
+    """
+    active_run = mlflow.active_run()
+    if active_run is None or active_run.info.run_id not in _OPEN_CALLBACK_RUNS:
+        return False
+    _OPEN_CALLBACK_RUNS.discard(active_run.info.run_id)
+    mlflow.end_run(status='FAILED')
+    return True
+
+
 class ModelTrackingCallback(Callback):
     """
     A FastAI callback for comprehensive MLflow experiment tracking.
@@ -1247,15 +1266,12 @@ class ModelTrackingCallback(Callback):
         With ``auto_start=False`` the active run is used. If no run is active, the
         callback starts its own, so MLflow does not open an implicit run that stays
         active after fit. A run started by this callback is ended with status FAILED
-        if this setup raises, or at the next fit if an earlier fit raised before
-        after_fit.
+        if this setup raises. A run that a ModelTrackingCallback started but never
+        ended, because its fit raised or was interrupted before after_fit, is ended
+        with status FAILED at the next fit.
         """
         active_run = mlflow.active_run()
-        if (
-            self._auto_started and active_run is not None
-            and active_run.info.run_id == self.run_id
-        ):
-            self.mark_failed()
+        if _fail_open_callback_run():
             active_run = None
 
         if self.auto_start or active_run is None:
@@ -1265,6 +1281,7 @@ class ModelTrackingCallback(Callback):
                 self.run_name = self.run_name or f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             started_run = mlflow.start_run(run_name=self.run_name)
             self.run_id = started_run.info.run_id
+            _OPEN_CALLBACK_RUNS.add(self.run_id)
             self._auto_started = True
             self._owns_run = True
             self._run_failed = False
@@ -1324,6 +1341,7 @@ class ModelTrackingCallback(Callback):
         
         if self._auto_started:
             mlflow.end_run()
+            _OPEN_CALLBACK_RUNS.discard(self.run_id)
             self._auto_started = False
 
     def mark_failed(self) -> None:
@@ -1338,6 +1356,7 @@ class ModelTrackingCallback(Callback):
             mlflow.tracking.MlflowClient().set_terminated(
                 self.run_id, status='FAILED'
             )
+        _OPEN_CALLBACK_RUNS.discard(self.run_id)
         self._run_failed = True
 
     def log_metrics(self, metrics: dict) -> None:
