@@ -1,5 +1,6 @@
 import json
 import tempfile
+import types
 import unittest
 from dataclasses import replace
 from contextlib import redirect_stderr, redirect_stdout
@@ -557,9 +558,15 @@ class TrainingOrchestrationTests(unittest.TestCase):
                 encoding="utf-8",
             )
             changed_preprocessing = contract((3,))
+            preprocessing_manifest.write_text(
+                '{"dataset_version": "test", "contract": {"target_spacing": [1, 1, 1]}}',
+                encoding="utf-8",
+            )
+            changed_preprocessing_settings = contract((3,))
 
         self.assertEqual(first["sha256"], second["sha256"])
         for changed in (
+            changed_preprocessing_settings,
             changed_epoch,
             changed_patch,
             changed_assignment,
@@ -576,6 +583,51 @@ class TrainingOrchestrationTests(unittest.TestCase):
             first["payload"]["loss_spec"],
             model_config.loss_spec,
         )
+
+    def test_training_contract_is_the_same_on_every_machine_and_entry_point(self):
+        train_df = pd.DataFrame({"case_id": ["a", "b"], "fold": [1, 2]})
+        model_config = TRAINING_MODEL_CONFIGS["unet"]
+        loss = model_config.make_loss
+        # The same loss factory imported as workflow.models (notebook 01) instead of
+        # vestibular_schwannoma.workflow.models (train_5fold.py).
+        notebook_loss = types.FunctionType(
+            loss.__code__, loss.__globals__, loss.__name__, loss.__defaults__,
+            loss.__closure__,
+        )
+        notebook_loss.__qualname__ = loss.__qualname__
+        notebook_loss.__module__ = "workflow.models"
+
+        def contract(directory, source, mtime_ns, workers, model):
+            manifest = Path(directory) / "preprocessing_manifest.json"
+            manifest.write_text(json.dumps({
+                "contract": {"target_spacing": [0.4102, 0.4102, 1.5]},
+                "dataset_version": "labels",
+                "preprocessing_cache_version": f"cache-{source}",
+                "sources": [{"image": {"path": source, "mtime_ns": mtime_ns}}],
+            }), encoding="utf-8")
+            return training._make_training_contracts(
+                {"unet": model},
+                train_df,
+                ExperimentConfig(
+                    model_keys=("unet",),
+                    epochs=1,
+                    compile_models=False,
+                    preprocess_workers=workers,
+                ),
+                SimpleNamespace(patch_overlap=0.5),
+                manifest,
+            )["unet"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            here = contract(directory, "/home/a/nii_data/x.nii.gz", 1, 32, model_config)
+            there = contract(
+                directory,
+                "/home/b/data/x.nii.gz",
+                2,
+                16,
+                replace(model_config, make_loss=notebook_loss),
+            )
+        self.assertEqual(here["sha256"], there["sha256"])
 
     def test_sweep_rejects_an_existing_results_root(self):
         experiment = ExperimentConfig(

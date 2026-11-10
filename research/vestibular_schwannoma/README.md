@@ -74,6 +74,11 @@ export MLFLOW_TRACKING_URI=http://mlflow.example:5000
 
 Never merge run IDs from different tracking stores.
 
+Folds trained on different machines, or in notebook 01 and with the script, can be merged
+if every machine prepared the data with `scripts/prepare_data.py`, `verify` passed, and all
+jobs use the same commit, conda environment and training settings, including
+`--queue-workers` and `--queue-length`.
+
 ## Merge parallel folds
 
 Each launcher updates `completed_run_ids.json` after every successful fold. A subset run is not

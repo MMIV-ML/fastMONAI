@@ -13,7 +13,7 @@ import torch
 import numpy as np
 from scipy.ndimage import distance_transform_edt, label
 from skimage.morphology import remove_small_objects
-from torchio import Resize, Image, ScalarImage
+from torchio import Pad, Resample, Image, ScalarImage
 from .vision_core import *
 from .vision_augmentation import do_pad_or_crop, transforms_from_specs
 from fastMONAI.utils import (
@@ -45,28 +45,22 @@ def save_series_pred(series_obj, save_dir, val='1234'):
         
     series_obj.write(save_dir, opts={'keep_uid': True}, formats=['dicom'])
 
-# %% ../nbs/06_vision_inference.ipynb #e4a2771e-25aa-4669-bda2-abcbe29d0504
-def _to_original_orientation(input_img, org_orientation):
-    """Reorients the image to its original orientation."""
-    
-    from SimpleITK import DICOMOrient, GetArrayFromImage
-    orientation_itk = DICOMOrient(input_img, org_orientation)
-    reoriented_array =  GetArrayFromImage(orientation_itk).transpose()
-    
-    return reoriented_array[None]
-
 # %% ../nbs/06_vision_inference.ipynb #75a1169f-7385-4c48-9a24-51994c80732c
-def _do_resize(o, target_shape, image_interpolation='linear', 
-               label_interpolation='nearest'):
-    """Resample images so the output shape matches the given target shape."""
+def _resample_to_grid(o, shape, affine, image_interpolation='linear',
+                      label_interpolation='nearest'):
+    """Resample an image onto the voxel grid given by shape and affine.
 
-    resize = Resize(
-        target_shape, 
-        image_interpolation=image_interpolation, 
-        label_interpolation=label_interpolation
+    Predictions are restored onto the original image's own grid, so they line up with it
+    in any orientation. The input's edge voxels are repeated once first: a resampled grid
+    can end almost one of its own voxels short of the original image's edge voxels, and
+    those voxels take the edge value instead of 0.
+    """
+    resample = Resample(
+        (tuple(int(n) for n in shape), np.asarray(affine, dtype=float)),
+        image_interpolation=image_interpolation,
+        label_interpolation=label_interpolation,
     )
-    
-    return resize(o)
+    return resample(Pad(1, padding_mode='edge')(o))
 
 # %% ../nbs/06_vision_inference.ipynb #shape-based-label-resize
 def _signed_depth(mask: np.ndarray, spacing, margin: int = 8) -> np.ndarray:
@@ -91,11 +85,11 @@ def _signed_depth(mask: np.ndarray, spacing, margin: int = 8) -> np.ndarray:
     return depth
 
 
-def _resize_labels(o, target_shape, label_interpolation='shape'):
-    """Resize a single-channel label image so its shape matches target_shape.
+def _resample_labels(o, shape, affine, label_interpolation='shape'):
+    """Resample a single-channel label image onto the voxel grid given by shape and affine.
 
     'shape' uses shape-based interpolation: the signed distance to the edge of the
-    foreground (all labels together) is resized with cubic B-spline interpolation and
+    foreground (all labels together) is resampled with cubic B-spline interpolation and
     decides which voxels are foreground. With several labels, the same is done for each
     label and every foreground voxel takes the label it lies deepest inside, so labels
     that touch keep touching. A slice that falls between two source slices gets an
@@ -103,22 +97,22 @@ def _resize_labels(o, target_shape, label_interpolation='shape'):
     nearest source voxel.
     """
     if label_interpolation == 'nearest':
-        return _do_resize(o, target_shape, image_interpolation='nearest')
+        return _resample_to_grid(o, shape, affine, image_interpolation='nearest')
     if label_interpolation != 'shape':
         raise ValueError(
             f"label_interpolation must be 'shape' or 'nearest', got {label_interpolation!r}")
-    if tuple(o.spatial_shape) == tuple(target_shape):
+    if tuple(o.spatial_shape) == tuple(shape) and np.allclose(o.affine, affine):
         return o
     if o.data.shape[0] != 1:
         raise ValueError(f"Expected a single-channel label image, got {o.data.shape[0]} channels")
     labels = o.data[0].numpy()
     values = [v for v in np.unique(labels) if v != 0]
     if not values:
-        return _do_resize(o, target_shape, image_interpolation='nearest')
+        return _resample_to_grid(o, shape, affine, image_interpolation='nearest')
     masks = [labels != 0] + ([labels == v for v in values] if len(values) > 1 else [])
     depth = np.stack([_signed_depth(m, o.spacing) for m in masks])
-    resized = _do_resize(ScalarImage(tensor=torch.from_numpy(depth), affine=o.affine),
-                         target_shape, image_interpolation='bspline')
+    resized = _resample_to_grid(ScalarImage(tensor=torch.from_numpy(depth), affine=o.affine),
+                                shape, affine, image_interpolation='bspline')
     values = torch.as_tensor(values, dtype=torch.float32)
     label = values[resized.data[1:].argmax(0)] if len(values) > 1 else values[0]
     restored = torch.where(resized.data[0] > 0, label, 0.)
@@ -217,17 +211,17 @@ def _prediction_save_path(save_path, fn, org_img):
     return Path(save_path) / ('pred_' + Path(source_fn).name)
 
 
-def _restore_prediction(pred, org_img, input_img, org_size, label_interpolation, save_fn=None):
+def _restore_prediction(pred, org_img, input_img, label_interpolation, save_fn=None):
     """Map a predicted mask back to the original image space, then save or return it.
 
-    The mask is padded or cropped to the preprocessed shape, resized to the original shape,
-    reoriented to the original orientation and given the original affine.
+    The mask is padded or cropped to the preprocessed shape, then resampled onto the
+    original image's grid, which gives it the original shape, orientation and affine.
     """
     pred_mask = do_pad_or_crop(pred.float(), input_img.shape[1:], padding_mode=0, mask_name=None)
     input_img.set_data(pred_mask)
-    input_img = _resize_labels(input_img, org_size, label_interpolation)
-    reoriented_array = _to_original_orientation(input_img.as_sitk(), ''.join(org_img.orientation))
-    pred_img = ScalarImage(tensor=reoriented_array, affine=org_img.affine.copy())
+    restored = _resample_labels(input_img, org_img.spatial_shape, org_img.affine,
+                                label_interpolation)
+    pred_img = ScalarImage(tensor=restored.data.float(), affine=org_img.affine.copy())
     if save_fn is None:
         return pred_img
     pred_img.save(save_fn)
@@ -253,8 +247,8 @@ def inference_from_config(model, inference_config, fn: (str, Path) = '',
 
     apply_reorder = inference_config['apply_reorder']
     target_spacing = inference_config['target_spacing']
-    if org_img is None or input_img is None or org_size is None:
-        org_img, input_img, org_size = med_img_reader(
+    if org_img is None or input_img is None:
+        org_img, input_img, _ = med_img_reader(
             fn, apply_reorder, target_spacing, only_tensor=False
         )
     else:
@@ -271,7 +265,7 @@ def inference_from_config(model, inference_config, fn: (str, Path) = '',
             'Decoded segmentation must have shape [D, H, W] or [1, D, H, W]; '
             f'got {tuple(pred.shape)}.'
         )
-    return _restore_prediction(pred, org_img, input_img, org_size, label_interpolation, save_fn)
+    return _restore_prediction(pred, org_img, input_img, label_interpolation, save_fn)
 
 # %% ../nbs/06_vision_inference.ipynb #2ba94a55-2cd1-4fae-b8b4-e82051be0cdc
 def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
@@ -286,13 +280,13 @@ def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
         apply_reorder: Whether to reorder the image to RAS+, as in training.
         target_spacing: Voxel spacing used in training, or None to keep the original spacing.
         fn: Image path, or a list of paths stacked as channels. Not needed when
-            `org_img`, `input_img` and `org_size` are given.
+            `org_img` and `input_img` are given.
         save_path: Directory to save the mask in as 'pred_<file name>'. If None, the mask
             is returned instead.
         org_img: Original image, as returned by `med_img_reader(..., only_tensor=False)`.
         input_img: Preprocessed image from the same call. It is cast to float32 before
             prediction.
-        org_size: Original image shape from the same call.
+        org_size: Not used; accepted so existing calls keep working.
         label_interpolation: 'shape' (default) restores the mask with shape-based
             interpolation; 'nearest' copies the nearest voxel instead.
 
@@ -303,15 +297,15 @@ def inference(learn_inf, apply_reorder, target_spacing, fn: (str, Path) = '',
 
     learn_inf = unwrap_compiled_model(learn_inf)
 
-    if None in [org_img, input_img, org_size]:
-        org_img, input_img, org_size = med_img_reader(fn, apply_reorder, target_spacing,
-                                                      only_tensor=False)
+    if org_img is None or input_img is None:
+        org_img, input_img, _ = med_img_reader(fn, apply_reorder, target_spacing,
+                                               only_tensor=False)
     else:
         org_img, input_img = copy(org_img), copy(input_img)
     save_fn = _prediction_save_path(save_path, fn, org_img)
 
     pred, *_ = learn_inf.predict(input_img.data.float())
-    return _restore_prediction(pred, org_img, input_img, org_size, label_interpolation, save_fn)
+    return _restore_prediction(pred, org_img, input_img, label_interpolation, save_fn)
 
 # %% ../nbs/06_vision_inference.ipynb #1730df1e-e6d7-4fa7-b40e-83f4dda26dc5
 def compute_binary_tumor_volume(mask_data: Image):

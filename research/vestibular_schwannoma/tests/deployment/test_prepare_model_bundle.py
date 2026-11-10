@@ -33,6 +33,21 @@ class ArtifactSelectionTests(unittest.TestCase):
             ]
         )
 
+    def test_run_download_uses_fastmonai_store_unless_uri_is_configured(self):
+        import mlflow
+
+        for configured in (False, True):
+            with self.subTest(configured=configured), \
+                    patch.object(mlflow, "is_tracking_uri_set", return_value=configured), \
+                    patch.object(bundle, "set_mlflow_tracking_uri") as set_uri, \
+                    patch.object(mlflow.artifacts, "download_artifacts",
+                                 return_value="/tmp/model.safetensors") as download:
+                path = bundle._download_run_artifact("run-id", "model/best_model.safetensors")
+            self.assertEqual(path, Path("/tmp/model.safetensors"))
+            self.assertEqual(set_uri.called, not configured)
+            download.assert_called_once_with(
+                run_id="run-id", artifact_path="model/best_model.safetensors")
+
     def test_pacs_and_research_expect_the_same_output_contract(self):
         self.assertEqual(
             bundle.make_output_spec("multiclass_segmentation", classes=2),

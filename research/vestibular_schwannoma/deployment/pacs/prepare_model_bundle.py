@@ -38,6 +38,7 @@ from fastMONAI.vision_all import (
     load_safetensors_model,
     make_output_spec,
     read_safetensors_metadata,
+    set_mlflow_tracking_uri,
 )
 from deployment_hashing import (
     bundle_sha256 as _bundle_sha256,
@@ -97,6 +98,9 @@ def _declared_sources(args) -> list[MemberSource]:
 def _download_run_artifact(run_id: str, artifact_path: str) -> Path:
     import mlflow
 
+    # Use fastMONAI's store, where training logged, unless MLFLOW_TRACKING_URI is set.
+    if not mlflow.is_tracking_uri_set():
+        set_mlflow_tracking_uri()
     return Path(mlflow.artifacts.download_artifacts(
         run_id=run_id, artifact_path=artifact_path
     ))
