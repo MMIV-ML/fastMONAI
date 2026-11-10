@@ -40,7 +40,7 @@ from .run_selection import (
 )
 
 
-VS_TRAINING_WORKFLOW_REVISION = 1
+VS_TRAINING_WORKFLOW_REVISION = 2
 
 
 @dataclass(frozen=True)
@@ -125,17 +125,23 @@ def _make_training_contracts(
     manifest_path = Path(preprocessing_manifest).expanduser()
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Preprocessing manifest not found: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
+    # The contract holds only what changes the trained model, so folds trained on
+    # different machines, or from the notebook and the script, can be merged.
     experiment_payload = asdict(experiment)
-    for field_name in ("model_keys", "folds", "continue_on_error"):
+    for field_name in ("model_keys", "folds", "continue_on_error", "preprocess_workers"):
         experiment_payload.pop(field_name)
     shared_payload = {
         "experiment": experiment_payload,
         "fold_assignments_sha256": _json_sha256(assignments),
         "patch_config": patch_config_to_dict(patch_config),
-        "preprocessing_manifest_sha256": hashlib.sha256(
-            manifest_path.read_bytes()
-        ).hexdigest(),
+        # Preprocessing settings and the label-content fingerprint. The rest of the
+        # manifest records source paths and file times, which differ between machines.
+        "preprocessing": {
+            "contract": manifest.get("contract"),
+            "dataset_version": manifest.get("dataset_version"),
+        },
         "training_case_count": len(assignments),
         "training_workflow_revision": VS_TRAINING_WORKFLOW_REVISION,
     }
@@ -145,10 +151,8 @@ def _make_training_contracts(
         contracts[model_key] = make_training_contract(
             {
                 **shared_payload,
-                "loss_factory": (
-                    f"{model_config.make_loss.__module__}."
-                    f"{model_config.make_loss.__qualname__}"
-                ),
+                # The module path depends on how the package was imported.
+                "loss_factory": model_config.make_loss.__qualname__,
                 "loss_spec": model_config.loss_spec,
                 "model_key": model_key,
                 "model_spec": model_config.model_spec,
