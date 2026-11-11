@@ -348,7 +348,12 @@ class PostprocessingTests(unittest.TestCase):
                 )
 
             tag_mask.assert_called_once_with(labels_series, deployment, use_tta=True)
-            export_redcap.assert_called_once_with(work_dir, input_dir, deployment)
+            export_redcap.assert_called_once_with(
+                work_dir,
+                input_dir,
+                deployment,
+                model_version="dynunet 5-fold, fastmonai-vsseg:20260817T120000Z",
+            )
             self.assertEqual(len(calls), 3)
             identity = "20260817T120000Z_dynunet_tta"
             self.assertLessEqual(len(identity), 64)

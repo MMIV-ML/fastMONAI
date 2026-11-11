@@ -204,13 +204,10 @@ docker tag "<CONTAINER_NAME>:$BUILD_VERSION" "<CONTAINER_NAME>:latest"
 
 ARCHIVE="<CONTAINER_NAME>-$BUILD_VERSION.tar.gz"
 docker save "<CONTAINER_NAME>:$BUILD_VERSION" "<CONTAINER_NAME>:latest" | gzip > "$ARCHIVE"
-
-sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
-sha256sum -c "$ARCHIVE.sha256"
 ```
 
-The SHA-256 detects archive corruption during transfer; it does not test the image. After
-`docker load`, either tag can be called. The dated tag is the stable release and rollback
+Don't write a `.sha256` file into the release folder. After `docker load`, the image ID
+confirms the right image arrived, and either tag can be called. The dated tag is the stable release and rollback
 identity; `latest` follows whichever archive was loaded or tagged last.
 
 ## 9. Research PACS Deployment
@@ -219,7 +216,7 @@ Register the qualified image and its DICOM selection criteria with the Research 
 
 Provide the Research PACS administrator with:
 
-- the dated tag, `latest` alias, image ID or registry digest, and archive checksum;
+- the dated tag, `latest` alias, and image ID or registry digest;
 - the Git commit, ROR executable identity, and Fiona base image ID or digest;
 - the model-bundle names and hashes;
 - the bundle's DICOM schema;

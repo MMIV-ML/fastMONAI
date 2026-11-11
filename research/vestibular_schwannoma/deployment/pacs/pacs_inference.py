@@ -29,13 +29,14 @@ from parallel_inference import (
     TTA_FLIP_AXES,
     ParallelEnsemblePatchInferenceEngine,
 )
-from redcap_output import write_redcap_output, model_repeat_instance
+from redcap_output import model_instance_base, write_redcap_output
 
 
 SW_BATCH_SIZE = 1
 THREADS_PER_ENSEMBLE_MODEL = 3
 DEFAULT_WORK_DIR = Path("/output_tmp")
 DEFAULT_PR2MASK_DIR = Path("/pr2mask")
+IMAGE_NAME = "fastmonai-vsseg"
 FINAL_OUTPUT_DIRS = ("fused", "fused_vote_map", "reports", "labels", "redcap")
 LOG_NAME = "pacs_command.log"
 
@@ -81,6 +82,13 @@ def validate_prediction_outputs(mask, probabilities):
 def _deployment_label(deployment: dict) -> str:
     count = len(deployment["members"])
     return "single model" if count == 1 else f"{count}-model ensemble"
+
+
+def _model_version(deployment: dict, version: str) -> str:
+    """Model and container release for pr2mask's REDCap model_version field."""
+    count = len(deployment["members"])
+    members = "single model" if count == 1 else f"{count}-fold"
+    return f"{deployment['model_type']} {members}, {IMAGE_NAME}:{version}"
 
 
 def _create_inference_engine(deployment: dict):
@@ -286,7 +294,12 @@ def _run_postprocessing(
                 check=True,
             )
     _tag_pr2mask_labels(work_dir, deployment, use_tta=use_tta)
-    write_redcap_output(work_dir, input_dir, deployment)
+    write_redcap_output(
+        work_dir,
+        input_dir,
+        deployment,
+        model_version=_model_version(deployment, version),
+    )
     _copy_final_outputs(work_dir, output_dir)
     _publish_log(log_path, output_dir)
 
@@ -316,7 +329,7 @@ def run_inference(
     print("=" * 60)
 
     deployment = load_deployment(model_type)
-    model_repeat_instance(deployment["bundle_sha256"])
+    model_instance_base(deployment["bundle_sha256"])
     patch_config = deployment["patch_config"]
     label = _deployment_label(deployment)
     print(f"Deployment: {label}")

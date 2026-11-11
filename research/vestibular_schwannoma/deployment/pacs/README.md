@@ -1,165 +1,111 @@
-# Vestibular Schwannoma ROR/PACS Container
+# Vestibular schwannoma PACS container
 
-Build the CE-T1w vestibular schwannoma container with the five-fold DynUNet ensemble. The
-UNet bundle was retired in October 2026 because it had more false positives than DynUNet.
-Multiple Safetensors members run concurrently in separate CPU workers with three
-threads per model. Five-fold deployment therefore requires at least 15 available CPU
-threads; the qualified target has 16. TTA is enabled by default and averages two passes, the
-original and one copy flipped anterior-posterior and inferior-superior together (`TTA_FLIP_AXES`
-in `parallel_inference.py`), as in the nnU-Net container. On the 344 held-out cases this gave
-about the same false positives as all 8 flips at a quarter of the cost.
+ROR/PACS container that runs the five-fold DynUNet ensemble on a CE-T1w series. CPU only:
+each of the five models runs in its own worker with three threads, so it needs at least 15
+CPU threads. TTA is on by default and averages the original and one copy flipped
+anterior-posterior and inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`), as in
+the nnU-Net container. For the general workflow see
+[Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md).
 
-See [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md)
-for the general build, qualification, export, and handoff workflow.
+## Build a release
 
-## Prepare model bundles
+1. Prepare the model bundle in the environment pinned in `requirements.yml` (the strict
+   metadata check depends on the PyTorch version), with full MLflow run IDs:
 
-Use the environment pinned in `requirements.yml` to prepare bundles. Strict model
-metadata checks also depend on the PyTorch version; matching fastMONAI alone is
-insufficient. Provide complete MLflow run IDs.
+   ```bash
+   python prepare_model_bundle.py --model-type dynunet --artifact-role best \
+     --run "fold_1=$RUN_1" --run "fold_2=$RUN_2" --run "fold_3=$RUN_3" \
+     --run "fold_4=$RUN_4" --run "fold_5=$RUN_5"
+   ```
 
-Five-fold ensemble:
+   The bundle goes to `model_bundles/dynunet/` (not in Git). `--artifact MEMBER=/path.safetensors`
+   adds a local file instead of a run. A new bundle must be registered in
+   `redcap_model_instances.json` (see below) or the container refuses to run.
 
-```bash
-python prepare_model_bundle.py \
-  --model-type dynunet \
-  --run "fold_1=${FOLD_1_RUN_ID}" \
-  --run "fold_2=${FOLD_2_RUN_ID}" \
-  --run "fold_3=${FOLD_3_RUN_ID}" \
-  --run "fold_4=${FOLD_4_RUN_ID}" \
-  --run "fold_5=${FOLD_5_RUN_ID}" \
-  --artifact-role best
-```
+2. Test (from `research/`) and build:
 
-Repeat `--run MEMBER=RUN_ID` for other ensemble sizes, or use
-`--artifact MEMBER=/path/model.safetensors` for a local artifact. The builder validates and
-strict-loads each member into the ignored `model_bundles/<model-type>/` directory.
+   ```bash
+   (cd ../../.. && python -m unittest discover -s vestibular_schwannoma/tests/deployment -t .)
+   BUILD_VERSION="$(date -u +%Y%m%dT%H%M%SZ)"
+   docker build --pull --build-arg VERSION="$BUILD_VERSION" -f .ror/virt/Dockerfile \
+     -t "fastmonai-vsseg:$BUILD_VERSION" -t fastmonai-vsseg:latest .
+   ```
 
-The intermediate `model_mask` and `vote_map` series use deterministic `2.25` UIDs.
-Published series keep pr2mask's UIDs.
+   Qualify on test data with `ror trigger -cont "fastmonai-vsseg:$BUILD_VERSION" -each -keep`.
 
-## Test and build
+3. Package both tags in `release_packages/$BUILD_VERSION/` with a short README and
+   `ror_select_entry.txt`. Don't add a `.sha256`; the image ID after `docker load` is the check.
 
-Run the deployment tests first (the test discovery runs from `research/`):
+   ```bash
+   docker save "fastmonai-vsseg:$BUILD_VERSION" fastmonai-vsseg:latest \
+     | gzip > "release_packages/$BUILD_VERSION/fastmonai-vsseg-$BUILD_VERSION.tar.gz"
+   ```
 
-```bash
-conda activate fastmonai
-(cd ../../.. && python -m unittest discover -s vestibular_schwannoma/tests/deployment -t .)
-bash -n entrypoint.sh
-```
-
-Build dated and `latest` tags for the same image:
-
-```bash
-BUILD_VERSION="$(date -u +%Y%m%dT%H%M%SZ)"
-
-docker build --pull \
-  --build-arg VERSION="$BUILD_VERSION" \
-  -f .ror/virt/Dockerfile \
-  -t "fastmonai-vsseg:$BUILD_VERSION" \
-  -t "fastmonai-vsseg:latest" \
-  .
-```
-
-Qualify and deliver the dated tag:
-
-```bash
-ror trigger -cont "fastmonai-vsseg:$BUILD_VERSION" -each -keep \
-  -envs '{"model-type":"dynunet","tta":true}'
-```
-
-As a ror workflow, add this entry to the select statements. Release packages also
-include it as `ror_select_entry.txt`. Replace `ENTRY_NAME` with the workflow `name`
-in the PACS `config.json` and fill in the series selector:
+The PACS entry uses `fastmonai-vsseg:latest`, so loading a new archive is enough:
 
 ```json
 "ENTRY_NAME": {
   "select": "<VS CE-T1 series selector>",
   "ROR_CONT_OPTIONS": "{}",
-  "docker_image": "fastmonai-vsseg:<BUILD_VERSION>"
+  "docker_image": "fastmonai-vsseg:latest"
 },
 ```
 
-`"{}"` runs the defaults. Use `"{\"tta\":false}"` to turn TTA off. Don't write `"\"\""`
-here: that passes two quote characters and is rejected.
+## Options
 
-## Runtime contract
+`ROR_CONT_OPTIONS` accepts `model-type` (`dynunet`, the default and only model) and `tta`
+(JSON Boolean, default `true`). `"{}"` runs the defaults and `"{\"tta\":false}"` turns TTA
+off. Unknown keys and invalid values fail before inference, as do inconsistent study, series,
+SOP, modality or geometry headers.
 
-`ROR_CONT_OPTIONS` accepts:
+## Outputs
 
-- `model-type`: `dynunet` (the default and only model).
-- `tta`: JSON Boolean, default `true`.
+The container writes two intermediate series, `model_mask` and `vote_map`, which pr2mask
+turns into the published outputs:
 
-Unknown keys and invalid values fail before inference. Header preflight rejects
-inconsistent Study, Series, SOP, modality, or geometry data; nonstandard source UIDs and
-missing optional Frame of Reference metadata produce aggregated warnings.
+- `fused`: the mask drawn on the MR.
+- `fused_vote_map`: the vote map on the MR. Blue is exactly the mask; yellow marks voxels
+  outside it with some foreground probability.
+- `reports`: pr2mask's report, with measurements per region.
+- `labels`: the mask series, in pr2mask's study, window and UIDs, plus our provenance
+  (SeriesDescription, SoftwareVersions, DerivationDescription with the bundle hash and TTA, and a
+  `MASK` ImageType value).
+- `redcap`: pr2mask's REDCap rows, see below.
 
-The runtime writes intermediate `model_mask` and `vote_map` DICOM series. Fiona's `pr2mask`
-reads them and creates `fused`, `fused_vote_map`, `reports`, and its own mask series in
-`labels/`, using pr2mask's folder layout. fastMONAI provenance (SeriesDescription,
-SoftwareVersions, DerivationDescription, and a `MASK` ImageType value) is added to the
-`labels` series before it is published. Its study identity, window, and UIDs stay as pr2mask
-wrote them, so the PACS files the mask with the other pr2mask outputs. `model_mask` and
-`vote_map` are not published. Vote-map probabilities are `round(probability x 65535)`.
-pr2mask draws values from 32768 up in blue, so values inside the mask are raised to at
-least 32768 and values outside it lowered to at most 32767: the blue region is exactly the
-mask, and yellow marks voxels with some foreground probability outside it. Existing `fused`, `fused_vote_map`, `reports`, `labels`, and `redcap` directories are rejected
-to prevent overwrites.
+These folders must not exist in the output folder beforehand.
 
-### REDCap output
+## REDCap
 
-The final output includes pr2mask's `redcap/<mask-series-UID>/output.json` and
-`output_data_dictionary.zip`, in pr2mask's EAV row format and instrument. `redcap` is an
-owned output directory and must not already exist. There is no direct REDCap uploader.
-The exporter sends only pr2mask's own columns, in the model's permanent `pr2mask` repeat
-instance. An empty measurement list is routed with the source PatientID and
-ReferringPhysicianName (`EventName:` prefix removed), matching pr2mask routing. The mask
-itself goes to the PACS as the `labels` series.
+`redcap/<mask-series-UID>/output.json` holds pr2mask's EAV rows for the `pr2mask` instrument.
+There is no direct uploader; the PACS imports the file.
 
-Up to 20261026T134845Z the exporter also sent eight `vs_*` fields, among them the mask as
-`vs_mask_json`. They are no longer sent.
+- **One instance per region.** pr2mask numbers the mask's connected regions 1, 2, 3, ...
+  (26-connected, scan order). Region k goes to repeat instance base + k, where the base comes
+  from `redcap_model_instances.json`. DynUNet's base is 200, so its regions fill 201, 202, ...
+  Only instances with a region are written.
+- **Empty mask:** instance 201 with blank columns, so REDCap shows the model ran. It is routed
+  by the source PatientID and ReferringPhysicianName (`EventName:` removed), like pr2mask.
+- **`model_version`** is added to every instance, for example
+  `dynunet 5-fold, fastmonai-vsseg:20261110T082650Z`. The field is on the REDCap form, not in
+  pr2mask; the exporter also adds it to `output_data_dictionary.zip`.
+- **Mask text.** pr2mask's `mask_base64_gzip_compressed` covers the whole scan at 16 bits per
+  voxel: about 84,000 characters at 512x512x120 and 105,000 at 512x448x176. REDCap may cut
+  values over 65,535 characters; this hasn't been checked in the receiving project. The value
+  is sent as pr2mask wrote it, and the full mask is always in `labels`.
+- **Empty pr2mask dictionary.** For an empty mask pr2mask lists no columns, so the exporter
+  takes them from `pr2mask_dictionary.csv`. Regenerate that file from a non-empty run when
+  the Fiona base changes pr2mask's columns.
 
-### Stable model destinations and overwrites
+### Instance registry
 
-`redcap_model_instances.json` assigns each full bundle SHA-256 a permanent positive
-integer of at least 10. Instances 1-9 of the `pr2mask` instrument are left to the original
-(manual) mask and pr2mask's own region numbering. DynUNet uses instance 11, and the nnU-Net
-large container in the separate nnU-Net repository uses 10. Instance 12 is free for the next
-model. They moved from 3 and 2 on 2026-10-21, and results imported before that stay at the
-old instances. The retired UNet bundle was registered at instance 2.
-Keep allocations unique across both projects, and don't renumber or reuse entries after
-REDCap imports. Register each new bundle with an unused integer before building a release;
-unknown bundles, duplicate allocations and instances below 10 fail closed.
-The registry is copied into the container and validated before inference.
+`redcap_model_instances.json` gives each bundle hash a permanent block of 100 instances,
+stored as the base (a multiple of 100). DynUNet `c5642793...` has 200. Instance 1 is the manual
+mask; nnU-Net large still writes its largest region to 10, and block 100 is planned for it.
+Older DynUNet results at 11 (and 2/3 before that) are no longer updated.
 
-All fields for a model share its repeat instance. Within the same record/event:
-
-- The same bundle overwrites its previous result, including when TTA, deployment
-  version, timestamp or the predicted mask changes.
-- A different bundle uses a different instance, including different weights of
-  the same architecture.
-
-pr2mask writes each region as its own repeat instance (1, 2, 3, ...), which would collide
-with the model instances, so regions are not sent as separate instances. pr2mask's columns
-in the model instance hold the **largest** region (most voxels; ties keep the lower region
-number). pr2mask numbers regions in scan order, so the largest is not always region 1. An
-empty mask has no regions, so pr2mask lists no columns; the exporter then takes them from
-`pr2mask_dictionary.csv` and sends them blank, so the importer must overwrite blanks to
-clear values from an earlier run.
-
-Since the Fiona base of 2026-10-19, pr2mask also stores the mask in seven `mask_*` fields,
-which fill the columns for the largest region. `mask_base64_gzip_compressed` is about 84,000
-characters for a 512×512×120 scan, and REDCap cuts values longer than 65,535 characters, so
-it only decodes for small volumes. The full mask is in the PACS `labels` series.
-
-`pr2mask_dictionary.csv` holds the `instrument.csv` rows of a non-empty run of the packaged
-pr2mask. When the Fiona base changes, regenerate it from a smoke test and check that a
-non-empty run lists the same columns.
-
-Install pr2mask's dictionary in the receiving REDCap project and qualify a
-PACS-to-REDCap round trip before use. The importer must honor the supplied numeric
-repeat instance and update existing values. Live importer behavior and field limits
-have not been verified. The record/event must already identify the intended case/scan;
-multiple scans routed to the same record/event and model intentionally share a slot.
-If earlier prototype exports were imported, reconcile those old instances before
-using the permanent mapping.
+- A rerun of the same bundle overwrites its instances. If it finds fewer regions, the higher
+  instances of the earlier run stay.
+- New weights mean a new bundle hash. Give it an unused block, or replace the old entry to
+  overwrite the old model's results.
+- Never renumber blocks after REDCap imports. Unknown bundles, duplicate or invalid bases and
+  region numbers of 100 or more fail before any output is published.

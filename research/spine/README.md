@@ -1,30 +1,24 @@
-# Multi-Center CNN-based spine segmentation from T2w MRI using small amounts of data
-The source code, designed to reproduce our test results and facilitate training and running inference on your own data. 
-The trained weights and exported learners are available on [Hugging Face](https://huggingface.co/skaliy/spine-segmentation).
+# Multi-center CNN-based spine segmentation from T2w MRI using small amounts of data
 
-## Getting started
-### Quick Start
-You can run the notebooks directly in Google Colab.
+Code to reproduce our test results, train on your own data and run inference. Trained
+weights and exported learners are on [Hugging Face](https://huggingface.co/skaliy/spine-segmentation).
 
-### Local Setup (Optional)
-1. Clone this repository:
-```bash
-git clone https://github.com/MMIV-ML/fastMONAI
-```
-2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI/tree/main).
-3. (<b>Optional</b>) Run the `00-spine-segmentation-training-evaluation.ipynb` notebook to train your own model or to reproduce the test results reported in our paper.
-4. Run the `01-spine-segmentation-inference.ipynb` or `inference_script.py` to perform inference with the trained model on own data
+| Notebook | Colab |
+| --- | --- |
+| [00-spine-segmentation-training-evaluation](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/research/spine/00-spine-segmentation-training-evaluation.ipynb): reproduce the test results or train your own model | [Open](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/research/spine/00-spine-segmentation-training-evaluation.ipynb) |
+| [01-spine-segmentation-inference](https://nbviewer.org/github/MMIV-ML/fastMONAI/blob/main/research/spine/01-spine-segmentation-inference.ipynb): run the trained model on your own data | [Open](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/research/spine/01-spine-segmentation-inference.ipynb) |
 
-If you choose to use `inference_script.py`
-- Make the script executable using the following command in the terminal:
-```bash
-chmod +x inference_script.py
-```
-- Run the script by executing the following command in the terminal:
+## Local setup
+
+Clone this repository and [install fastMONAI](../../README.md). Then run the notebooks, or
+run inference from the command line:
+
 ```bash
 python inference_script.py IMG_PATH
 ```
 
-## Research PACS 
-Our spine segmentation application deployed in the research PACS system at our hospital: 
+## Research PACS
+
+The model runs in the research PACS at our hospital:
+
 ![](figs/research_pacs.png)

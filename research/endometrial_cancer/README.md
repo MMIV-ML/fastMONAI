@@ -1,60 +1,35 @@
 # Endometrial cancer segmentation
-The primary objective of this repository is to reproduce the results reported in [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf) and to integrate this model into research PACS (see [Results for VIBE](#results-for-vibe) section). 
-In addition, we have looked at improving the segmentation performance using multi-sequence MR images (T2w, VIBE, and ADC) (see [Results for multi-sequence (T2, VIBE, and ADC)](#results-for-multi-sequence-t2-vibe-and-adc) section).
 
-The trained weights and exported learner are available on [Hugging Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation). 
-A Gradio app for VIBE is included in `src/app.py`. To run it on your local system, follow the instructions in the [Getting started](#getting-started) section.
+Reproduces [Automated segmentation of endometrial cancer on MR images using deep learning](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf)
+on VIBE images, and tests whether T2w, VIBE and ADC together improve the segmentation. The
+VIBE model runs in the research PACS. Trained weights and the exported learner are on
+[Hugging Face](https://huggingface.co/skaliy/endometrial_cancer_segmentation).
 
-## Structure overview
-```
-├── figs
-│
-├── nbs            # Jupyter notebooks for training and inference
-│   ├── 01_ec_training.ipynb
-│   ├── 02_ec_inference.ipynb
-│   ├── 03_ec_training_multi.ipynb
-│   ├── 04_ec_inference_multi.ipynb
-│
-├── src                  
-│   ├── app.py               # Gradio app
-│   ├── inference_script.py     # Inference script for single-sequence 
-│   └── inference_script_multi.py  # Inference for multi-sequence 
-│
-└── README.md
-```        
+## Contents
 
-## Getting started
-1. Clone this repository:
-```bash
-git clone https://github.com/MMIV-ML/fastMONAI
-```
-2. Install fastMONAI by following the instructions provided [here](https://github.com/MMIV-ML/fastMONAI).
-3. (<b>Optional</b>) Run the `01_ec_training.ipynb` `03_ec_training_multi.ipynb` notebook to train your own model.
-4. Run the `02_ec_inference.ipynb`, `inference_script.py` or `app.py` to perform inference with the trained model for VIBE images.
-5. Run the `04_ec_inference_multi.ipynb` or `inference_script_multi.py` to perform inference with the trained model for T2w, VIBE, and ADC images.
+- `nbs/01_ec_training.ipynb`, `nbs/03_ec_training_multi.ipynb`: train the VIBE and the
+  multi-sequence model.
+- `nbs/02_ec_inference.ipynb` ([Colab](https://colab.research.google.com/github/MMIV-ML/fastMONAI/blob/main/research/endometrial_cancer/nbs/02_ec_inference.ipynb)),
+  `nbs/04_ec_inference_multi.ipynb`: run the trained models on your own data.
+- `src/inference_script.py IMG_PATH`, `src/inference_script_multi.py`: command-line inference.
+- `src/app.py`: Gradio app for VIBE. Install `gradio` and `opencv-python` (not fastMONAI
+  dependencies) and run `gradio app.py`; predictions are written to `src/ec_pred`.
 
-If you choose to use `inference_script.py` or `inference_script_multi.py`, please follow these steps:
+Install fastMONAI as described in the [main README](../../README.md).
 
-- Make the script executable using the following command in the terminal:
-```bash
-chmod +x inference_script.py
-```
-- Run the script by executing the following command in the terminal:
-```bash
-python inference_script.py IMG_PATH
-```
+## Results
 
-If you choose to use `app.py`, install `gradio` and `opencv-python` (they are not fastMONAI dependencies) and execute the following command in the terminal:
-```bash
-gradio app.py
-```
-The predicted mask will be stored in folder `ec_pred` in the `src` folder. 
+The test set was used for validation to leave more data for training, so the results are not
+directly comparable with the study. No post-processing is applied: keeping only the largest
+object sometimes removed the tumour in new cases. DSC columns: inter-rater, model vs rater 1,
+model vs rater 2.
 
-## Results for VIBE
-Note that our results are not directly comparable with the results reported in [study](https://link.springer.com/content/pdf/10.1038/s41598-020-80068-9.pdf), as we opted to use the test set for validation to allocate more data to training. Unlike the approach detailed in the study, we refrained from post-processing steps, such as retaining only the largest object. Predictions from new test cases indicate that this method could occasionally eliminate the tumor. Below is the box plot showcasing predictions on the validation set:
+**VIBE**, median DSC 0.8946, 0.8212, 0.779:
+
 ![](figs/vibe_boxplot.png)
 
-The results from the validation set are also presented in the table below:
+<details>
+<summary>Per-case results (VIBE)</summary>
 
 |    |   subject_id |   tumor_vol |   inter_rater |    r1_ml |      r2_ml |   n_components |
 |---:|-------------:|------------:|--------------:|---------:|-----------:|---------------:|
@@ -90,16 +65,18 @@ The results from the validation set are also presented in the table below:
 | 29 |          531 |       22.08 |     0.89225   | 0.555066 | 0.505109   |              1 |
 | 30 |          540 |        8.35 |     0.923702  | 0.855009 | 0.840958   |              1 |
 
-<b>Median DSC</b>: 0.8946, 0.8212, 0.779
+</details>
 
-Prediction on a new subject in the research PACS: 
+Prediction on a new subject in the research PACS:
+
 ![](figs/research_pacs_predicition.png)
 
-## Results for multi-sequence (T2, VIBE, and ADC)
-The box plot of the predictions on the validation set: 
+**T2w, VIBE and ADC**, median DSC 0.8946, 0.8521, 0.8137:
+
 ![](figs/t2_vibe_adc_boxplot.png)
 
-The results from the validation set are also presented in the table below:
+<details>
+<summary>Per-case results (T2w, VIBE and ADC)</summary>
 
 |    |   subject_id |   tumor_vol |   inter_rater |    r1_ml |     r2_ml |   n_components |
 |---:|-------------:|------------:|--------------:|---------:|----------:|---------------:|
@@ -135,7 +112,9 @@ The results from the validation set are also presented in the table below:
 | 29 |          531 |       22.08 |     0.89225   | 0.349648 | 0.319533  |              1 |
 | 30 |          540 |        8.35 |     0.923702  | 0.890343 | 0.88052   |              1 |
 
-<b>Median DSC</b>: 0.8946, 0.8521, 0.8137
+</details>
 
-## Support and Contribution
-For any issues related to the model or the source code, please open an issue in the corresponding GitHub repository. Contributions to the code or the model are welcome and should be proposed through a pull request.
+## Support
+
+Open an issue for problems with the model or the code. Contributions are welcome as pull
+requests.
