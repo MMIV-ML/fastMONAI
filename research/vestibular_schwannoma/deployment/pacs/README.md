@@ -3,8 +3,8 @@
 ROR/PACS container that runs the five-fold DynUNet ensemble on a CE-T1w series. CPU only:
 each of the five models runs in its own worker with three threads, so it needs at least 15
 CPU threads. TTA is on by default and averages the original and one copy flipped
-anterior-posterior and inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`), as in
-the nnU-Net container. For the general workflow see
+anterior-posterior and inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`). For the
+general workflow see
 [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md).
 
 ## Build a release
@@ -100,8 +100,7 @@ There is no direct uploader; the PACS imports the file.
 
 `redcap_model_instances.json` gives each bundle hash a permanent block of 100 instances,
 stored as the base (a multiple of 100). DynUNet `c5642793...` has 200. Instance 1 is the manual
-mask; nnU-Net large still writes its largest region to 10, and block 100 is planned for it.
-Older DynUNet results at 11 (and 2/3 before that) are no longer updated.
+mask. Older DynUNet results at 11 (and 2/3 before that) are no longer updated.
 
 - A rerun of the same bundle overwrites its instances. If it finds fewer regions, the higher
   instances of the earlier run stay.
