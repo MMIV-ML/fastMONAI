@@ -112,7 +112,7 @@ def binary_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         Mean Dice score (empty-target samples are ignored).
     """
     pred = pred_to_binary_mask(act)
-    dsc = calculate_dsc(pred.cpu(), targ.cpu())
+    dsc = calculate_dsc(pred, targ)
 
     return torch.nanmean(dsc)
 
@@ -123,7 +123,7 @@ def multi_dice_score(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
 
     Args:
         act: Activation tensor with dimensions [B, C, W, H, D].
-        targ: Target masks with dimensions [B, C, W, H, D].
+        targ: Label map [B, 1, W, H, D] with integer class values (not one-hot).
 
     Returns:
         Mean Dice score for each class.
@@ -171,7 +171,7 @@ def binary_sensitivity(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         Mean sensitivity score.
     """
     pred = pred_to_binary_mask(act)
-    sens = calculate_confusion_metrics(pred.cpu(), targ.cpu(), "sensitivity")
+    sens = calculate_confusion_metrics(pred, targ, "sensitivity").cpu()
     return torch.nanmean(sens)
 
 # %% ../nbs/05_vision_metrics.ipynb #q0f40h69zan
@@ -180,7 +180,7 @@ def multi_sensitivity(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     
     Args:
         act: Activation tensor [B, C, W, H, D].
-        targ: Target masks [B, C, W, H, D].
+        targ: Label map [B, 1, W, H, D] with integer class values (not one-hot).
     
     Returns:
         Mean sensitivity for each class.
@@ -212,7 +212,7 @@ def binary_precision(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         Mean precision score.
     """
     pred = pred_to_binary_mask(act)
-    prec = calculate_confusion_metrics(pred.cpu(), targ.cpu(), "precision")
+    prec = calculate_confusion_metrics(pred, targ, "precision").cpu()
     return torch.nanmean(prec)
 
 # %% ../nbs/05_vision_metrics.ipynb #cwb5sivj8es
@@ -221,7 +221,7 @@ def multi_precision(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     
     Args:
         act: Activation tensor [B, C, W, H, D].
-        targ: Target masks [B, C, W, H, D].
+        targ: Label map [B, 1, W, H, D] with integer class values (not one-hot).
     
     Returns:
         Mean precision for each class.
@@ -242,15 +242,18 @@ def calculate_lesion_detection_rate(pred: torch.Tensor, targ: torch.Tensor, thre
     """Calculate lesion-wise detection rate.
 
     For each connected component (lesion) in the target, check if it is
-    detected by the prediction. Detection criteria depends on threshold:
+    detected by the prediction. Lesions are 6-connected (voxels sharing a face).
+    Detection criteria depends on threshold:
     - threshold=0: any overlap counts as detected
-    - threshold>0: per-lesion Dice score must exceed threshold
+    - threshold>0: 2*|P & L| / (|L| + |P & L|) must exceed threshold, where P & L
+      is the predicted part of lesion L. Predicted voxels outside the lesion are
+      ignored, so this measures how much of the lesion is covered, not per-lesion Dice.
 
     Args:
         pred: Binary prediction tensor [B, C, W, H, D].
         targ: Binary target tensor [B, C, W, H, D].
-        threshold: Minimum Dice score for a lesion to be considered detected.
-                   Default 0.0 means any overlap counts as detected.
+        threshold: Minimum coverage score (see above) for a lesion to be considered
+                   detected. Default 0.0 means any overlap counts as detected.
 
     Returns:
         Detection rate (detected lesions / total lesions) for each sample.
@@ -300,14 +303,15 @@ def binary_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor, threshol
         act: Single-channel (sigmoid) activation tensor [B, 1, W, H, D]. For
             softmax output with two or more channels, use `multi_lesion_detection_rate`.
         targ: Target masks [B, 1, W, H, D].
-        threshold: Minimum Dice score for a lesion to be considered detected.
-                   Default 0.0 means any overlap counts as detected.
+        threshold: Minimum coverage score for a lesion to be considered detected
+                   (see `calculate_lesion_detection_rate`). Default 0.0 means any
+                   overlap counts as detected.
 
     Returns:
         Mean lesion detection rate.
     """
     pred = pred_to_binary_mask(act)
-    ldr = calculate_lesion_detection_rate(pred.cpu(), targ.cpu(), threshold)
+    ldr = calculate_lesion_detection_rate(pred, targ, threshold)
     return torch.nanmean(ldr)
 
 # %% ../nbs/05_vision_metrics.ipynb #a5cwiazhpp
@@ -316,9 +320,10 @@ def multi_lesion_detection_rate(act: torch.Tensor, targ: torch.Tensor, threshold
 
     Args:
         act: Activation tensor [B, C, W, H, D].
-        targ: Target masks [B, C, W, H, D].
-        threshold: Minimum Dice score for a lesion to be considered detected.
-                   Default 0.0 means any overlap counts as detected.
+        targ: Label map [B, 1, W, H, D] with integer class values (not one-hot).
+        threshold: Minimum coverage score for a lesion to be considered detected
+                   (see `calculate_lesion_detection_rate`). Default 0.0 means any
+                   overlap counts as detected.
 
     Returns:
         Mean lesion detection rate for each class.
@@ -377,7 +382,7 @@ def binary_signed_rve(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
         Mean signed RVE.
     """
     pred = pred_to_binary_mask(act)
-    rve = calculate_signed_rve(pred.cpu(), targ.cpu())
+    rve = calculate_signed_rve(pred, targ)
     return torch.nanmean(rve)
 
 # %% ../nbs/05_vision_metrics.ipynb #aetwom9qd3p
@@ -386,7 +391,7 @@ def multi_signed_rve(act: torch.Tensor, targ: torch.Tensor) -> torch.Tensor:
     
     Args:
         act: Activation tensor [B, C, W, H, D].
-        targ: Target masks [B, C, W, H, D].
+        targ: Label map [B, 1, W, H, D] with integer class values (not one-hot).
     
     Returns:
         Mean signed RVE for each class.
