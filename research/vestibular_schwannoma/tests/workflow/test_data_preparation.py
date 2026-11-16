@@ -2,6 +2,7 @@
 
 import csv
 import json
+import shutil
 import zipfile
 
 import nibabel as nib
@@ -309,3 +310,24 @@ def test_prepare_uses_bundled_masks_without_separate_label_argument(
     )
     assert json.loads(capsys.readouterr().out)["verified"] is True
     assert verify_dataset(*study[:2], output)["cases"] == 2
+
+
+def test_prepare_from_existing_reads_the_vs_seg_layout(
+    study, monkeypatch, tmp_path, capsys
+):
+    index, frozen, root, crossmoda, corrections = study
+    monkeypatch.setattr(cli, "PROJECT_ROOT", index.parent.parent)
+    vs_seg = tmp_path / "VS_Seg"
+    shutil.copytree(root / "queen_square_data", vs_seg / "nii_data/queen_square_data")
+    shutil.copytree(crossmoda, vs_seg / "crossmoda_data")
+    shutil.copytree(corrections, vs_seg / "errors_fixed_nl")
+    output = tmp_path / "from_existing"
+    assert (
+        main(["prepare", "--from-existing", str(vs_seg), "--output", str(output)]) == 0
+    )
+    assert json.loads(capsys.readouterr().out)["verified"] is True
+    assert verify_dataset(index, frozen, output)["cases"] == 2
+
+    mixed = ["--crossmoda", str(crossmoda), "--output", str(tmp_path / "mixed")]
+    assert main(["prepare", "--from-existing", str(vs_seg), *mixed]) == 1
+    assert "Use --from-existing by itself" in capsys.readouterr().err

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import gc
-import hashlib
 import json
 import traceback
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -20,12 +20,17 @@ from scipy.ndimage import label
 from fastMONAI.vision_all import (
     AccumulatedDice,
     EMACheckpoint,
+    MedDataset,
+    MedMask,
     MedPatchDataLoaders,
     PatchConfig,
+    PreprocessingResult,
+    ZNormalization,
     create_mlflow_callback,
     evaluate_segmentations,
     patch_config_to_dict,
     patch_inference,
+    preprocess_dataset,
 )
 from .config import VS_OUTPUT_SPEC, ExperimentConfig, make_gpu_augmentation
 from .models import TrainingModelConfig, build_training_model
@@ -36,6 +41,7 @@ from .run_selection import (
     INFERENCE_RUN_IDS_FILENAME,
     INFERENCE_RUN_IDS_SCHEMA,
     INFERENCE_SELECTION_KIND,
+    _payload_sha256,
     make_training_contract,
 )
 
@@ -88,14 +94,82 @@ def _claim_results_root(results_root: Path) -> None:
         ) from error
 
 
-def _json_sha256(value) -> str:
-    canonical = json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
+def load_training_index(
+    data_csv: str | Path, folds: Sequence[int] = ()
+) -> pd.DataFrame:
+    """Read the dataset CSV and check columns, case IDs, requested folds and files.
+
+    Relative image and mask paths are checked from the current directory.
+    """
+
+    data_csv = Path(data_csv)
+    if not data_csv.is_file():
+        raise FileNotFoundError(f"Dataset CSV not found: {data_csv}")
+    frame = pd.read_csv(data_csv)
+    required = {"case_id", "t1_img_path", "t1_seg_path", "fold"}
+    missing_columns = sorted(required - set(frame.columns))
+    if missing_columns:
+        raise ValueError(f"Dataset CSV is missing columns: {missing_columns}")
+    if frame["case_id"].isna().any() or frame["case_id"].duplicated().any():
+        raise ValueError("case_id values must be present and unique")
+    if frame[["t1_img_path", "t1_seg_path", "fold"]].isna().any().any():
+        raise ValueError("Image paths, mask paths, and fold values must be present")
+
+    available_folds = set(map(int, frame["fold"].unique()))
+    missing_folds = sorted(set(folds) - available_folds)
+    if missing_folds:
+        raise ValueError(f"Dataset does not contain requested folds: {missing_folds}")
+
+    missing_files = []
+    for column in ("t1_img_path", "t1_seg_path"):
+        for value in frame[column]:
+            path = Path(value)
+            if not path.is_file():
+                missing_files.append(str(path))
+                if len(missing_files) == 10:
+                    break
+        if len(missing_files) == 10:
+            break
+    if missing_files:
+        shown = "\n  ".join(missing_files)
+        raise FileNotFoundError(f"Missing dataset files (first 10):\n  {shown}")
+    return frame
+
+
+def preprocess_training_data(
+    train_df: pd.DataFrame,
+    experiment: ExperimentConfig,
+    output_dir: str | Path = "preprocessed",
+) -> tuple[list, str, PreprocessingResult]:
+    """Fingerprint the masks, then build or reuse the preprocessing cache.
+
+    Adds the ``*_preprocessed`` path columns to ``train_df``. Returns the
+    normalization transforms, the mask fingerprint (``dataset_version``) and the
+    preprocessing result.
+    """
+
+    normalization = [ZNormalization(masking_method="foreground")]
+    label_dataset = MedDataset(
+        img_list=train_df["t1_seg_path"].tolist(),
+        dtype=MedMask,
+        max_workers=experiment.preprocess_workers,
     )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    dataset_version = label_dataset.fingerprint
+    if dataset_version is None:
+        raise RuntimeError("Could not fingerprint the segmentation masks")
+
+    preprocessing_result = preprocess_dataset(
+        train_df,
+        img_col="t1_img_path",
+        mask_col="t1_seg_path",
+        output_dir=str(output_dir),
+        target_spacing=list(experiment.target_spacing),
+        apply_reorder=True,
+        transforms=normalization,
+        max_workers=experiment.preprocess_workers,
+        dataset_version=dataset_version,
+    )
+    return normalization, dataset_version, preprocessing_result
 
 
 def _make_training_contracts(
@@ -127,14 +201,15 @@ def _make_training_contracts(
         raise FileNotFoundError(f"Preprocessing manifest not found: {manifest_path}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    # The contract holds only what changes the trained model, so folds trained on
-    # different machines, or from the notebook and the script, can be merged.
+    # The contract leaves out run selection (model_keys, folds), error handling and
+    # the preprocessing worker count, so folds trained on different machines, or
+    # from the notebook and the script, can be merged.
     experiment_payload = asdict(experiment)
     for field_name in ("model_keys", "folds", "continue_on_error", "preprocess_workers"):
         experiment_payload.pop(field_name)
     shared_payload = {
         "experiment": experiment_payload,
-        "fold_assignments_sha256": _json_sha256(assignments),
+        "fold_assignments_sha256": _payload_sha256(assignments),
         "patch_config": patch_config_to_dict(patch_config),
         # Preprocessing settings and the label-content fingerprint. The rest of the
         # manifest records source paths and file times, which differ between machines.

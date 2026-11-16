@@ -14,10 +14,7 @@ from fastMONAI.vision_all import (
     read_safetensors_metadata,
 )
 from .config import VS_OUTPUT_SPEC
-from .run_selection import (
-    merge_fold_run_selections as merge_fold_run_selections,
-    read_inference_run_ids as _read_inference_run_ids,
-)
+from .run_selection import read_inference_run_ids
 
 
 @dataclass(frozen=True)
@@ -68,7 +65,7 @@ def load_inference_models(
     if has_selection:
         if not isinstance(model_key, str) or not model_key:
             raise ValueError("model_key is required with run_selection_file")
-        run_ids = _read_inference_run_ids(
+        run_ids = read_inference_run_ids(
             run_selection_file,
             model_key=model_key,
             artifact_role=artifact_role,

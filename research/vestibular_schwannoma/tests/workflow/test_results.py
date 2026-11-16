@@ -1,11 +1,15 @@
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from vestibular_schwannoma.workflow.results import (
+    aggregate_results,
+    build_model_comparison,
     combine_fold_results,
     load_fold_results,
     select_qualitative_cases,
@@ -70,6 +74,44 @@ class CrossValidationResultTests(unittest.TestCase):
             invalid = root / "fold_notes"
             invalid.mkdir()
             self.assertEqual(sorted(load_fold_results(root)), [1, 2])
+
+    def write_folds(self, root, folds):
+        for fold in folds:
+            fold_dir = root / f"fold_{fold}"
+            fold_dir.mkdir(parents=True)
+            self.fold_results[fold].to_csv(fold_dir / "results.csv", index=False)
+
+    def test_aggregate_skips_incomplete_results(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_folds(root, [1])
+            with redirect_stdout(StringIO()) as output:
+                result = aggregate_results(root, (1, 2), self.dataset)
+            self.assertIsNone(result)
+            self.assertIn("Summary skipped", output.getvalue())
+            self.assertFalse((root / "cv_summary.csv").exists())
+
+    def test_aggregate_writes_pooled_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_folds(root, [1, 2])
+            with redirect_stdout(StringIO()):
+                combined = aggregate_results(root, (1, 2), self.dataset)
+            saved = pd.read_csv(root / "cv_summary.csv")
+        self.assertEqual(saved.case_id.tolist(), ["a", "b", "c", "d"])
+        self.assertEqual(saved.fold.tolist(), [1, 1, 2, 2])
+        pd.testing.assert_frame_equal(saved, combined)
+
+    def test_model_comparison_reports_folds_cases_and_finite_means(self):
+        combined = combine_fold_results(
+            self.fold_results, expected_folds=(1, 2), dataset_df=self.dataset
+        ).assign(hd95_mm=[1.0, 3.0, np.inf, 2.0])
+        comparison = build_model_comparison({"unet": combined})
+        row = comparison.loc["unet"]
+        self.assertEqual(row["folds"], [1, 2])
+        self.assertEqual(row["n_cases"], 4)
+        self.assertAlmostEqual(row["dsc_mean"], 0.75)
+        self.assertAlmostEqual(row["hd95_mm_mean"], 2.0)
 
     def test_qualitative_selection_is_distinct_for_one_case(self):
         selected = select_qualitative_cases(

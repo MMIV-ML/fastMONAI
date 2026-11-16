@@ -33,7 +33,6 @@ data/**
 !data/ml_dataset.csv
 !data/reference_dataset.json
 !data/requirements.txt
-!data/*.example.csv
 raw_data/
 nii_data/
 dicom_data/
@@ -80,15 +79,9 @@ deployment/pacs/release_packages/
 *.tar
 *.tar.gz
 *.tgz
-*.tar.sha256
-*.tar.gz.sha256
 .tmp*/
 tmp*/
 *~
-
-# Private project planning
-docs/roadmap.html
-docs/component_postprocessing_review.html
 
 # Local illustration work
 opus_illustration/

@@ -1,3 +1,4 @@
+import json
 import unittest
 from dataclasses import FrozenInstanceError
 
@@ -6,8 +7,10 @@ from fastMONAI.vision_all import ZNormalization
 from vestibular_schwannoma.workflow.config import (
     VS_OUTPUT_SPEC,
     ExperimentConfig,
+    make_gpu_augmentation,
     make_patch_config,
 )
+from vestibular_schwannoma.workflow.training import _gpu_augmentations_json
 
 
 class ExperimentConfigTests(unittest.TestCase):
@@ -78,6 +81,43 @@ class ExperimentConfigTests(unittest.TestCase):
                 "class_axis": 1,
                 "decision": "argmax",
             },
+        )
+
+    def test_gpu_augmentation_is_pinned(self):
+        # Augmentation is not part of the training contract. Changing it changes
+        # training, so update this pin and bump VS_TRAINING_WORKFLOW_REVISION.
+        augmentation = json.loads(
+            _gpu_augmentations_json(make_gpu_augmentation(ExperimentConfig()))
+        )
+        translation = [25 / 0.4102, 25 / 0.4102, 5 / 1.5]
+        expected = [
+            {
+                "name": "affine",
+                "params": {
+                    "scales": [0.7, 1.4],
+                    "degrees": [5, 5, 30],
+                    "translation": translation,
+                    "default_pad_value": 0.0,
+                    "p": 0.2,
+                },
+            },
+            {
+                "name": "anisotropy",
+                "params": {"axes": [0, 1, 2], "downsampling": [2, 4], "p": 0.25},
+            },
+            {"name": "flip", "params": {"axes": [0, 1, 2], "p": 0.5}},
+            {"name": "gamma", "params": {"log_gamma": [-0.3, 0.3], "p": 0.3}},
+            {
+                "name": "intensity_scale",
+                "params": {"scale_range": [0.75, 1.25], "p": 0.1},
+            },
+            {"name": "noise", "params": {"std": 0.1, "p": 0.1}},
+            {"name": "blur", "params": {"std": [0.5, 1.0], "p": 0.2}},
+        ]
+        self.assertEqual(
+            augmentation,
+            expected,
+            "GPU augmentation changed: bump VS_TRAINING_WORKFLOW_REVISION",
         )
 
     def test_patch_factory_supports_70_30_sampling(self):
