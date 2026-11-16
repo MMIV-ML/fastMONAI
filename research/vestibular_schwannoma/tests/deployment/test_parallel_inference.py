@@ -39,11 +39,34 @@ class CpuAssignmentTests(unittest.TestCase):
             parallel.assign_worker_cpus(range(14), worker_count=5)
 
 
+TWO_CPUS = hasattr(os, "sched_getaffinity") and len(os.sched_getaffinity(0)) >= 2
+
+
 class ParallelEnsembleTests(unittest.TestCase):
-    @unittest.skipUnless(
-        hasattr(os, "sched_getaffinity") and len(os.sched_getaffinity(0)) >= 2,
-        "Real parallel workers require Linux and two available CPUs",
-    )
+    @unittest.skipUnless(TWO_CPUS, "Parallel workers require Linux and two available CPUs")
+    def test_flip_sets_other_than_the_deployed_pair_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = [root / f"fold_{i}.safetensors" for i in range(2)]
+            for path in paths:
+                path.touch()
+            image = root / "synthetic.nii.gz"
+            nib.save(nib.Nifti1Image(np.zeros((16, 16, 16), np.float32), np.eye(4)), image)
+            engine = parallel.ParallelEnsemblePatchInferenceEngine(
+                paths,
+                ["fold_0", "fold_1"],
+                PatchConfig(
+                    patch_size=[16, 16, 16], apply_reorder=False, normalization=None
+                ),
+                output_channels=2,
+                threads_per_model=1,
+            )
+            for tta in (True, [(), (4,)], [(3, 4)]):
+                with self.subTest(tta=tta):
+                    with self.assertRaisesRegex(ValueError, "supports only the TTA flips"):
+                        engine.predict_mask_and_probabilities(image, tta=tta)
+
+    @unittest.skipUnless(TWO_CPUS, "Real parallel workers require Linux and two available CPUs")
     def test_real_workers_match_sequential_inference_with_and_without_tta(self):
         previous_threads = torch.get_num_threads()
         self.addCleanup(torch.set_num_threads, previous_threads)
@@ -95,16 +118,17 @@ class ParallelEnsembleTests(unittest.TestCase):
             )
             # Small CI runners use one thread per model; production allocation is
             # covered by CpuAssignmentTests above.
-            with patch.object(pacs, "THREADS_PER_ENSEMBLE_MODEL", 1):
+            with patch.object(pacs, "THREADS_PER_MODEL", 1):
                 engine = pacs._create_inference_engine(deployment)
             sequential = PatchInferenceEngine(models, config)
             for use_tta in (False, True):
                 with self.subTest(tta=use_tta):
+                    tta = parallel.TTA_FLIP_AXES if use_tta else False
                     actual_mask, actual = engine.predict_mask_and_probabilities(
-                        image, tta=use_tta
+                        image, tta=tta
                     )
                     expected_mask, expected = sequential.predict_mask_and_probabilities(
-                        image, tta=parallel.TTA_FLIP_AXES if use_tta else False
+                        image, tta=tta
                     )
                     torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
                     torch.testing.assert_close(

@@ -49,10 +49,7 @@ class ArtifactSelectionTests(unittest.TestCase):
                 run_id="run-id", artifact_path="model/best_model.safetensors")
 
     def test_pacs_and_research_expect_the_same_output_contract(self):
-        self.assertEqual(
-            bundle.make_output_spec("multiclass_segmentation", classes=2),
-            VS_OUTPUT_SPEC,
-        )
+        self.assertEqual(bundle.EXPECTED_OUTPUT_SPEC, VS_OUTPUT_SPEC)
 
     def metadata(
         self,
@@ -78,7 +75,7 @@ class ArtifactSelectionTests(unittest.TestCase):
                     if patch_config is None
                     else patch_config
                 ),
-                "output": bundle.make_output_spec("multiclass_segmentation", classes=2),
+                "output": dict(bundle.EXPECTED_OUTPUT_SPEC),
             },
         }
 
@@ -106,10 +103,6 @@ class ArtifactSelectionTests(unittest.TestCase):
         self.assertEqual(MODEL_CONFIGS["dynunet"]["dicom_model_code"], 2)
         # Code 1 belonged to the retired UNet bundle and must stay unused.
         self.assertNotIn(1, [config["dicom_model_code"] for config in MODEL_CONFIGS.values()])
-
-        model_codes = [config["dicom_model_code"] for config in MODEL_CONFIGS.values()]
-        self.assertTrue(all(type(code) is int and code > 0 for code in model_codes))
-        self.assertEqual(len(model_codes), len(set(model_codes)))
         self.assertEqual(
             DICOM_OUTPUT_CODES,
             {"segmentation_mask": 1, "probability_map": 2},

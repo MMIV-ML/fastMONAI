@@ -1,14 +1,11 @@
-"""Load trusted Safetensors bundles produced by prepare_model_bundle.py."""
+"""Read trusted Safetensors bundles produced by prepare_model_bundle.py."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from fastMONAI.vision_all import (
-    load_safetensors_model,
-    read_safetensors_metadata,
-)
+from fastMONAI.vision_all import read_safetensors_metadata
 from fastMONAI.vision_patch import PatchConfig
 
 from deployment_models import (
@@ -97,16 +94,4 @@ def describe_deployment(model_type: str, *, script_dir: Path = SCRIPT_DIR) -> di
     deployment["patch_config"] = PatchConfig(
         **dict(first_metadata["inference_config"]["patch_config"])
     )
-    return deployment
-
-
-def load_deployment(model_type: str, *, script_dir: Path = SCRIPT_DIR) -> dict:
-    """Validate a packaged deployment and load all model weights."""
-    deployment = describe_deployment(model_type, script_dir=script_dir)
-    paths = deployment["model_paths"]
-    models = [load_safetensors_model(path, device="cpu") for path in paths]
-    for member, path in zip(deployment["members"], paths):
-        print("  Loaded {}: {}".format(member["member_id"], path.name))
-
-    deployment["predictor"] = models[0] if len(models) == 1 else models
     return deployment

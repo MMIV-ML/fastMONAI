@@ -92,23 +92,21 @@ class DeploymentLoadingTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, message):
                         runtime_bundle._read_packaged_deployment(config_path, "dynunet")
 
-    def test_missing_manifest_and_declared_model_fail_before_loading(self):
+    def test_missing_manifest_and_declared_model_fail_before_reading_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaisesRegex(FileNotFoundError, "no declared"):
-                runtime_bundle.load_deployment("dynunet", script_dir=root)
+                runtime_bundle.describe_deployment("dynunet", script_dir=root)
 
             self.write_bundle(root, create_models=False)
             with (
                 patch.object(runtime_bundle, "read_safetensors_metadata") as metadata,
-                patch.object(runtime_bundle, "load_safetensors_model") as load,
                 self.assertRaisesRegex(FileNotFoundError, "packaged model files"),
             ):
-                runtime_bundle.load_deployment("dynunet", script_dir=root)
+                runtime_bundle.describe_deployment("dynunet", script_dir=root)
             metadata.assert_not_called()
-            load.assert_not_called()
 
-    def test_loads_single_and_ensemble_with_declared_patch_config(self):
+    def test_describes_single_and_ensemble_with_declared_patch_config(self):
         for member_ids in (("all_data",), ("fold_1", "fold_2")):
             with (
                 self.subTest(member_ids=member_ids),
@@ -116,26 +114,25 @@ class DeploymentLoadingTests(unittest.TestCase):
             ):
                 root = Path(directory)
                 _, declaration = self.write_bundle(root, member_ids=member_ids)
-                models = [object() for _ in member_ids]
-                with (
-                    patch.object(
-                        runtime_bundle,
-                        "read_safetensors_metadata",
-                        return_value=self.metadata(
-                            patch_config={"patch_size": [16, 16, 16]}
-                        ),
+                with patch.object(
+                    runtime_bundle,
+                    "read_safetensors_metadata",
+                    return_value=self.metadata(
+                        patch_config={"patch_size": [16, 16, 16]}
                     ),
-                    patch.object(
-                        runtime_bundle, "load_safetensors_model", side_effect=models
-                    ),
-                ):
-                    loaded = runtime_bundle.load_deployment("dynunet", script_dir=root)
-                self.assertEqual(loaded["members"], declaration["members"])
+                ) as metadata:
+                    described = runtime_bundle.describe_deployment(
+                        "dynunet", script_dir=root
+                    )
+                models_dir = root / "model_bundles" / "dynunet"
+                self.assertEqual(described["members"], declaration["members"])
                 self.assertEqual(
-                    loaded["predictor"], models[0] if len(models) == 1 else models
+                    described["model_paths"],
+                    [models_dir / f"{member_id}.safetensors" for member_id in member_ids],
                 )
-                self.assertEqual(loaded["patch_config"].patch_size, [16, 16, 16])
-                self.assertEqual(loaded["output_channels"], 2)
+                metadata.assert_called_once_with(described["model_paths"][0])
+                self.assertEqual(described["patch_config"].patch_size, [16, 16, 16])
+                self.assertEqual(described["output_channels"], 2)
 
 
 if __name__ == "__main__":

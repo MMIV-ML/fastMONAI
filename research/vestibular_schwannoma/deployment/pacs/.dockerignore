@@ -3,13 +3,10 @@
 # Interrupted atomic bundle builds may leave hidden staging directories.
 model_bundles/.*-build-*/
 
-# Saved docker image export(s) - e.g. vs-seg_docker_image_Sathiesh.tar.gz (~11.8 GB)
+# Saved image archives
 release_packages/
 *.tar.gz
 *.tar
-
-# Stale editor backup of the Dockerfile
-.ror/virt/Dockerfile~
 
 # Local tooling / caches
 .claude/
@@ -19,5 +16,3 @@ release_packages/
 *.orig
 .env
 .env.*
-*.sha256
-test_*.py

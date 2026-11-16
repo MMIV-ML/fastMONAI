@@ -7,9 +7,11 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+import torch
 from pydicom import dcmread
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, MRImageStorage, UID
+from torchio import ScalarImage
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -46,6 +48,8 @@ def _write_test_image(
     frame_uid="1.2.3.5",
     meta_sop_uid=None,
     omit=(),
+    pixels=None,
+    patient_id=None,
 ):
     sop_uid = sop_uid or f"1.2.3.4.{index + 1}"
     position = position or (0.0, 0.0, float(index))
@@ -69,6 +73,7 @@ def _write_test_image(
         "PixelSpacing": list(pixel_spacing),
         "ImageOrientationPatient": list(orientation),
         "ImagePositionPatient": list(position),
+        "PatientID": patient_id,
     }
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -86,7 +91,9 @@ def _write_test_image(
         dataset.BitsStored = 16
         dataset.HighBit = 15
         dataset.PixelRepresentation = 0
-        dataset.PixelData = np.zeros((rows, columns), dtype="<u2").tobytes()
+        if pixels is None:
+            pixels = np.zeros((rows, columns))
+        dataset.PixelData = np.asarray(pixels, dtype="<u2").tobytes()
         dataset.save_as(str(path), enforce_file_format=True)
         if meta_sop_uid is not None:
             written = dcmread(str(path))
@@ -678,6 +685,112 @@ class DicomUIDTests(unittest.TestCase):
         np.testing.assert_array_equal(fake_series.data >= 32768, inside)
         self.assertEqual(fake_series.data.dtype, np.dtype("<u2"))
         save.assert_called_once()
+
+
+class DicomWriteGeometryTests(unittest.TestCase):
+    """Written series put each voxel of the read image back on its source pixel."""
+
+    ROWS, COLUMNS, SLICES = 4, 5, 3
+    ORIENTATIONS = {
+        "axial": (1.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        "sagittal": (0.0, 1.0, 0.0, 0.0, 0.0, -1.0),
+        "coronal": (1.0, 0.0, 0.0, 0.0, 0.0, -1.0),
+        "oblique": (0.9659258, 0.258819, 0.0, 0.0, 0.0, -1.0),
+    }
+    DEPLOYMENT = {
+        "model_type": "dynunet",
+        "bundle_sha256": "a" * 64,
+        "members": [{} for _ in range(5)],
+    }
+
+    @staticmethod
+    def source_value(slice_index, row, column):
+        return 1000 + 100 * slice_index + 10 * row + column
+
+    def write_series(self, root, orientation, step, shuffled):
+        normal = np.cross(orientation[:3], orientation[3:])
+        order = [2, 0, 1] if shuffled else list(range(self.SLICES))
+        for file_index, slice_index in enumerate(order):
+            position = np.array([10.0, -20.0, 30.0]) + step * 2.0 * slice_index * normal
+            pixels = [
+                [self.source_value(slice_index, row, column) for column in range(self.COLUMNS)]
+                for row in range(self.ROWS)
+            ]
+            _write_test_image(
+                root / f"{file_index}.dcm",
+                slice_index,
+                rows=self.ROWS,
+                columns=self.COLUMNS,
+                pixel_spacing=(0.5, 0.7),
+                orientation=orientation,
+                position=tuple(position),
+                pixels=pixels,
+                patient_id="SYNTHETIC",
+            )
+
+    @staticmethod
+    def stored_by_source_value(output_dir, source_dir):
+        """Map each nonzero output pixel to the source pixel at the same place."""
+
+        def position(dataset):
+            return tuple(np.round(np.asarray(dataset.ImagePositionPatient, float), 3))
+
+        sources = {}
+        for path in source_dir.iterdir():
+            dataset = dcmread(str(path))
+            sources[position(dataset)] = dataset.pixel_array
+        stored = {}
+        for path in output_dir.iterdir():
+            dataset = dcmread(str(path))
+            source = sources[position(dataset)]
+            pixels = dataset.pixel_array
+            for row, column in zip(*np.nonzero(pixels)):
+                stored[int(source[row, column])] = int(pixels[row, column])
+        return stored
+
+    def test_mask_and_vote_map_voxels_land_on_their_source_pixels(self):
+        inside = self.source_value(0, 2, 3)
+        outside = self.source_value(2, 1, 4)
+        inside_value, outside_value = dicom.vote_map_values(
+            np.array([0.75, 0.25], dtype=np.float32), np.array([True, False])
+        )
+        for name, orientation in self.ORIENTATIONS.items():
+            for step in (1, -1):
+                for shuffled in (False, True):
+                    with (
+                        self.subTest(orientation=name, step=step, shuffled=shuffled),
+                        tempfile.TemporaryDirectory() as directory,
+                    ):
+                        root = Path(directory)
+                        source = root / "input"
+                        source.mkdir()
+                        self.write_series(source, orientation, step, shuffled)
+                        # The inference engine reads the series the same way.
+                        image = ScalarImage(str(source)).data
+                        mask = (image == inside).long()
+                        probability = torch.zeros(image.shape, dtype=torch.float32)
+                        probability[image == inside] = 0.75
+                        probability[image == outside] = 0.25
+
+                        dicom.create_dicom_mask(
+                            mask, source, root / "mask", self.DEPLOYMENT, use_tta=False
+                        )
+                        dicom.create_dicom_probability_map(
+                            probability,
+                            source,
+                            root / "vote_map",
+                            self.DEPLOYMENT,
+                            mask=mask,
+                            use_tta=False,
+                        )
+
+                        self.assertEqual(
+                            self.stored_by_source_value(root / "mask", source), {inside: 1}
+                        )
+                        self.assertEqual(
+                            self.stored_by_source_value(root / "vote_map", source),
+                            {inside: int(inside_value), outside: int(outside_value)},
+                        )
 
 
 if __name__ == "__main__":
