@@ -452,12 +452,11 @@ def suggest_patch_size(
 ) -> list:
     """Suggest optimal patch size based on dataset dimensions.
 
-    Uses median shape as the starting point but clamps to the minimum
-    volume size per axis, ensuring the suggested patch fits ALL volumes
-    without requiring padding during training.
+    Uses the smallest resampled volume size per axis, so the suggested patch
+    fits ALL volumes without requiring padding during training.
 
     Algorithm:
-    1. Use min(median, min_volume) per axis for safety
+    1. Take the smallest resampled volume size per axis
     2. Round down to nearest multiple of divisor (16 for UNet compatibility)
     3. Clamp to [min_patch_size, max_patch_size] bounds
     4. Validate: error if min_patch_size or divisor exceeds the smallest volume
@@ -501,10 +500,8 @@ def suggest_patch_size(
         """Round down to nearest multiple of divisor."""
         return max(div, int(val // div) * div)
 
-    # Step 1: Clamp to min(median, min_volume) per axis (safety guarantee)
-    effective_dims = [min(med, mn) for med, mn in zip(median_shape, min_shape)]
-
-    patch_size = [round_to_divisor(dim, divisor) for dim in effective_dims]
+    # Step 1: Start from the smallest volume per axis so the patch fits every volume
+    patch_size = [round_to_divisor(dim, divisor) for dim in min_shape]
 
     patch_size = [
         max(min_p, min(max_p, p))
@@ -835,7 +832,8 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
 
     failures = []
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
             futures = {
                 executor.submit(_process_case, item): item for item in work_items
             }
@@ -847,6 +845,9 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
                     future.result()
                 except Exception as error:
                     failures.append((str(item['image_path']), str(error)))
+        finally:
+            # Queued cases are cancelled if the loop exits early, e.g. on Ctrl-C
+            executor.shutdown(wait=True, cancel_futures=True)
 
         if failures:
             examples = failures[:5]
@@ -882,7 +883,7 @@ def preprocess_dataset(df, img_col, mask_col=None, output_dir='preprocessed',
             json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8'
         )
         _publish_preprocessing_cache(stage_dir, cache_dir)
-    except Exception:
+    except BaseException:
         if stage_dir.exists():
             shutil.rmtree(stage_dir)
         raise

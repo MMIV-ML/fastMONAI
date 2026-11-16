@@ -44,9 +44,6 @@ def _process_ixi_xls(xls_path: (str, Path), img_path: Path) -> pd.DataFrame:
 
     Returns:
         A processed dataframe with image path and demographic information.
-
-    Raises:
-        ValueError: If xls_path or img_path do not exist.
     """
 
     print('Preprocessing ' + str(xls_path))
@@ -84,7 +81,7 @@ def download_ixi_data(path: (str, Path) = '../data') -> Path:
         path: Path to the directory where the data will be stored. Defaults to '../data'.
 
     Returns:
-        The path to the stored CSV file.
+        The IXI directory, which holds T1_images/ and dataset.csv.
     """
 
     path = Path(path) / 'IXI'
@@ -229,12 +226,6 @@ def _create_nodule_df(pool, output_dir, imgs, labels, is_val=False):
 
     return df
 
-# %% ../nbs/09_external_data.ipynb #04095111-a38f-4d00-a0fb-2dbfac263eb6
-def _dataset_available_locally(path: Path):
-    """Checks if the dataset exists in the local directory."""
-    
-    return path.exists() and any(path.iterdir())
-
 # %% ../nbs/09_external_data.ipynb #a1b456f0-8e14-42c6-a1cd-a332312145ff
 def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
                                 max_workers: int = 1, skip_download: bool = True):
@@ -246,8 +237,8 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
         path: Directory to store and extract downloaded data. Defaults to '../data'.
         max_workers: Maximum number of worker processes for data processing. 
                      Defaults to 1.
-        skip_download: Flag to indicate if the dataset should be re-downloaded if the dataset exists locally. 
-                  Default set to False.
+        skip_download: If True (default), reuse train_val.csv and test.csv from an
+            earlier complete run instead of downloading again.
 
     Returns:
         Two pandas DataFrames. The first DataFrame combines training and validation 
@@ -255,7 +246,7 @@ def download_medmnist3d_dataset(study: str, path: (str, Path) = '../data',
     """
                                     
     path = Path(path) / study                           
-    if _dataset_available_locally(path) and skip_download: 
+    if skip_download and (path / 'train_val.csv').is_file() and (path / 'test.csv').is_file():
         return pd.read_csv(path / 'train_val.csv'), pd.read_csv(path / 'test.csv')                                     
                                     
     dataset_file_path = path / f'{study}.npz'
@@ -300,6 +291,9 @@ def download_example_endometrial_cancer_data(path: (str, Path) = '../data', mult
         path (str or Path): Path to save the downloaded data.
         multi_channel (bool): If True, download multi-channel data (Vibe, T2, 
             and ADC). Otherwise, download only Vibe.
+
+    Returns:
+        None. The archive is extracted into `path`.
     """
     
     download_url = (MURLs.EXAMPLE_MULTI_EC_DATA if multi_channel 
