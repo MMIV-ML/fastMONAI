@@ -21,8 +21,6 @@ from contextlib import nullcontext
 from dataclasses import dataclass, field
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
-from fastai.data.all import *
-# keep below the fastai star import, which exports fastcore's ThreadPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 from fastai.learner import Learner
 from .vision_core import MedImage, MedMask, med_img_reader
@@ -241,7 +239,7 @@ class PatchConfig:
         patch_overlap: Overlap for inference GridSampler (int, float 0-1, or list).
             - Float 0-1: fraction of patch_size (e.g., 0.5 = 50% overlap)
             - Int >= 1: pixel overlap (e.g., 48 = 48 pixel overlap)
-            - List: per-dimension overlap in pixels
+            - List: per-dimension overlap in pixels (whole numbers only)
         samples_per_volume: Number of patches to extract per volume during training.
         sampler_type: Type of sampler ('uniform' or 'label').
         label_probabilities: For LabelSampler, dict mapping label values to probabilities.
@@ -329,6 +327,11 @@ class PatchConfig:
                         )
         elif isinstance(self.patch_overlap, (list, tuple)):
             for i, (overlap, ps) in enumerate(zip(self.patch_overlap, self.patch_size)):
+                if not (isinstance(overlap, numbers.Real) and float(overlap).is_integer()):
+                    raise ValueError(
+                        f"patch_overlap[{i}] ({overlap}) must be a whole number of voxels. "
+                        f"Use a scalar float (e.g. patch_overlap=0.5) for a fractional overlap."
+                    )
                 if overlap < 0:
                     raise ValueError(f"patch_overlap[{i}] cannot be negative")
                 if overlap >= ps:
@@ -745,8 +748,10 @@ class MedPatchDataLoaders:
     This class provides train and validation DataLoaders that work with
     fastai's Learner for patch-based training on 3D medical images.
 
-    Memory-efficient: Volumes are loaded on-demand by Queue workers,
-    keeping memory usage constant (~150 MB) regardless of dataset size.
+    Volumes are loaded on-demand by Queue workers, so memory does not grow with
+    dataset size. Each loader's queue holds up to queue_length patches, so its RAM is
+    about queue_length x (image + mask bytes per patch), e.g. 300 x 25 MB = 7.5 GB for
+    float32 patches of 256x256x48.
 
     Note: Validation uses the same sampling as training (pseudo Dice).
     For true validation metrics, use PatchInferenceEngine with GridSampler
@@ -824,9 +829,13 @@ class MedPatchDataLoaders:
             gpu_augmentation: GpuPatchAugmentation instance for GPU-batched augmentation
                 (training only). Mutually exclusive with patch_tfms.
             apply_reorder: If True, reorder to RAS+ orientation. If None, uses
-                patch_config.apply_reorder. Explicit value overrides config.
+                patch_config.apply_reorder. An explicit value overrides the config and is
+                written into patch_config, so the saved inference config matches training.
+                Raises ValueError when patch_config.preprocessed is True.
             target_spacing: Target voxel spacing [x, y, z]. If None, uses
-                patch_config.target_spacing. Explicit value overrides config.
+                patch_config.target_spacing. An explicit value overrides the config and is
+                written into patch_config. Raises ValueError when patch_config.preprocessed
+                is True.
             bs: Batch size.
             seed: Random seed for splitting.
             device: Device to use.
@@ -839,6 +848,7 @@ class MedPatchDataLoaders:
 
         Example:
             >>> # GPU augmentation (use patch_tfms=... instead for CPU TorchIO augmentation)
+            >>> config = PatchConfig(patch_size=[96, 96, 96], target_spacing=[0.5, 0.5, 0.5])
             >>> gpu_aug = gpu_patch_augmentations(config.patch_size, config.target_spacing)
             >>> dls = MedPatchDataLoaders.from_df(
             ...     df, img_col='image', mask_col='label',
@@ -856,12 +866,23 @@ class MedPatchDataLoaders:
         if patch_config is None:
             patch_config = PatchConfig()
 
-        # Explicit args override config (backward compatibility)
+        # Preprocessed data was already reordered/resampled, so overrides would not apply
+        if patch_config.preprocessed and (apply_reorder is not None or target_spacing is not None):
+            raise ValueError(
+                "apply_reorder and target_spacing cannot be overridden when "
+                "patch_config.preprocessed=True; set them on the PatchConfig instead."
+            )
+
+        # Explicit args override config
         _apply_reorder = apply_reorder if apply_reorder is not None else patch_config.apply_reorder
         _target_spacing = target_spacing if target_spacing is not None else patch_config.target_spacing
 
         _warn_config_override('apply_reorder', patch_config.apply_reorder, apply_reorder)
         _warn_config_override('target_spacing', patch_config.target_spacing, target_spacing)
+
+        # Record the values used for training, so the saved inference config matches them
+        patch_config.apply_reorder = _apply_reorder
+        patch_config.target_spacing = _target_spacing
 
         train_df, valid_df = _split_df(df, valid_pct, valid_col, seed)
 
@@ -1232,7 +1253,6 @@ class _PreparedSubject:
     subject: tio.Subject
     org_img: tio.Image
     input_img: tio.Image
-    padding: tuple
     valid_slices: tuple
     grid_sampler: tio.GridSampler
     aggregator: tio.GridAggregator
@@ -1397,7 +1417,7 @@ class PatchInferenceEngine:
 
         return _PreparedSubject(
             subject=subject, org_img=org_img, input_img=input_img,
-            padding=padding, valid_slices=valid_slices,
+            valid_slices=valid_slices,
             grid_sampler=grid_sampler, aggregator=aggregator,
             patch_loader=patch_loader
         )
@@ -1560,19 +1580,41 @@ class PatchInferenceEngine:
         return self
 
 # %% ../nbs/10_vision_patch.ipynb #cell-18
+_IMAGE_SUFFIXES = ('.nii.gz', '.mha', '.mhd', '.nrrd', '.nhdr', '.mgz', '.dcm')
+
+
 def prediction_filename(input_path: str | Path) -> str:
-    """Return the filename used by patch inference for a saved prediction."""
-    input_path = Path(input_path)
-    stem = input_path.stem
-    if input_path.suffix == '.gz' and stem.endswith('.nii'):
-        return f"{stem[:-4]}_pred.nii.gz"
-    if input_path.suffix == '.nii':
-        return f"{stem}_pred.nii"
-    return f"{stem}_pred.nii.gz"
+    """Return the filename used by patch inference for a saved prediction.
+
+    A known image suffix is replaced (`case.nii.gz` -> `case_pred.nii.gz`, `case.nii` ->
+    `case_pred.nii`, `case.mha` -> `case_pred.nii.gz`). Any other name, such as a DICOM
+    directory named by its series UID, is kept whole.
+    """
+    name = Path(input_path).name
+    lower = name.lower()
+    if lower.endswith('.nii'):
+        return f"{name[:-4]}_pred.nii"
+    for suffix in _IMAGE_SUFFIXES:
+        if lower.endswith(suffix):
+            return f"{name[:-len(suffix)]}_pred.nii.gz"
+    return f"{name}_pred.nii.gz"
+
+
+def _check_unique_prediction_names(file_paths):
+    """Raise ValueError if two different inputs would be saved under the same prediction filename."""
+    seen = {}
+    for path in file_paths:
+        name, resolved = prediction_filename(path), Path(path).resolve()
+        first = seen.setdefault(name, resolved)
+        if first != resolved:
+            raise ValueError(
+                f"{first} and {resolved} would both be saved as {name}. "
+                "Rename the inputs or save them to separate directories."
+            )
 
 
 def _save_prediction(pred, affine, input_path, save_path, return_probabilities):
-    """Save a single prediction as a NIfTI file (`<stem>_pred.nii[.gz]` in save_path).
+    """Save a single prediction as a NIfTI file in save_path, named by prediction_filename.
 
     Module-level (no closure captures) so it is safe to run in a background save thread.
     return_probabilities saves a ScalarImage, otherwise a LabelMap.
@@ -1632,7 +1674,9 @@ def patch_inference(
             for large 3D patches; benchmark higher values for the target accelerator.
         return_probabilities: Return probability maps.
         progress: Show progress bar.
-        save_dir: Directory to save predictions as NIfTI files. If None, predictions are not saved.
+        save_dir: Directory to save predictions as NIfTI files named by prediction_filename. If
+            None, predictions are not saved. Raises ValueError before inference if two
+            different inputs map to the same filename.
         pre_inference_tfms: Optional override for config.normalization. If None, normalization is
             read from config.normalization (the source of truth set at training time). Provide this
             only to override the config (e.g. for non-serializable transforms).
@@ -1658,6 +1702,9 @@ def patch_inference(
         ...     save_dir='predictions/patch_based', amp=True
         ... )
     """
+    if save_dir is not None:
+        _check_unique_prediction_names(file_paths)
+
     _apply_reorder = apply_reorder if apply_reorder is not None else config.apply_reorder
     _target_spacing = target_spacing if target_spacing is not None else config.target_spacing
 
