@@ -27,14 +27,25 @@ from fastai.data.transforms import ColReader
 from collections.abc import Callable, Mapping
 from typing import Any
 
-# Default MLflow backend store: a sqlite DB at the package/repo root, resolved from
-# __file__ so it stays stable across os.chdir. Importing this module never changes the
-# tracking URI: _ensure_fastmonai_tracking_uri applies this default lazily, and only
-# when the user has not configured MLflow.
+def _default_mlruns_db(module_file=None):
+    """Path of the default MLflow sqlite store.
+
+    A source checkout keeps it at the repo root, resolved from the module file so it
+    stays stable across os.chdir. An installed package (site-packages) and a notebook
+    session use the working directory at import time.
+    """
+    if module_file is not None:
+        root = Path(module_file).resolve().parent.parent
+        if root.name not in ('site-packages', 'dist-packages'):
+            return root / 'mlruns.db'
+    return Path('mlruns.db').resolve()
+
+# Importing this module never changes the tracking URI: _ensure_fastmonai_tracking_uri
+# applies this default lazily, and only when the user has not configured MLflow.
 try:
-    _mlruns_db = Path(__file__).resolve().parent.parent / 'mlruns.db'
+    _mlruns_db = _default_mlruns_db(__file__)
 except NameError:
-    _mlruns_db = Path('mlruns.db').resolve()
+    _mlruns_db = _default_mlruns_db()
 
 # %% ../nbs/07_utils.ipynb #mlflowuriguard
 _FASTMONAI_TRACKING_URI_SET = False  # did *we* set the tracking URI? (idempotency guard)
@@ -66,8 +77,8 @@ def set_mlflow_tracking_uri(uri=None):
 
     Args:
         uri: A tracking URI (e.g. ``"sqlite:///runs.db"`` or an HTTP server).
-            If ``None``, uses fastMONAI's default sqlite store at the
-            package/repo root.
+            If ``None``, uses fastMONAI's default sqlite store: ``mlruns.db`` at
+            the repo root for a source checkout, otherwise in the working directory.
 
     Returns:
         The tracking URI that was set.
