@@ -2,9 +2,12 @@
 
 ROR/PACS container that runs the five-fold DynUNet ensemble on a CE-T1w series. CPU only:
 each of the five models runs in its own worker with three threads, so it needs at least 15
-CPU threads. TTA is on by default and averages the original and one copy flipped
-anterior-posterior and inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`). For the
-general workflow see
+CPU threads. When the launcher assigns the container 16 CPUs or fewer (`--cpuset-cpus`), each
+worker is tied to three of them. Otherwise Linux runs the threads on CPUs that are free, so
+several containers can run at once on one host.
+
+TTA is on by default and averages the original and one copy flipped anterior-posterior and
+inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`). For the general workflow see
 [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md).
 
 ## Build a release

@@ -34,6 +34,20 @@ class CpuAssignmentTests(unittest.TestCase):
         )
         self.assertEqual(len(set().union(*map(set, assignments))), 15)
 
+    def test_uses_assigned_cpus_that_are_not_contiguous(self):
+        assignments = parallel.assign_worker_cpus(range(2, 34, 2), worker_count=5)
+        self.assertEqual(assignments[0], (2, 4, 6))
+        self.assertEqual(assignments[-1], (26, 28, 30))
+
+    def test_leaves_workers_untied_when_no_cpus_were_assigned(self):
+        # More than 16 CPUs means the launcher assigned none. Taking the lowest
+        # would put every container of a host on the same ones.
+        for available in (range(17), range(64)):
+            with self.subTest(cpus=len(available)):
+                self.assertEqual(
+                    parallel.assign_worker_cpus(available, worker_count=5), [None] * 5
+                )
+
     def test_rejects_insufficient_cpu_affinity(self):
         with self.assertRaisesRegex(RuntimeError, "requires at least 15"):
             parallel.assign_worker_cpus(range(14), worker_count=5)
@@ -117,23 +131,33 @@ class ParallelEnsembleTests(unittest.TestCase):
                 members=[{"member_id": f"fold_{i}"} for i in range(2)],
             )
             # Small CI runners use one thread per model; production allocation is
-            # covered by CpuAssignmentTests above.
-            with patch.object(pacs, "THREADS_PER_MODEL", 1):
-                engine = pacs._create_inference_engine(deployment)
+            # covered by CpuAssignmentTests above. The limit makes the first engine
+            # tie its workers to CPUs and the second leave them to the kernel.
+            host_cpus = len(os.sched_getaffinity(0))
             sequential = PatchInferenceEngine(models, config)
-            for use_tta in (False, True):
-                with self.subTest(tta=use_tta):
-                    tta = parallel.TTA_FLIP_AXES if use_tta else False
-                    actual_mask, actual = engine.predict_mask_and_probabilities(
-                        image, tta=tta
-                    )
-                    expected_mask, expected = sequential.predict_mask_and_probabilities(
-                        image, tta=tta
-                    )
-                    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
-                    torch.testing.assert_close(
-                        actual_mask, expected_mask, rtol=0, atol=0
-                    )
+            for limit, tied in ((host_cpus, True), (0, False)):
+                with patch.object(pacs, "THREADS_PER_MODEL", 1), patch.object(
+                    parallel, "MAX_ASSIGNED_CPUS", limit
+                ):
+                    engine = pacs._create_inference_engine(deployment)
+                self.assertEqual(
+                    [cpus is not None for cpus in engine.worker_cpu_sets], [tied] * 2
+                )
+                for use_tta in (False, True):
+                    with self.subTest(tied=tied, tta=use_tta):
+                        tta = parallel.TTA_FLIP_AXES if use_tta else False
+                        actual_mask, actual = engine.predict_mask_and_probabilities(
+                            image, tta=tta
+                        )
+                        expected_mask, expected = (
+                            sequential.predict_mask_and_probabilities(image, tta=tta)
+                        )
+                        torch.testing.assert_close(
+                            actual, expected, rtol=1e-5, atol=1e-6
+                        )
+                        torch.testing.assert_close(
+                            actual_mask, expected_mask, rtol=0, atol=0
+                        )
 
 
 if __name__ == "__main__":
