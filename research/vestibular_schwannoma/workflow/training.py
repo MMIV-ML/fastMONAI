@@ -15,7 +15,7 @@ import torch
 import torchio as tio
 from fastai.learner import Learner
 from fastai.torch_core import set_seed
-from scipy.ndimage import label
+from scipy.ndimage import generate_binary_structure, label
 
 from fastMONAI.vision_all import (
     AccumulatedDice,
@@ -366,7 +366,11 @@ def _gpu_augmentations_json(gpu_augmentation) -> str:
 
 
 def _component_counts(prediction, ground_truth_path: str | Path) -> dict[str, int]:
-    """Count predicted regions and regions with no ground-truth overlap."""
+    """Count predicted regions and regions with no ground-truth overlap.
+
+    Voxels that touch by a face, an edge or a corner belong to the same region,
+    which is how pr2mask splits the mask into regions.
+    """
 
     prediction_array = (
         np.asarray(
@@ -385,7 +389,10 @@ def _component_counts(prediction, ground_truth_path: str | Path) -> dict[str, in
             "prediction and ground truth must share a voxel grid; got "
             f"{prediction_array.shape} and {ground_truth.shape}"
         )
-    labels, component_count = label(prediction_array)
+    labels, component_count = label(
+        prediction_array,
+        structure=generate_binary_structure(prediction_array.ndim, prediction_array.ndim),
+    )
     false_positive_count = sum(
         not np.any(ground_truth[labels == component])
         for component in range(1, component_count + 1)

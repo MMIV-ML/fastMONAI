@@ -128,6 +128,30 @@ class TrainingOrchestrationTests(unittest.TestCase):
             },
         )
 
+    def test_component_counts_join_voxels_that_touch_at_an_edge_or_corner(self):
+        prediction = torch.zeros((1, 5, 5, 5), dtype=torch.long)
+        prediction[0, 0, 0, 0] = 1
+        prediction[0, 1, 1, 0] = 1
+        prediction[0, 2, 2, 1] = 1
+        prediction[0, 4, 4, 4] = 1
+        ground_truth = torch.zeros_like(prediction)
+        ground_truth[0, 0, 0, 0] = 1
+
+        with patch.object(
+            training.tio,
+            "LabelMap",
+            return_value=SimpleNamespace(data=ground_truth),
+        ):
+            counts = training._component_counts(prediction, "mask.nii.gz")
+
+        self.assertEqual(
+            counts,
+            {
+                "predicted_component_count": 2,
+                "false_positive_component_count": 1,
+            },
+        )
+
     def test_fold_dataloaders_close_when_model_construction_fails(self):
         experiment = ExperimentConfig(
             model_keys=("unet",),
