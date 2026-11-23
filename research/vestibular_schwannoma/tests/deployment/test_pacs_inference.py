@@ -1,9 +1,11 @@
 import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -16,6 +18,10 @@ PACS_DIR = PROJECT_ROOT / "deployment" / "pacs"
 sys.path.insert(0, str(PACS_DIR))
 
 import pacs_inference as pacs  # noqa: E402
+import redcap_output  # noqa: E402
+
+
+BUNDLE_SHA256 = "a" * 64
 
 
 class CommandLineTests(unittest.TestCase):
@@ -42,12 +48,21 @@ class CommandLineTests(unittest.TestCase):
 
 
 class PredictionOutputTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        registry = Path(directory.name) / "redcap_model_instances.json"
+        registry.write_text(json.dumps({BUNDLE_SHA256: 200}))
+        patcher = patch.object(redcap_output, "MODEL_INSTANCES_PATH", registry)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def deployment(self):
         return {
             "patch_config": SimpleNamespace(patch_size=[16, 16, 16]),
             "model_type": "dynunet",
-            "bundle_sha256": "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
-            "predictor": object(),
+            "bundle_sha256": BUNDLE_SHA256,
+            "model_paths": [Path("all_data.safetensors")],
             "members": [{"member_id": "all_data"}],
         }
 
@@ -69,7 +84,8 @@ class PredictionOutputTests(unittest.TestCase):
             for name in ("source.dcm", "descr.json", "ror-state.txt"):
                 (input_output_dir / name).write_text(name)
             with (
-                patch.object(pacs, "load_deployment", return_value=deployment),
+                patch.object(pacs, "describe_deployment", return_value=deployment),
+                patch.object(pacs, "load_safetensors_model"),
                 patch.object(pacs, "PatchInferenceEngine", return_value=engine),
                 patch.object(pacs, "write_prediction_outputs") as write_outputs,
                 patch.object(pacs, "validate_dicom_input") as preflight,
@@ -115,7 +131,7 @@ class PredictionOutputTests(unittest.TestCase):
 
     def test_required_pr2mask_tools_fail_before_model_loading(self):
         with tempfile.TemporaryDirectory() as directory:
-            with patch.object(pacs, "load_deployment") as load:
+            with patch.object(pacs, "describe_deployment") as load:
                 with self.assertRaisesRegex(RuntimeError, "pr2mask tools"):
                     pacs.run_inference(
                         "/dicom",
@@ -136,7 +152,7 @@ class PredictionOutputTests(unittest.TestCase):
                     with (
                         patch.object(pacs, "_required_pr2mask_tools", return_value={}),
                         patch.object(pacs, "validate_dicom_input") as preflight,
-                        patch.object(pacs, "load_deployment") as load,
+                        patch.object(pacs, "describe_deployment") as load,
                     ):
                         with self.assertRaisesRegex(
                             RuntimeError, "owned output directories already exist"
@@ -171,7 +187,7 @@ class PredictionOutputTests(unittest.TestCase):
             (work / "stale.dcm").touch()
             with (
                 patch.object(pacs, "_required_pr2mask_tools", return_value={}),
-                patch.object(pacs, "load_deployment") as load,
+                patch.object(pacs, "describe_deployment") as load,
             ):
                 with self.assertRaisesRegex(
                     RuntimeError, "work directory must be empty"
@@ -195,7 +211,7 @@ class PredictionOutputTests(unittest.TestCase):
                     "validate_dicom_input",
                     side_effect=RuntimeError("invalid DICOM input"),
                 ) as preflight,
-                patch.object(pacs, "load_deployment") as load,
+                patch.object(pacs, "describe_deployment") as load,
             ):
                 with self.assertRaisesRegex(RuntimeError, "invalid DICOM input"):
                     pacs.run_inference(
@@ -217,7 +233,8 @@ class PredictionOutputTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with (
-                patch.object(pacs, "load_deployment", return_value=self.deployment()),
+                patch.object(pacs, "describe_deployment", return_value=self.deployment()),
+                patch.object(pacs, "load_safetensors_model"),
                 patch.object(pacs, "PatchInferenceEngine", return_value=engine),
                 patch.object(pacs, "write_prediction_outputs") as write_outputs,
                 patch.object(pacs, "_required_pr2mask_tools", return_value={}),
@@ -332,10 +349,13 @@ class PostprocessingTests(unittest.TestCase):
                 "bundle_sha256": "a" * 64,
                 "members": [{"member_id": f"fold_{number}"} for number in range(5)],
             }
+            stderr = io.StringIO()
             with (
                 patch.object(pacs.subprocess, "run", side_effect=run),
                 patch.object(pacs, "tag_pr2mask_mask") as tag_mask,
                 patch.object(pacs, "write_redcap_output") as export_redcap,
+                redirect_stdout(io.StringIO()),
+                redirect_stderr(stderr),
             ):
                 pacs._run_postprocessing(
                     input_dir,
@@ -347,6 +367,7 @@ class PostprocessingTests(unittest.TestCase):
                     tools=tools,
                 )
 
+            self.assertEqual(stderr.getvalue(), "")
             tag_mask.assert_called_once_with(labels_series, deployment, use_tta=True)
             export_redcap.assert_called_once_with(
                 work_dir,
@@ -388,6 +409,80 @@ class PostprocessingTests(unittest.TestCase):
             self.assertFalse((output_dir / "vote_map").exists())
             self.assertFalse((output_dir / "model_mask").exists())
             self.assertFalse((output_dir / "mask").exists())
+
+    def test_failure_writes_log_tail_to_stderr_and_publishes_nothing(self):
+        cases = (
+            ("pr2mask tool fails", 3, None),
+            ("label tagging fails", 0, "tag_pr2mask_mask"),
+            ("REDCap export fails", 0, "write_redcap_output"),
+        )
+        for label, exit_code, failing_step in cases:
+            with self.subTest(label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                input_dir = root / "input"
+                work_dir = root / "work"
+                output_dir = root / "output"
+                tools_dir = root / "pr2mask"
+                for path in (input_dir, output_dir, tools_dir):
+                    path.mkdir()
+                for name in ("model_mask", "vote_map"):
+                    (work_dir / name).mkdir(parents=True)
+                tools = {}
+                for name in ("imageAndMask2Report", "imageAndMask2Fused"):
+                    tool = tools_dir / name
+                    # Leaves the work directories a real pr2mask run writes.
+                    tool.write_text(
+                        "#!/bin/bash\n"
+                        f"echo '{name}: wrote outputs'\n"
+                        "for dir in fused fused_vote_map reports redcap/run labels/1.2.3.4.5; do\n"
+                        '  mkdir -p "$3/$dir" && echo "$dir" > "$3/$dir/result.dcm"\n'
+                        "done\n"
+                        f"exit {exit_code}\n"
+                    )
+                    tool.chmod(0o755)
+                    tools[name] = tool
+                deployment = {
+                    "model_type": "dynunet",
+                    "bundle_sha256": BUNDLE_SHA256,
+                    "members": [{"member_id": f"fold_{number}"} for number in range(5)],
+                }
+                error = RuntimeError(f"{failing_step} failed")
+                side_effects = {"tag_pr2mask_mask": None, "write_redcap_output": None}
+                if failing_step is not None:
+                    side_effects[failing_step] = error
+                stderr = io.StringIO()
+                with (
+                    patch.object(
+                        pacs, "tag_pr2mask_mask", side_effect=side_effects["tag_pr2mask_mask"]
+                    ),
+                    patch.object(
+                        pacs,
+                        "write_redcap_output",
+                        side_effect=side_effects["write_redcap_output"],
+                    ),
+                    redirect_stdout(io.StringIO()),
+                    redirect_stderr(stderr),
+                    self.assertRaises(Exception) as caught,
+                ):
+                    pacs._run_postprocessing(
+                        input_dir,
+                        work_dir,
+                        output_dir,
+                        deployment,
+                        use_tta=True,
+                        version="20260817T120000Z",
+                        tools=tools,
+                    )
+                if failing_step is None:
+                    self.assertIsInstance(caught.exception, subprocess.CalledProcessError)
+                    self.assertEqual(caught.exception.returncode, exit_code)
+                else:
+                    self.assertIs(caught.exception, error)
+                for name in pacs.FINAL_OUTPUT_DIRS:
+                    self.assertTrue((work_dir / name).is_dir())
+                self.assertEqual(list(output_dir.iterdir()), [])
+                self.assertIn(f"lines of {work_dir / pacs.LOG_NAME}", stderr.getvalue())
+                self.assertIn("imageAndMask2Report: wrote outputs", stderr.getvalue())
 
     def test_tagging_requires_exactly_one_pr2mask_mask_series(self):
         for count in (0, 2):

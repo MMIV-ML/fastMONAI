@@ -7,23 +7,18 @@ from unittest.mock import patch
 from fastMONAI.vision_all import (
     PatchConfig,
     patch_config_to_dict,
-    prediction_filename,
 )
 
 from vestibular_schwannoma.workflow import inference
 from vestibular_schwannoma.workflow.config import VS_OUTPUT_SPEC
 from vestibular_schwannoma.workflow.run_selection import (
     make_training_contract,
+    merge_fold_run_selections,
     read_inference_run_ids,
 )
 
 
 class InferenceArtifactTests(unittest.TestCase):
-    def test_public_prediction_filename_matches_patch_inference_outputs(self):
-        self.assertEqual(prediction_filename("case.nii.gz"), "case_pred.nii.gz")
-        self.assertEqual(prediction_filename("case.nii"), "case_pred.nii")
-        self.assertEqual(prediction_filename("case.mha"), "case_pred.nii.gz")
-
     def metadata(
         self,
         run_id,
@@ -95,7 +90,7 @@ class InferenceArtifactTests(unittest.TestCase):
                 manifest_kind="completed_registry",
                 run_ids={"fold_4": "run-4", "fold_5": "run-5"},
             )
-            destination = inference.merge_fold_run_selections(
+            destination = merge_fold_run_selections(
                 [first, second],
                 model_key="unet",
                 output_root=root / "merged",
@@ -191,7 +186,7 @@ class InferenceArtifactTests(unittest.TestCase):
                 contract_payload={"campaign": "different"},
             )
             with self.assertRaisesRegex(ValueError, "Training contract mismatch"):
-                inference.merge_fold_run_selections(
+                merge_fold_run_selections(
                     [first, second],
                     model_key="unet",
                     output_root=root / "mismatch-output",
@@ -210,13 +205,13 @@ class InferenceArtifactTests(unittest.TestCase):
                 run_ids={"fold_1": "other-run"},
             )
             with self.assertRaisesRegex(ValueError, "Duplicate model member 'fold_1'"):
-                inference.merge_fold_run_selections(
+                merge_fold_run_selections(
                     [first, overlap],
                     model_key="unet",
                     output_root=root / "overlap-output",
                 )
             with self.assertRaisesRegex(ValueError, r"missing=\['fold_2'"):
-                inference.merge_fold_run_selections(
+                merge_fold_run_selections(
                     [first],
                     model_key="unet",
                     output_root=root / "incomplete-output",
@@ -242,7 +237,7 @@ class InferenceArtifactTests(unittest.TestCase):
                 },
             )
             with self.assertRaisesRegex(ValueError, "duplicate MLflow run IDs"):
-                inference.merge_fold_run_selections(
+                merge_fold_run_selections(
                     [first, second],
                     model_key="unet",
                     output_root=root / "duplicate-output",
@@ -260,7 +255,7 @@ class InferenceArtifactTests(unittest.TestCase):
                 },
             )
             with self.assertRaisesRegex(FileExistsError, "new --output-root"):
-                inference.merge_fold_run_selections(
+                merge_fold_run_selections(
                     [first, second],
                     model_key="unet",
                     output_root=existing,

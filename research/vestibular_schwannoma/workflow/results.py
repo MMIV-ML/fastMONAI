@@ -147,8 +147,17 @@ def aggregate_results(
             return None
         raise
 
+    write_cv_summary(combined, results_dir)
+    return combined
+
+
+def write_cv_summary(combined: pd.DataFrame, results_dir: str | Path) -> Path:
+    """Write ``cv_summary.csv`` for pooled results and print the summary."""
+
+    results_dir = Path(results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
-    combined.to_csv(results_dir / "cv_summary.csv", index=False)
+    summary_path = results_dir / "cv_summary.csv"
+    combined.to_csv(summary_path, index=False)
     summary = summarize_metrics(combined)
 
     print(f"\n{'=' * 60}")
@@ -177,8 +186,8 @@ def aggregate_results(
     print("\n  Per-fold DSC:")
     for fold, group in combined.groupby("fold"):
         print(f"    Fold {fold}: {group['dsc'].mean():.4f} +/- {group['dsc'].std():.4f}")
-    print(f"\n  Results saved to {results_dir / 'cv_summary.csv'}")
-    return combined
+    print(f"\n  Results saved to {summary_path}")
+    return summary_path
 
 
 def build_model_comparison(

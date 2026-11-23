@@ -119,12 +119,41 @@ class PadOrCrop(DisplayedTransform):
 
 # %% ../nbs/03_vision_augment.ipynb #534509q2nn
 def _foreground_masking(tensor):
-    """Mask for non-zero voxels (nnU-Net-style foreground normalization)."""
+    """Mask of positive voxels (nnU-Net-style foreground normalization)."""
     return tensor > 0
 
 # %% ../nbs/03_vision_augment.ipynb #ca95a690
+class _TioChannelwiseZNormalization(tio.ZNormalization):
+    """TorchIO ZNormalization that normalizes each channel with its own mean and std."""
+
+    def apply_transform(self, subject):
+        for image_name, image in self.get_images_dict(subject).items():
+            channels = []
+            for channel in image.data:
+                channel = channel[None]
+                mask = self.get_mask_from_masking_method(self.masking_method, subject, channel)
+                standardized = self.znorm(channel, mask)
+                if standardized is None:
+                    raise RuntimeError(
+                        f'Standard deviation is 0 for masked values in image "{image_name}" ({image.path})'
+                    )
+                channels.append(standardized[0])
+            image.set_data(torch.stack(channels))
+        return subject
+
+
 class ZNormalization(DisplayedTransform):
-    """Apply TorchIO `ZNormalization`."""
+    """Apply TorchIO `ZNormalization`: subtract the mean and divide by the standard deviation.
+
+    Args:
+        masking_method: Voxels used to compute the mean and std. None uses all
+            voxels, 'foreground' uses the positive voxels (values > 0). The
+            mean and std are then applied to every voxel, background included.
+            Other TorchIO masking methods, such as a callable, are passed to
+            tio.ZNormalization but cannot be saved with to_spec().
+        channel_wise: If True (default), normalize each channel with its own
+            mean and std. If False, use one mean and std over all channels.
+    """
 
     order = 0
 
@@ -149,7 +178,9 @@ class ZNormalization(DisplayedTransform):
 
     @property
     def tio_transform(self):
-        """Return the underlying TorchIO transform."""
+        """Return the TorchIO transform for patch workflows, honouring channel_wise."""
+        if self.channel_wise:
+            return _TioChannelwiseZNormalization(masking_method=self.z_normalization.masking_method)
         return self.z_normalization
 
     def encodes(self, o: MedImage):
@@ -684,81 +715,96 @@ def _create_ellipsoid_mask(shape, center, radii):
 
 # %% ../nbs/03_vision_augment.ipynb #935c13e7
 class _TioRandomCutout(tio.IntensityTransform):
-    """TorchIO-compatible RandomCutout for patch-based workflows.
+    """TorchIO RandomCutout, used by RandomCutout and in patch-based workflows.
 
-    When mask_only=True, cutouts only affect voxels where the mask is positive.
-    The mask should be available in the Subject as 'mask' key.
+    Fills random ellipsoids in each image with 'min', 'mean', 'random' (uniform
+    between the image min and max) or a number. With mask_only=True, hole centres
+    are drawn from mask-positive voxels and only those voxels are filled. The mask
+    is read from the Subject's 'mask' key; without a mask, or with an empty one,
+    the image is left unchanged. max_holes=None means exactly `holes` holes.
     """
 
-    def __init__(self, holes=1, spatial_size=8, fill_value=None,
-                 max_holes=None, max_spatial_size=None, mask_only=True, p=0.2, **kwargs):
+    def __init__(self, holes=1, max_holes=None, spatial_size=8, max_spatial_size=None,
+                 fill='min', mask_only=True, p=0.2, **kwargs):
         super().__init__(p=p, **kwargs)
         self.holes = holes
-        self.spatial_size = spatial_size
-        self.fill_value = fill_value
         self.max_holes = max_holes
+        self.spatial_size = spatial_size
         self.max_spatial_size = max_spatial_size
+        self.fill = fill
         self.mask_only = mask_only
 
-    def _apply_cutout(self, data, fill_val, mask_tensor=None):
-        """Apply spherical cutout(s) to a tensor.
+    def __setstate__(self, state):
+        """Restore pickled state, also accepting earlier versions' state.
+
+        That state stores a numeric fill as `fill_value` and has no `fill`;
+        a `fill_value` of None filled with the image minimum.
+        """
+        state = dict(state)
+        fill_value = state.pop('fill_value', None)
+        if 'fill' not in state:
+            state['fill'] = fill_value if isinstance(fill_value, (int, float)) else 'min'
+        self.__dict__.update(state)
+
+    def _fill_value(self, data):
+        """Return the fill value for one image."""
+        if self.fill == 'min': return float(data.min())
+        if self.fill == 'mean': return float(data.mean())
+        if self.fill == 'random':
+            return torch.empty(1).uniform_(float(data.min()), float(data.max())).item()
+        return float(self.fill)
+
+    def _cutout_region(self, spatial_shape, mask_region=None):
+        """Return the union of the holes as a boolean (D, H, W) tensor.
 
         Args:
-            data: Input tensor of shape (C, D, H, W)
-            fill_val: Value to fill cutout regions
-            mask_tensor: Optional mask tensor for mask-only cutouts
-
-        Returns:
-            Tensor with cutout applied
+            spatial_shape: (D, H, W) shape of the image.
+            mask_region: Optional boolean (D, H, W) mask. Hole centres are drawn
+                from its voxels and the region is limited to it.
         """
-        result = data.clone()
         n_holes = torch.randint(self.holes, (self.max_holes or self.holes) + 1, (1,)).item()
-
-        spatial_shape = data.shape[1:]  # (D, H, W)
         min_size = self.spatial_size if isinstance(self.spatial_size, int) else self.spatial_size[0]
         max_size = self.max_spatial_size or self.spatial_size
         max_size = max_size if isinstance(max_size, int) else max_size[0]
+        mask_coords = mask_region.nonzero() if mask_region is not None else None
 
+        region = torch.zeros(spatial_shape, dtype=torch.bool)
         for _ in range(n_holes):
             size = torch.randint(min_size, max_size + 1, (3,))
             radii = size.float() / 2
 
-            # Random center (ensure hole fits in volume)
-            center = [
-                torch.randint(int(radii[i].item()),
-                              max(spatial_shape[i] - int(radii[i].item()), int(radii[i].item()) + 1),
-                              (1,)).item()
-                for i in range(3)
-            ]
-
-            ellipsoid = _create_ellipsoid_mask(spatial_shape, center, radii)
-
-            if self.mask_only and mask_tensor is not None:
-                # INTERSECT with tumor mask - only affect tumor voxels
-                tumor_mask = mask_tensor[0] > 0
-                cutout_region = ellipsoid & tumor_mask
+            if mask_coords is not None:
+                # Centre the hole on a mask voxel so it always hits the mask
+                center = mask_coords[torch.randint(len(mask_coords), (1,)).item()].tolist()
             else:
-                cutout_region = ellipsoid
+                # Random center anywhere (ensure hole fits in volume)
+                center = [
+                    torch.randint(int(radii[i].item()),
+                                  max(spatial_shape[i] - int(radii[i].item()), int(radii[i].item()) + 1),
+                                  (1,)).item()
+                    for i in range(3)
+                ]
 
-            result[:, cutout_region] = fill_val
+            region |= _create_ellipsoid_mask(spatial_shape, center, radii)
 
-        return result
+        if mask_region is not None:
+            region &= mask_region
+        return region
 
     def apply_transform(self, subject):
-        # Get mask if available for mask-only cutouts
-        mask_tensor = None
-        if self.mask_only and 'mask' in subject:
-            mask_tensor = subject['mask'].data
-
-            # Skip if mask is empty
-            if mask_tensor is not None and not (mask_tensor > 0).any():
+        mask_region = None
+        if self.mask_only:
+            if 'mask' not in subject:
+                return subject
+            mask_region = subject['mask'].data.as_subclass(torch.Tensor)[0] > 0
+            if not mask_region.any():
                 return subject
 
         for image in self.get_images(subject):
-            data = image.data
-            fill_val = self.fill_value if self.fill_value is not None else float(data.min())
-            result = self._apply_cutout(data, fill_val, mask_tensor)
-            image.set_data(result)
+            data = image.data.as_subclass(torch.Tensor).clone()
+            region = self._cutout_region(data.shape[1:], mask_region)
+            data[:, region] = self._fill_value(data)
+            image.set_data(data)
         return subject
 
 # %% ../nbs/03_vision_augment.ipynb #bc99f04d
@@ -771,7 +817,7 @@ class RandomCutout(ItemTransform):
 
     Args:
         holes: Minimum number of cutout regions. Default: 1.
-        max_holes: Maximum number of regions. Default: 3.
+        max_holes: Maximum number of regions; None means `holes`. Default: 3.
         spatial_size: Minimum cutout diameter in voxels. Default: 8.
         max_spatial_size: Maximum cutout diameter. Default: 16.
         fill: Fill value - 'min', 'mean', 'random', or float. Default: 'min'.
@@ -801,11 +847,14 @@ class RandomCutout(ItemTransform):
         self.p = p
 
         self._tio_cutout = _TioRandomCutout(
-            holes=holes, spatial_size=spatial_size,
-            fill_value=None if isinstance(fill, str) else fill,
-            max_holes=max_holes, max_spatial_size=max_spatial_size,
-            mask_only=mask_only, p=p
+            holes=holes, max_holes=max_holes, spatial_size=spatial_size,
+            max_spatial_size=max_spatial_size, fill=fill, mask_only=mask_only, p=p
         )
+
+    def __setstate__(self, state):
+        """Restore pickled state and give the TorchIO transform this wrapper's fill."""
+        self.__dict__.update(state)
+        self._tio_cutout.fill = self.fill
 
     @property
     def tio_transform(self):
@@ -815,13 +864,6 @@ class RandomCutout(ItemTransform):
         available in the TorchIO Subject as 'mask' key.
         """
         return self._tio_cutout
-
-    def _get_fill_value(self, tensor):
-        if self.fill == 'min': return float(tensor.min())
-        elif self.fill == 'mean': return float(tensor.mean())
-        elif self.fill == 'random':
-            return torch.empty(1).uniform_(float(tensor.min()), float(tensor.max())).item()
-        else: return self.fill
 
     def encodes(self, x):
         """Apply mask-aware cutout to image.
@@ -833,64 +875,11 @@ class RandomCutout(ItemTransform):
             Tuple of (transformed MedImage, unchanged target)
         """
         img, y_true = x
-
-        if torch.rand(1).item() > self.p:
-            return img, y_true
-
-        # Get mask data if available (as numpy for safe boolean operations)
-        mask_np = None
-        tumor_coords = None
+        subject = {'image': tio.ScalarImage(tensor=img.as_subclass(torch.Tensor))}
         if isinstance(y_true, MedMask):
-            mask_np = y_true.numpy()
-            # Get coordinates of tumor voxels for mask-aware center placement
-            if self.mask_only and (mask_np > 0).any():
-                tumor_coords = np.argwhere(mask_np[0] > 0)  # Shape: (N, 3) for z, y, x
-
-        # Skip cutout if mask_only=True but no mask or empty mask
-        if self.mask_only:
-            if mask_np is None or tumor_coords is None or len(tumor_coords) == 0:
-                return img, y_true
-
-        # Work with numpy array to avoid tensor subclass issues
-        result_np = img.numpy().copy()
-        spatial_shape = img.shape[1:]  # (D, H, W)
-        fill_val = self._get_fill_value(img)
-
-        n_holes = torch.randint(self.holes, self.max_holes + 1, (1,)).item()
-
-        min_size = self.spatial_size if isinstance(self.spatial_size, int) else self.spatial_size[0]
-        max_size = self.max_spatial_size or self.spatial_size
-        max_size = max_size if isinstance(max_size, int) else max_size[0]
-
-        for _ in range(n_holes):
-            size = torch.randint(min_size, max_size + 1, (3,))
-            radii = size.float() / 2
-
-            if self.mask_only and tumor_coords is not None:
-                # Pick center from within tumor region to ensure intersection
-                idx = torch.randint(0, len(tumor_coords), (1,)).item()
-                center = tumor_coords[idx].tolist()  # [z, y, x]
-            else:
-                # Random center anywhere (ensure hole fits in volume)
-                center = [
-                    torch.randint(int(radii[i].item()),
-                                  max(spatial_shape[i] - int(radii[i].item()), int(radii[i].item()) + 1),
-                                  (1,)).item()
-                    for i in range(3)
-                ]
-
-            ellipsoid = _create_ellipsoid_mask(spatial_shape, center, radii).numpy()
-
-            if self.mask_only and mask_np is not None:
-                # INTERSECT with tumor mask - only affect tumor voxels
-                tumor_mask = mask_np[0] > 0
-                cutout_region = ellipsoid & tumor_mask
-            else:
-                cutout_region = ellipsoid
-
-            result_np[:, cutout_region] = fill_val
-
-        return MedImage.create(torch.from_numpy(result_np)), y_true
+            subject['mask'] = tio.LabelMap(tensor=y_true.as_subclass(torch.Tensor))
+        out = self._tio_cutout(tio.Subject(subject))
+        return MedImage.create(out['image'].data), y_true
 
 # %% ../nbs/03_vision_augment.ipynb #3c4f113d
 class RandomElasticDeformation(CustomDictTransform):

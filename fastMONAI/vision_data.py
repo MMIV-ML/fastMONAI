@@ -155,14 +155,14 @@ def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
                ncols=None, figsize=None, channel=0, slice_index=None,
                anatomical_plane=0, **kwargs):
                    
-    """Showing a batch of decoded segmentation samples."""
+    """Showing a batch of decoded segmentation samples. `kwargs` are passed to each `show`."""
                    
     nrows = min(len(samples), max_n)
     ncols = x.shape[1] + 1
     imgs = []
     slice_idxs = []
 
-    fig, axs = subplots(nrows, ncols, figsize=figsize, **kwargs)
+    fig, axs = subplots(nrows, ncols, figsize=figsize)
     axs = axs.flatten()
 
     for img, mask in zip(x, y):
@@ -173,7 +173,7 @@ def show_batch(x: MedImage, y: MedMask, samples, ctxs=None, max_n=6, nrows=None,
         idx = find_max_slice(mask[0].numpy(), anatomical_plane) if slice_index is None else slice_index
         slice_idxs.extend([idx] * (img.shape[0] + 1))
                    
-    ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane)
+    ctxs = [im.show(ax=ax, slice_index=idx, anatomical_plane=anatomical_plane, **kwargs)
             for im, ax, idx in zip(imgs, axs, slice_idxs)]
 
     plt.tight_layout()
@@ -258,23 +258,33 @@ def show_results(x: MedImage, y: MedMask, samples, outs, ctxs=None, max_n: int =
 
     return ctxs
 
+# %% ../nbs/02_vision_data.ipynb #5b2e8c71
+@dispatch
+def plot_top_losses(x: MedImage, y: torch.Tensor, samples, outs, raws, losses, nrows: int | None = None,
+                    ncols: int | None = None, figsize=None, channel: int = 0, slice_index: int | None = None,
+                    anatomical_plane: int = 0, **kwargs):
+    """Show images in top_losses for regression, with their prediction, target and loss."""
+
+    axs = get_grid(len(samples), nrows=nrows, ncols=ncols, figsize=figsize, title='Prediction/Actual/Loss')
+
+    for ax, s, r, l in zip(axs, samples, raws, losses):
+        s[0].show(ctx=ax, channel=channel, slice_index=slice_index, anatomical_plane=anatomical_plane, **kwargs)
+        ax.set_title(f'{r.max().item():.2f}/{s[1]} / {l.item():.2f}')
+
 # %% ../nbs/02_vision_data.ipynb #6eb8a2f6
 @dispatch
 def plot_top_losses(x: MedImage, y: TensorCategory, samples, outs, raws, losses, nrows: int | None = None, 
                     ncols: int | None = None, figsize=None, channel: int = 0, slice_index: int | None = None, 
                     anatomical_plane: int = 0, **kwargs):
-    """Show images in top_losses along with their prediction, actual, loss, and probability of actual class."""
+    """Show images in top_losses for classification, with their predicted class, actual class,
+    loss and probability of the predicted class."""
 
-    title = 'Prediction/Actual/Loss' if isinstance(y, torch.Tensor) else 'Prediction/Actual/Loss/Probability'
-    axs = get_grid(len(samples), nrows=nrows, ncols=ncols, figsize=figsize, title=title)
+    axs = get_grid(len(samples), nrows=nrows, ncols=ncols, figsize=figsize,
+                   title='Prediction/Actual/Loss/Probability')
 
     for ax, s, o, r, l in zip(axs, samples, outs, raws, losses):
         s[0].show(ctx=ax, channel=channel, slice_index=slice_index, anatomical_plane=anatomical_plane, **kwargs)
-
-        if isinstance(y, torch.Tensor): 
-            ax.set_title(f'{r.max().item():.2f}/{s[1]} / {l.item():.2f}')
-        else: 
-            ax.set_title(f'{o[0]}/{s[1]} / {l.item():.2f} / {r.max().item():.2f}')
+        ax.set_title(f'{o[0]}/{s[1]} / {l.item():.2f} / {r.max().item():.2f}')
 
 # %% ../nbs/02_vision_data.ipynb #f7346f94
 @dispatch
@@ -300,3 +310,9 @@ def plot_top_losses(x: MedImage, y: TensorMultiCategory, samples, outs, raws,
                 for b, r in zip(outs.itemgot(i), rows)]
 
     display_df(pd.DataFrame(rows))
+
+# %% ../nbs/02_vision_data.ipynb #c84d1f3a
+@dispatch
+def plot_top_losses(x: MedImage, y: MedMask, samples, outs, raws, losses, **kwargs):
+    """Top losses are not plotted for segmentation."""
+    raise NotImplementedError('plot_top_losses does not support segmentation; use show_results instead.')

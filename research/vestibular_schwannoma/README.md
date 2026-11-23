@@ -21,6 +21,7 @@ From the repository root, install this checkout and prepare the 344-case dataset
 ```bash
 pip install -e '.[dev]'
 cd research/vestibular_schwannoma
+pip install -r data/requirements.txt
 python scripts/prepare_data.py download
 python scripts/prepare_data.py prepare
 ```
@@ -41,7 +42,8 @@ python scripts/train_5fold.py --skip-unavailable
 
 `dynunet_small` and `dynunet_xs` are DynUNet with half and a quarter of the channels.
 
-To use several GPUs, run one fold per process, each with its own `--results-root`, then merge:
+To use several GPUs, run one fold per process, each with its own `--results-root`, then merge
+the run selections and pool the held-out results:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 python scripts/train_5fold.py --models unet --folds 1 --results-root cv_results/unet_fold_1 &
@@ -51,7 +53,11 @@ python scripts/merge_parallel_folds.py cv_results/unet_fold_{1..5}/completed_run
   --model unet --output-root cv_results/unet_5fold_merged
 ```
 
-- Fill `preprocessed/` with a single process first; parallel jobs can't build the cache.
+- The merge writes `inference_run_ids.json`, the pooled `<model>/cv_summary.csv` and
+  `cv_model_comparison.csv` to `--output-root`. It pools each job's
+  `<model>/fold_<n>/results.csv` found next to the selection file.
+- Only one process can build the `preprocessed/` cache. Start the fold 1 job first and the
+  others once it prints `Preprocessing cache:`.
 - All jobs must use the same MLflow tracking store. From one checkout this is automatic; across
   machines set the same `MLFLOW_TRACKING_URI` everywhere.
 - Folds from different machines, or from notebook 01 and the script, merge if every machine

@@ -64,11 +64,12 @@ The select statement must match the approved test series.
 
 ## 3. Prepare the model bundle
 
-Build the project's declared Safetensors bundle before building the image. fastMONAI-generated
-series use deterministic `2.25` UUID-derived UIDs, which need no registration.
+Build the project's declared Safetensors bundle before building the image. The project's
+`deployment/pacs/README.md` has the exact command, for example:
 
 ```bash
-python prepare_model_bundle.py ...
+python prepare_model_bundle.py --model-type <MODEL_TYPE> --artifact-role best \
+  --run "fold_1=$RUN_1" --run "fold_2=$RUN_2"
 ```
 
 The declared members determine the deployment form: exactly one member is a
@@ -180,16 +181,21 @@ physical directory to both paths when required; keep the input mount read-only.
 Before loading a model, the application reads DICOM headers only. Missing or inconsistent
 Study, Series, SOP, modality, or core geometry values stop the run. Frame of Reference and
 file-meta SOP identity problems produce a warning. Legacy source UIDs containing nonstandard
-hexadecimal characters produce a warning but are accepted as opaque source identity. The
-derived objects preserve the source Study Instance UID and preserve the Frame of Reference UID
-when it is consistently available, while every fastMONAI-generated Series Instance UID and SOP
-Instance UID is valid numeric DICOM syntax.
+hexadecimal characters produce a warning but are accepted as opaque source identity.
+
+The series sent to the PACS are written by pr2mask and keep the source Study Instance UID.
+pr2mask derives their UIDs from the source UIDs and the identity string passed with `-u`
+(image version, model and TTA setting), so rerunning the same image with the same options on
+the same series gives the same UIDs. fastMONAI's own mask
+and vote-map series, with deterministic `2.25` UIDs, are only pr2mask's input and stay in the
+work directory.
 
 The output root may already contain source DICOM, ROR bookkeeping, or unrelated files. Final
 output directories owned by the application must not exist when a run starts, so an earlier
 result is never overwritten. Intermediate products remain in a separate container work
 directory. After postprocessing succeeds and the required output directories are present, the
-final directories are copied to `/output`, and `pacs_command.log` is replaced atomically. Each
+final directories are copied to `/output`, and `pacs_command.log` is replaced atomically. If a
+step fails, nothing is copied and the end of the log goes to the container's error output. Each
 project README must document its exact output names. Where input and output share a physical
 directory, the same preflight and no-overwrite rules apply.
 
@@ -239,7 +245,10 @@ To register a new model type `<name>`:
 1. Add a `MODEL_CONFIGS["<name>"]` entry with its allowed `arch_ids`,
    `display_name`, and a new, never-reused positive `dicom_model_code`.
 2. Build a declared Safetensors bundle with `prepare_model_bundle.py`.
-3. Rebuild the container (Section 5). The new model is selectable with
+3. Register the bundle's `bundle_sha256` (in its `deployment_config.json`) in
+   `redcap_model_instances.json` with an unused instance block. The container refuses
+   unregistered bundles.
+4. Rebuild the container (Section 5). The new model is selectable with
    `-envs '{"model-type":"<name>"}'`.
 
 A new architecture serving the same task can retain the pipeline application identity. A new
@@ -247,9 +256,9 @@ modality, task, or input combination needs a distinct stable application identit
 pipelines must bind every source Series UID and ordered SOP-sequence digest in a fixed role order;
 the single-input project implementation must be extended before such a model is deployed.
 
-Do not encode readable names in DICOM UIDs. The numeric code registry is documented in the
-project PACS README. `SeriesDescription` and `DerivationDescription` carry readable model
-identity, while `SoftwareVersions` records the producing fastMONAI version.
+Do not encode readable names in DICOM UIDs. The numeric codes are `dicom_model_code` and
+`DICOM_OUTPUT_CODES` in `deployment_models.py`. `SeriesDescription` and `DerivationDescription`
+carry readable model identity, while `SoftwareVersions` records the producing fastMONAI version.
 
 ## Project Structure
 

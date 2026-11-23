@@ -128,6 +128,30 @@ class TrainingOrchestrationTests(unittest.TestCase):
             },
         )
 
+    def test_component_counts_join_voxels_that_touch_at_an_edge_or_corner(self):
+        prediction = torch.zeros((1, 5, 5, 5), dtype=torch.long)
+        prediction[0, 0, 0, 0] = 1
+        prediction[0, 1, 1, 0] = 1
+        prediction[0, 2, 2, 1] = 1
+        prediction[0, 4, 4, 4] = 1
+        ground_truth = torch.zeros_like(prediction)
+        ground_truth[0, 0, 0, 0] = 1
+
+        with patch.object(
+            training.tio,
+            "LabelMap",
+            return_value=SimpleNamespace(data=ground_truth),
+        ):
+            counts = training._component_counts(prediction, "mask.nii.gz")
+
+        self.assertEqual(
+            counts,
+            {
+                "predicted_component_count": 2,
+                "false_positive_component_count": 1,
+            },
+        )
+
     def test_fold_dataloaders_close_when_model_construction_fails(self):
         experiment = ExperimentConfig(
             model_keys=("unet",),
@@ -752,6 +776,109 @@ class TrainingOrchestrationTests(unittest.TestCase):
             list(manifest["models"]["unet"]["best"]),
             [f"fold_{fold}" for fold in folds],
         )
+
+
+class TrainingDataTests(unittest.TestCase):
+    def write_index(self, root, **overrides):
+        for name in ("a_img.nii.gz", "a_seg.nii.gz", "b_img.nii.gz", "b_seg.nii.gz"):
+            (root / name).touch()
+        frame = pd.DataFrame(
+            {
+                "case_id": ["a", "b"],
+                "t1_img_path": [str(root / "a_img.nii.gz"), str(root / "b_img.nii.gz")],
+                "t1_seg_path": [str(root / "a_seg.nii.gz"), str(root / "b_seg.nii.gz")],
+                "fold": [1, 2],
+            }
+        )
+        for column, values in overrides.items():
+            frame[column] = values
+        path = root / "index.csv"
+        frame.to_csv(path, index=False)
+        return path
+
+    def test_index_loads_when_columns_folds_and_files_are_valid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_index(Path(directory))
+            frame = training.load_training_index(path, (1, 2))
+        self.assertEqual(frame.case_id.tolist(), ["a", "b"])
+
+    def test_index_rejects_invalid_rows_folds_and_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(FileNotFoundError):
+                training.load_training_index(root / "missing.csv")
+
+            path = self.write_index(root)
+            pd.read_csv(path).drop(columns="fold").to_csv(path, index=False)
+            with self.assertRaisesRegex(ValueError, "missing columns"):
+                training.load_training_index(path)
+
+            path = self.write_index(root, case_id=["a", "a"])
+            with self.assertRaisesRegex(ValueError, "unique"):
+                training.load_training_index(path)
+
+            path = self.write_index(root, case_id=["a", None])
+            with self.assertRaisesRegex(ValueError, "present and unique"):
+                training.load_training_index(path)
+
+            path = self.write_index(root, fold=[1, None])
+            with self.assertRaisesRegex(ValueError, "must be present"):
+                training.load_training_index(path)
+
+            path = self.write_index(root)
+            with self.assertRaisesRegex(ValueError, r"requested folds: \[3\]"):
+                training.load_training_index(path, (1, 3))
+
+            path = self.write_index(root)
+            (root / "b_seg.nii.gz").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "b_seg.nii.gz"):
+                training.load_training_index(path)
+
+    def test_preprocessing_fingerprints_masks_and_uses_experiment_settings(self):
+        experiment = ExperimentConfig(model_keys=("unet",), preprocess_workers=3)
+        train_df = pd.DataFrame(
+            {"t1_img_path": ["a_img.nii.gz"], "t1_seg_path": ["a_seg.nii.gz"]}
+        )
+        result = SimpleNamespace(manifest_path=Path("manifest.json"))
+        with (
+            patch.object(
+                training, "MedDataset", return_value=SimpleNamespace(fingerprint="fp")
+            ) as dataset,
+            patch.object(
+                training, "preprocess_dataset", return_value=result
+            ) as preprocess,
+        ):
+            normalization, version, returned = training.preprocess_training_data(
+                train_df, experiment, "cache"
+            )
+
+        dataset.assert_called_once_with(
+            img_list=["a_seg.nii.gz"], dtype=training.MedMask, max_workers=3
+        )
+        self.assertEqual(version, "fp")
+        self.assertIs(returned, result)
+        self.assertEqual(len(normalization), 1)
+        self.assertEqual(
+            normalization[0].to_spec(),
+            training.ZNormalization(masking_method="foreground").to_spec(),
+        )
+        kwargs = preprocess.call_args.kwargs
+        self.assertIs(preprocess.call_args.args[0], train_df)
+        self.assertEqual(kwargs["output_dir"], "cache")
+        self.assertEqual(kwargs["target_spacing"], [0.4102, 0.4102, 1.5])
+        self.assertTrue(kwargs["apply_reorder"])
+        self.assertIs(kwargs["transforms"], normalization)
+        self.assertEqual(kwargs["dataset_version"], "fp")
+
+        with (
+            patch.object(
+                training, "MedDataset", return_value=SimpleNamespace(fingerprint=None)
+            ),
+            patch.object(training, "preprocess_dataset") as preprocess,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "fingerprint"):
+                training.preprocess_training_data(train_df, experiment)
+        preprocess.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -26,9 +26,10 @@ PR2MASK_COLUMNS = ["mask_base64_gzip_compressed", "number_of_pixel", "physical_s
 COLUMNS = PR2MASK_COLUMNS + ["model_version"]
 MODEL_VERSION = "dynunet 5-fold, fastmonai-vsseg:20261110T000000Z"
 ROUTING = ("record_id", "redcap_event_name", "redcap_repeat_instrument", "redcap_repeat_instance")
+LIVE_BUNDLE_SHA256 = "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec"
 DEPLOYMENT = {
     "model_type": "dynunet",
-    "bundle_sha256": "c5642793b0f57b49ea8f04a08d2b8c9deff1523813d87d89eec204f85846d6ec",
+    "bundle_sha256": "a" * 64,
     "members": [{"member_id": "all_data"}],
 }
 
@@ -87,13 +88,20 @@ def instances(report):
     return rows, values
 
 
-class Pr2maskDictionaryTests(unittest.TestCase):
+class ShippedFilesTests(unittest.TestCase):
     def test_shipped_dictionary_lists_pr2mask_columns(self):
         names = [row["Variable / Field Name"] for row in redcap_output.pr2mask_dictionary_rows()]
         self.assertIn("number_of_pixel", names)
         self.assertIn("physical_size", names)
         self.assertEqual(len(names), len(set(names)))
         self.assertFalse([name for name in names if name.startswith("vs_")])
+
+    def test_live_registry_holds_only_the_dynunet_bundle(self):
+        self.assertEqual(
+            json.loads(redcap_output.MODEL_INSTANCES_PATH.read_text()),
+            {LIVE_BUNDLE_SHA256: 200},
+        )
+        self.assertEqual(model_instance_base(LIVE_BUNDLE_SHA256), 200)
 
 
 class RedcapOutputTests(unittest.TestCase):
@@ -102,9 +110,15 @@ class RedcapOutputTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         reference = Path(tmp.name) / "pr2mask_dictionary.csv"
         reference.write_text(DICTIONARY_HEADER + DICTIONARY_ROWS)
-        patcher = patch.object(redcap_output, "PR2MASK_DICTIONARY_PATH", reference)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        registry = Path(tmp.name) / "redcap_model_instances.json"
+        registry.write_text(json.dumps({DEPLOYMENT["bundle_sha256"]: 200}))
+        for name, path in (
+            ("PR2MASK_DICTIONARY_PATH", reference),
+            ("MODEL_INSTANCES_PATH", registry),
+        ):
+            patcher = patch.object(redcap_output, name, path)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_each_region_fills_its_own_instance(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -185,12 +199,6 @@ class RedcapOutputTests(unittest.TestCase):
             (report / "output.json").write_text(json.dumps(rows))
             with self.assertRaisesRegex(ValueError, "Mixed REDCap destinations"):
                 export(work, source)
-
-    def test_live_registry_holds_only_the_dynunet_bundle(self):
-        self.assertEqual(
-            json.loads(redcap_output.MODEL_INSTANCES_PATH.read_text()),
-            {DEPLOYMENT["bundle_sha256"]: 200},
-        )
 
     def test_models_have_separate_blocks_and_reruns_replace_their_instances(self):
         stored = {}

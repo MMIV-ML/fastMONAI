@@ -1,3 +1,5 @@
+import ast
+import importlib
 import json
 import unittest
 from pathlib import Path
@@ -24,6 +26,24 @@ class NotebookStructureTests(unittest.TestCase):
             for index, source in enumerate(self.code_cells(path)):
                 with self.subTest(notebook=path.name, cell=index):
                     compile(source, f"{path.name}:cell-{index}", "exec")
+
+    def test_workflow_and_fastmonai_imports_resolve(self):
+        for path in NOTEBOOKS:
+            for index, source in enumerate(self.code_cells(path)):
+                for node in ast.walk(ast.parse(source)):
+                    if not isinstance(node, ast.ImportFrom) or not node.module:
+                        continue
+                    if node.module.split(".")[0] not in {"workflow", "fastMONAI"}:
+                        continue
+                    module = importlib.import_module(node.module)
+                    for alias in node.names:
+                        with self.subTest(
+                            notebook=path.name, cell=index, name=alias.name
+                        ):
+                            self.assertTrue(
+                                hasattr(module, alias.name),
+                                f"{node.module} has no {alias.name}",
+                            )
 
     def test_notebooks_use_the_project_inference_policy(self):
         sources = {

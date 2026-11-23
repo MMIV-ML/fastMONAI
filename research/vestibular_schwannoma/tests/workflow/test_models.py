@@ -74,6 +74,39 @@ class TrainingModelConfigTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_built_losses_match_their_loss_specs(self):
+        def reference(spec):
+            if spec["loss_id"] == "monai.dice_ce":
+                return models.DiceCELoss(**spec["kwargs"])
+            return models.DeepSupervisionLoss(
+                reference(spec["base_loss"]), **spec["kwargs"]
+            )
+
+        def state(module):
+            return {
+                "type": type(module).__name__,
+                "settings": {
+                    name: value
+                    for name, value in vars(module).items()
+                    if not name.startswith("_")
+                },
+                "buffers": {
+                    name: None if value is None else value.tolist()
+                    for name, value in module._buffers.items()
+                },
+                "children": {
+                    name: state(child) for name, child in module.named_children()
+                },
+            }
+
+        for key, config in models.TRAINING_MODEL_CONFIGS.items():
+            with self.subTest(key=key):
+                built = config.make_loss()
+                self.assertEqual(type(built).__name__, "CustomLoss")
+                self.assertEqual(
+                    state(built.loss_func), state(reference(config.loss_spec))
+                )
+
     def test_declared_order_is_preserved(self):
         configs = models.get_training_model_configs(
             ("dynunet_xs", "dynunet_small", "dynunet", "unet")

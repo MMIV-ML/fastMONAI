@@ -111,16 +111,25 @@ def show_med_img(im, ctx, channel: int, slice_index: int, anatomical_plane: int,
 
 # %% ../nbs/00_vision_plot.ipynb #c31d23c6-d819-4039-8d53-ea36ef20f049
 def find_max_slice(mask_data, anatomical_plane):
-    """Find slice index based on mask"""
-    
-    axis_mapping = {0: (1, 2),
-                    1: (0, 2),
-                    2: (0, 1)}
+    """Return the index of the slice with the most foreground (non-zero) voxels.
 
-    sums = mask_data.sum(axis=axis_mapping.get(anatomical_plane, (1, 2)))
-    idx = np.argmax(sums)
+    Args:
+        mask_data: 3D mask array.
+        anatomical_plane: Axis the slices are taken along (0, 1 or 2).
 
-    return idx
+    Returns:
+        The slice index; the middle slice if the mask is empty.
+    """
+    validate_anatomical_plane(anatomical_plane)
+
+    mask_data = np.asarray(mask_data)
+    other_axes = tuple(axis for axis in range(3) if axis != anatomical_plane)
+    sums = (mask_data > 0).sum(axis=other_axes)
+
+    if not sums.any():
+        return mask_data.shape[anatomical_plane] // 2
+
+    return int(np.argmax(sums))
 
 # %% ../nbs/00_vision_plot.ipynb #ah52hmsl0of
 def show_segmentation_comparison(
@@ -142,13 +151,14 @@ def show_segmentation_comparison(
     
     Args:
         image: Input image (MedImage, MedMask, or tensor [C, H, W, D])
-        ground_truth: Ground truth mask (MedMask or tensor [C, H, W, D])
-        prediction: Predicted mask (tensor [C, H, W, D])
+        ground_truth: Ground truth mask (MedMask or tensor [1, H, W, D])
+        prediction: Predicted mask (tensor [1, H, W, D])
         slice_index: Slice to display. If None, uses find_max_slice on ground_truth.
         anatomical_plane: 0=sagittal, 1=coronal, 2=axial (default)
         metric_value: Optional metric value to display in prediction title
         metric_name: Name of metric for title (default 'DSC')
-        channel: Channel to display for multi-channel data (default 0)
+        channel: Image channel to display for multi-channel images (default 0).
+            Masks are single-channel.
         figsize: Figure size (default (15, 5))
         cmap_img: Colormap for image (default 'gray')
         cmap_mask: Colormap for masks (default 'gray')
@@ -176,14 +186,14 @@ def show_segmentation_comparison(
     if hasattr(pred_data, 'cpu'): pred_data = pred_data.cpu()
     
     if slice_index is None:
-        gt_np = gt_data[channel].numpy()
+        gt_np = gt_data[0].numpy()
         slice_index = find_max_slice(gt_np, anatomical_plane)
     
     fig, axes = plt.subplots(1, 3, figsize=figsize)
     
     img_slice, img_aspect = _get_slice(img_data, channel, slice_index, anatomical_plane, voxel_size)
-    gt_slice, gt_aspect = _get_slice(gt_data, channel, slice_index, anatomical_plane, voxel_size)
-    pred_slice, pred_aspect = _get_slice(pred_data, channel, slice_index, anatomical_plane, voxel_size)
+    gt_slice, gt_aspect = _get_slice(gt_data, 0, slice_index, anatomical_plane, voxel_size)
+    pred_slice, pred_aspect = _get_slice(pred_data, 0, slice_index, anatomical_plane, voxel_size)
     
     axes[0].imshow(img_slice, cmap=cmap_img, aspect=img_aspect)
     axes[0].set_title('Input Image')
@@ -215,9 +225,9 @@ def show_mask_overlay(image, mask, ctx=None, channel: int = 0, slice_index: int 
 
     Args:
         image: Background image (MedImage or object with `.data` [C, H, W, D]).
-        mask: Overlay mask (MedMask or object with `.data` [C, H, W, D]); zero voxels are transparent.
+        mask: Overlay mask (MedMask or object with `.data` [1, H, W, D]); zero voxels are transparent.
         ctx: Axis to draw on (fastai-style context); same role as `ax`.
-        channel: Channel to display.
+        channel: Image channel to display. The mask is single-channel.
         slice_index: Slice to show; if None, uses `find_max_slice(mask, anatomical_plane)`.
         anatomical_plane: 0=sagittal, 1=coronal, 2=axial (default).
         voxel_size: Voxel spacing for aspect ratio; if None, aspect defaults to 1.
@@ -240,10 +250,10 @@ def show_mask_overlay(image, mask, ctx=None, channel: int = 0, slice_index: int 
     if hasattr(mask_data, 'cpu'): mask_data = mask_data.cpu()
 
     if slice_index is None:
-        slice_index = find_max_slice(mask_data[channel].numpy(), anatomical_plane)
+        slice_index = find_max_slice(mask_data[0].numpy(), anatomical_plane)
 
     img_slice, aspect = _get_slice(img_data, channel, slice_index, anatomical_plane, voxel_size)
-    mask_slice, _ = _get_slice(mask_data, channel, slice_index, anatomical_plane, voxel_size)
+    mask_slice, _ = _get_slice(mask_data, 0, slice_index, anatomical_plane, voxel_size)
 
     ax = ax if ax is not None else ctx
     if ax is None:

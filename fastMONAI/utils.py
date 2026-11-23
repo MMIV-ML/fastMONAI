@@ -27,14 +27,25 @@ from fastai.data.transforms import ColReader
 from collections.abc import Callable, Mapping
 from typing import Any
 
-# Default MLflow backend store: a sqlite DB at the package/repo root, resolved from
-# __file__ so it stays stable across os.chdir. Importing this module never changes the
-# tracking URI: _ensure_fastmonai_tracking_uri applies this default lazily, and only
-# when the user has not configured MLflow.
+def _default_mlruns_db(module_file=None):
+    """Path of the default MLflow sqlite store.
+
+    A source checkout keeps it at the repo root, resolved from the module file so it
+    stays stable across os.chdir. An installed package (site-packages) and a notebook
+    session use the working directory at import time.
+    """
+    if module_file is not None:
+        root = Path(module_file).resolve().parent.parent
+        if root.name not in ('site-packages', 'dist-packages'):
+            return root / 'mlruns.db'
+    return Path('mlruns.db').resolve()
+
+# Importing this module never changes the tracking URI: _ensure_fastmonai_tracking_uri
+# applies this default lazily, and only when the user has not configured MLflow.
 try:
-    _mlruns_db = Path(__file__).resolve().parent.parent / 'mlruns.db'
+    _mlruns_db = _default_mlruns_db(__file__)
 except NameError:
-    _mlruns_db = Path('mlruns.db').resolve()
+    _mlruns_db = _default_mlruns_db()
 
 # %% ../nbs/07_utils.ipynb #mlflowuriguard
 _FASTMONAI_TRACKING_URI_SET = False  # did *we* set the tracking URI? (idempotency guard)
@@ -66,8 +77,8 @@ def set_mlflow_tracking_uri(uri=None):
 
     Args:
         uri: A tracking URI (e.g. ``"sqlite:///runs.db"`` or an HTTP server).
-            If ``None``, uses fastMONAI's default sqlite store at the
-            package/repo root.
+            If ``None``, uses fastMONAI's default sqlite store: ``mlruns.db`` at
+            the repo root for a source checkout, otherwise in the working directory.
 
     Returns:
         The tracking URI that was set.
@@ -268,18 +279,37 @@ def _check_patch_threshold(config: Mapping) -> dict:
     return config
 
 
+def _check_patch_classes(config: Mapping) -> dict:
+    """Require integer classes of a multiclass patch contract to be 0..n-1.
+
+    Patch inference writes class indices, so other integer labels would not match the
+    contract. Checked when a contract is created, not when a saved one is read.
+    """
+    output = config['output']
+    if config.get('workflow') == 'patch' and output['kind'] == 'multiclass_segmentation':
+        classes = output['classes']
+        if (all(isinstance(c, int) for c in classes)
+                and classes != list(range(len(classes)))):
+            raise ValueError(
+                f"Patch inference writes class indices 0..{len(classes) - 1}, so "
+                f"multiclass_segmentation classes must be {list(range(len(classes)))} "
+                f"or an integer, got {classes}")
+    return config
+
+
 def patch_inference_config(config, output_spec: Mapping) -> dict:
     """Build the complete versioned inference contract for a patch workflow.
 
     For ``binary_segmentation`` outputs, ``config.binary_threshold`` must equal the
-    output threshold, so patch inference and output decoding agree.
+    output threshold, so patch inference and output decoding agree. Integer classes of
+    a ``multiclass_segmentation`` output must be 0..n-1, the indices patch inference writes.
     """
-    return _check_patch_threshold(_validate_inference_config({
+    return _check_patch_classes(_check_patch_threshold(_validate_inference_config({
         'config_schema': '1',
         'workflow': 'patch',
         'patch_config': patch_config_to_dict(config, inference_only=True),
         'output': _validate_output_spec(output_spec),
-    }))
+    })))
 
 
 def standard_inference_config(apply_reorder: bool, target_spacing, item_tfms: list,
@@ -297,15 +327,25 @@ def standard_inference_config(apply_reorder: bool, target_spacing, item_tfms: li
 
 
 def decode_model_output(logits: torch.Tensor, output_spec: Mapping):
-    """Apply the declared safe output contract to raw model logits."""
+    """Apply the declared safe output contract to raw model logits.
+
+    Multiclass segmentation returns the declared integer class labels, so
+    ``classes=[0, 1, 2, 4]`` gives label 4 for the fourth channel. Classes that are not
+    integers give the channel index.
+    """
     spec = _validate_output_spec(output_spec)
     kind = spec['kind']
     if kind == 'binary_segmentation':
         return (torch.sigmoid(logits) >= spec['threshold']).long()
     if kind == 'multiclass_segmentation':
-        if logits.shape[spec['class_axis']] != len(spec['classes']):
+        classes = spec['classes']
+        if logits.shape[spec['class_axis']] != len(classes):
             raise ValueError("logit class dimension does not match output_spec classes")
-        return torch.softmax(logits, dim=spec['class_axis']).argmax(dim=spec['class_axis'])
+        indices = torch.softmax(logits, dim=spec['class_axis']).argmax(dim=spec['class_axis'])
+        if (all(isinstance(c, int) for c in classes)
+                and classes != list(range(len(classes)))):
+            return torch.as_tensor(classes, dtype=indices.dtype, device=indices.device)[indices]
+        return indices
     if kind == 'classification':
         if logits.shape[spec['class_axis']] != len(spec['classes']):
             raise ValueError("logit class dimension does not match output_spec classes")
@@ -743,6 +783,76 @@ def _extract_patch_config(learn) -> dict:
     return config
 
 
+def _scheduled_lr(learn) -> float:
+    """Peak learning rate of the fit in progress.
+
+    Read from the fit's ParamScheduler (fit_one_cycle, fit_flat_cos, fit_sgdr), else from
+    the optimizer, else from ``learn.lr``.
+    """
+    import numpy as np
+    from fastai.callback.schedule import ParamScheduler
+    for cb in getattr(learn, 'cbs', None) or []:
+        if isinstance(cb, ParamScheduler) and 'lr' in cb.scheds:
+            sched = cb.scheds['lr']
+            return float(max(np.max(sched(pct)) for pct in np.linspace(0, 1, 1001)))
+    opt = getattr(learn, 'opt', None)
+    if opt is not None:
+        return float(np.max(opt.hypers[-1]['lr']))
+    return float(learn.lr)
+
+
+def _opt_func_name(opt_func) -> str:
+    """Name of an optimizer function, also when it is wrapped in functools.partial."""
+    from functools import partial
+    while isinstance(opt_func, partial):
+        opt_func = opt_func.func
+    return getattr(opt_func, '__name__', type(opt_func).__name__)
+
+
+_AUGMENTATION_PARAM_CHARS = 5000  # MLflow limits a param value to 6000 characters
+
+
+def _describe_value(value):
+    """JSON-native copy of a value; objects that are not JSON types become their type name."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_describe_value(v) for v in value]
+    if isinstance(value, Mapping):
+        return {str(k): _describe_value(v) for k, v in value.items()}
+    if hasattr(value, 'tolist'):
+        return _describe_value(value.tolist())
+    return type(value).__name__
+
+
+def _patch_augmentations_json(dls) -> str | None:
+    """Training augmentation of patch DataLoaders as JSON, or None without one.
+
+    Describes ``dls.train.gpu_augmentation``, else each transform in
+    ``dls.train.patch_tfms``, as ``[{"name": ..., "params": {...}}]``. Text longer than
+    ``_AUGMENTATION_PARAM_CHARS`` is cut to that length and ends with '...'.
+    """
+    if not _detect_patch_workflow(dls):
+        return None
+    train = getattr(dls, 'train', None)
+    gpu_augmentation = getattr(train, 'gpu_augmentation', None)
+    patch_tfms = getattr(train, 'patch_tfms', None)
+    if gpu_augmentation is not None:
+        items = [{'name': name, 'params': params}
+                 for name, params in vars(gpu_augmentation).items()
+                 if not name.startswith('_') and params is not None]
+    elif patch_tfms is not None:
+        items = [{'name': type(tfm).__name__,
+                  'params': {k: v for k, v in vars(tfm).items() if not k.startswith('_')}}
+                 for tfm in getattr(patch_tfms, 'transforms', patch_tfms)]
+    else:
+        return None
+    text = json.dumps(_describe_value(items), sort_keys=True, separators=(',', ':'))
+    if len(text) > _AUGMENTATION_PARAM_CHARS:
+        text = text[:_AUGMENTATION_PARAM_CHARS - 3] + '...'
+    return text
+
+
 def _extract_loss_name(learn) -> str:
     """Extract loss function name from Learner.
     
@@ -1130,10 +1240,11 @@ class ModelTrackingCallback(Callback):
         params = {}
         
         params["epochs"] = self.learn.n_epoch
-        params["learning_rate"] = float(self.learn.lr)
-        params["optimizer"] = self.learn.opt_func.__name__
+        params["learning_rate"] = _scheduled_lr(self.learn)
+        params["optimizer"] = _opt_func_name(self.learn.opt_func)
         params["batch_size"] = self.learn.dls.bs
         
+        params["model_name"] = self.config["model_name"]
         params["loss_function"] = self.config["loss_function"]
         params["size"] = self.config["size"]
         params["target_spacing"] = self.config["target_spacing"]
@@ -1149,6 +1260,10 @@ class ModelTrackingCallback(Callback):
             for key, value in self.patch_config.items():
                 if value is not None:
                     params[f"patch_{key}"] = value if isinstance(value, (int, float, str, bool)) else str(value)
+        
+        augmentations = _patch_augmentations_json(self.learn.dls)
+        if augmentations is not None:
+            params["augmentations"] = augmentations
         
         return params
     
@@ -1177,11 +1292,8 @@ class ModelTrackingCallback(Callback):
             else:
                 metrics[name] = float(val)
         
-        if len(recorder.log) >= 2:
-            if recorder.log[1] is not None:
-                metrics['train_loss'] = float(recorder.log[1])
-            if len(recorder.log) >= 3 and recorder.log[2] is not None:
-                metrics['valid_loss'] = float(recorder.log[2])
+        if len(recorder.log) >= 2 and recorder.log[1] is not None:
+            metrics['train_loss'] = float(recorder.log[1])
                 
         return metrics
     
@@ -1217,7 +1329,7 @@ class ModelTrackingCallback(Callback):
 
             if best_model_cb is not None:
                 self.learn.model = compiled_model
-                self.learn.load(best_model_cb.fname)
+                self.learn.load(best_model_cb.fname, with_opt=False)
                 self.learn.model = unwrap_compiled_model(compiled_model)
                 print(f"Loaded best model weights ({best_model_cb.fname}) for artifact export")
 
@@ -1268,11 +1380,13 @@ class ModelTrackingCallback(Callback):
         active after fit. A run started by this callback is ended with status FAILED
         if this setup raises. A run that a ModelTrackingCallback started but never
         ended, because its fit raised or was interrupted before after_fit, is ended
-        with status FAILED at the next fit.
+        with status FAILED at the next fit. A ``model_spec`` that does not rebuild
+        ``learn.model`` raises before any run is started.
         """
         active_run = mlflow.active_run()
         if _fail_open_callback_run():
             active_run = None
+        self._check_model_spec()
 
         if self.auto_start or active_run is None:
             if self.auto_start:
@@ -1295,6 +1409,19 @@ class ModelTrackingCallback(Callback):
         except Exception:
             self.mark_failed()
             raise
+
+    def _check_model_spec(self) -> None:
+        """Raise if ``model_spec`` does not rebuild ``learn.model`` (compared by repr).
+
+        The model is built under a forked torch RNG, so the check does not change
+        seeded training.
+        """
+        with torch.random.fork_rng(devices=[]):
+            rebuilt = repr(build_model_from_spec(self.model_spec))
+        if rebuilt != repr(unwrap_compiled_model(self.learn.model)):
+            raise ValueError(
+                "model_spec does not rebuild learn.model (their repr differs); "
+                "the Safetensors artifacts could not be saved after training")
 
     def _log_run_setup(self) -> None:
         """Log tags, parameters, the preprocessing manifest and the split to the run."""
@@ -1360,12 +1487,13 @@ class ModelTrackingCallback(Callback):
         self._run_failed = True
 
     def log_metrics(self, metrics: dict) -> None:
-        """Log additional metrics to the completed MLflow run.
+        """Log additional metrics to the callback's MLflow run.
 
-        Reopens the run to log metrics, then closes it. Useful for
-        post-training evaluation (e.g., validation set patch inference results).
-        Values that are not finite are skipped: MLflow accepts NaN but stores inf
-        as the largest float, which would distort plots and comparisons.
+        Logs by run ID, so the run's status is unchanged and the run need not be
+        active. Useful for post-training evaluation (e.g., validation set patch
+        inference results). Values that are not finite are skipped: MLflow accepts
+        NaN but stores inf as the largest float, which would distort plots and
+        comparisons.
 
         Args:
             metrics: Dictionary of metric name -> value pairs to log.
@@ -1374,20 +1502,23 @@ class ModelTrackingCallback(Callback):
             raise RuntimeError("No MLflow run found. Train the model first.")
 
         import math
+        import time
+        from mlflow.entities import Metric
         values = {k: float(v) for k, v in metrics.items()}
         valid = {k: v for k, v in values.items() if math.isfinite(v)}
 
         if valid:
-            with mlflow.start_run(run_id=self.run_id):
-                mlflow.log_metrics(valid)
+            timestamp = int(time.time() * 1000)
+            mlflow.tracking.MlflowClient().log_batch(
+                self.run_id, metrics=[Metric(k, v, timestamp, 0) for k, v in valid.items()])
             print(f"Logged {len(valid)} metric(s) to MLflow run {self.run_id}")
 
     def log_metrics_table(self, df, metrics=None, key='validation_metrics', display=False):
         """Log a summary table of metrics as an image to the MLflow Images tab.
 
         Creates a styled matplotlib table with Metric, Mean, and Std columns
-        from the given DataFrame and logs it via mlflow.log_image() so it
-        appears in the MLflow UI Images tab.
+        from the given DataFrame and logs it to the callback's run by run ID, so
+        it appears in the MLflow UI Images tab.
 
         Args:
             df: DataFrame containing per-sample metric values.
@@ -1441,8 +1572,7 @@ class ModelTrackingCallback(Callback):
         buf.seek(0)
         pil_image = Image.open(buf)
 
-        with mlflow.start_run(run_id=self.run_id):
-            mlflow.log_image(pil_image, key=key)
+        mlflow.tracking.MlflowClient().log_image(self.run_id, pil_image, key=key)
 
         buf.close()
         if display: plt.show()
@@ -1450,7 +1580,9 @@ class ModelTrackingCallback(Callback):
         print(f"Logged metrics table to MLflow run {self.run_id}")
 
     def log_dataframe(self, df, artifact_name='validation_results.csv', artifact_path='results'):
-        """Log a DataFrame as a CSV artifact to the MLflow run.
+        """Log a DataFrame as the CSV artifact ``<artifact_path>/<artifact_name>`` of the run.
+
+        Logs by run ID, so the run's status is unchanged and the run need not be active.
 
         Args:
             df: DataFrame to save.
@@ -1460,14 +1592,9 @@ class ModelTrackingCallback(Callback):
         if self.run_id is None:
             raise RuntimeError("No MLflow run found. Train the model first.")
 
-        with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
-            df.to_csv(f, index=False)
-            temp_path = f.name
-
-        with mlflow.start_run(run_id=self.run_id):
-            mlflow.log_artifact(temp_path, artifact_path)
-
-        os.remove(temp_path)
+        artifact_file = f"{artifact_path}/{artifact_name}" if artifact_path else artifact_name
+        mlflow.tracking.MlflowClient().log_text(
+            self.run_id, df.to_csv(index=False), artifact_file)
         print(f"Logged DataFrame ({len(df)} rows) to MLflow run {self.run_id}")
 
 # %% ../nbs/07_utils.ipynb #38avhd96apq
@@ -1681,12 +1808,16 @@ class MLflowUIManager:
     notebook never leaves an orphaned server holding the port. Call ``stop()``
     to shut it down sooner. An externally-started UI is reused, not killed, and
     calling ``start_ui()`` again while its own server runs just shows the link.
+
+    Args:
+        host: Address the server listens on. The default 127.0.0.1 accepts only
+            connections from this machine; '0.0.0.0' also accepts them from the network.
     """
 
-    def __init__(self):
+    def __init__(self, host='127.0.0.1'):
         self.process = None
         self.port = 5001
-        self.host = '0.0.0.0'
+        self.host = host
         self.backend_store_uri = _resolve_backend_store_uri()
         self._owns_process = False
         self._reusing_external = False
@@ -1699,7 +1830,7 @@ class MLflowUIManager:
         """Check if a port is available."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('localhost', port))
+                s.bind((self.host, port))
                 return True
             except OSError:
                 return False

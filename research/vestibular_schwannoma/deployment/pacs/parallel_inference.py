@@ -16,7 +16,7 @@ import numpy as np
 import torch
 import torchio as tio
 from fastMONAI.vision_all import load_safetensors_model
-from fastMONAI.vision_patch import PatchInferenceEngine
+from fastMONAI.vision_patch import PatchInferenceEngine, _resolve_tta
 
 
 THREADS_PER_MODEL = 3
@@ -258,7 +258,15 @@ class ParallelEnsemblePatchInferenceEngine(PatchInferenceEngine):
                 process.join(timeout=WORKER_SHUTDOWN_TIMEOUT_SECONDS)
             process.close()
 
-    def _run_inference(self, prepared, tta: bool = False) -> torch.Tensor:
+    def _run_inference(
+        self, prepared, tta: bool | tuple | list = False
+    ) -> torch.Tensor:
+        flips = _resolve_tta(tta)
+        if flips is not None and flips != TTA_FLIP_AXES:
+            raise ValueError(
+                f"parallel ensemble supports only the TTA flips {TTA_FLIP_AXES}, "
+                f"got {flips}"
+            )
         patch_iterator = iter(prepared.patch_loader)
         try:
             first_batch = next(patch_iterator)
@@ -323,7 +331,7 @@ class ParallelEnsemblePatchInferenceEngine(PatchInferenceEngine):
 
             try:
                 self._wait_for_workers(processes, ready_queue, error_queue)
-                flip_commands = range(len(TTA_FLIP_AXES)) if tta else (NO_FLIP_COMMAND,)
+                flip_commands = range(len(TTA_FLIP_AXES)) if flips else (NO_FLIP_COMMAND,)
                 for patches_batch in itertools.chain((first_batch,), patch_iterator):
                     patch_input = patches_batch["image"][tio.DATA]
                     patch_input = patch_input.to(device="cpu", dtype=torch.float32)
@@ -343,7 +351,7 @@ class ParallelEnsemblePatchInferenceEngine(PatchInferenceEngine):
                                 if summed_probabilities is None
                                 else summed_probabilities + member_probabilities
                             )
-                    divisor = len(self.model_paths) * (len(TTA_FLIP_AXES) if tta else 1)
+                    divisor = len(self.model_paths) * (len(TTA_FLIP_AXES) if flips else 1)
                     probabilities = summed_probabilities / divisor
                     prepared.aggregator.add_batch(
                         probabilities, patches_batch[tio.LOCATION]

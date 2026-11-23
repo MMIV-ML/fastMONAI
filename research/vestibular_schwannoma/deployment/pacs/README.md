@@ -35,8 +35,11 @@ general workflow see
 
 3. Package both tags in `release_packages/$BUILD_VERSION/` with a short README and
    `ror_select_entry.txt`. Don't add a `.sha256`; the image ID after `docker load` is the check.
+   Point `latest` at the release before saving, since the PACS entry runs `latest`:
 
    ```bash
+   mkdir -p "release_packages/$BUILD_VERSION"
+   docker tag "fastmonai-vsseg:$BUILD_VERSION" fastmonai-vsseg:latest
    docker save "fastmonai-vsseg:$BUILD_VERSION" fastmonai-vsseg:latest \
      | gzip > "release_packages/$BUILD_VERSION/fastmonai-vsseg-$BUILD_VERSION.tar.gz"
    ```
@@ -71,6 +74,8 @@ turns into the published outputs:
   (SeriesDescription, SoftwareVersions, DerivationDescription with the bundle hash and TTA, and a
   `MASK` ImageType value).
 - `redcap`: pr2mask's REDCap rows, see below.
+- `pacs_command.log`: pr2mask's output for the run, replaced after a successful run. If a
+  step fails, nothing is copied and the end of this log goes to the container's error output.
 
 These folders must not exist in the output folder beforehand.
 

@@ -7,17 +7,16 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-import fastMONAI
-import fastMONAI.vision_patch as vision_patch
 import torch
 from fastMONAI.vision_all import load_safetensors_model
 from fastMONAI.vision_patch import PatchInferenceEngine
 
-from deployment_bundle import describe_deployment as load_deployment
+from deployment_bundle import describe_deployment
 from deployment_models import MODEL_CONFIGS
 from dicom_output import (
     tag_pr2mask_mask,
@@ -25,6 +24,7 @@ from dicom_output import (
     write_prediction_outputs,
 )
 from parallel_inference import (
+    THREADS_PER_MODEL,
     TTA_DESCRIPTION,
     TTA_FLIP_AXES,
     ParallelEnsemblePatchInferenceEngine,
@@ -33,12 +33,12 @@ from redcap_output import model_instance_base, write_redcap_output
 
 
 SW_BATCH_SIZE = 1
-THREADS_PER_ENSEMBLE_MODEL = 3
 DEFAULT_WORK_DIR = Path("/output_tmp")
 DEFAULT_PR2MASK_DIR = Path("/pr2mask")
 IMAGE_NAME = "fastmonai-vsseg"
 FINAL_OUTPUT_DIRS = ("fused", "fused_vote_map", "reports", "labels", "redcap")
 LOG_NAME = "pacs_command.log"
+LOG_TAIL_LINES = 50
 
 
 def validate_prediction_outputs(mask, probabilities):
@@ -92,26 +92,22 @@ def _model_version(deployment: dict, version: str) -> str:
 
 
 def _create_inference_engine(deployment: dict):
-    model_paths = deployment.get("model_paths")
-    if model_paths and len(model_paths) > 1:
+    model_paths = deployment["model_paths"]
+    if len(model_paths) > 1:
         return ParallelEnsemblePatchInferenceEngine(
             model_paths,
             [member["member_id"] for member in deployment["members"]],
             deployment["patch_config"],
             output_channels=deployment["output_channels"],
-            threads_per_model=THREADS_PER_ENSEMBLE_MODEL,
+            threads_per_model=THREADS_PER_MODEL,
             sw_batch_size=SW_BATCH_SIZE,
         )
-    if model_paths:
-        predictor = load_safetensors_model(model_paths[0], device="cpu")
-        print(
-            "  Loaded {}: {}".format(
-                deployment["members"][0]["member_id"], model_paths[0].name
-            )
+    predictor = load_safetensors_model(model_paths[0], device="cpu")
+    print(
+        "  Loaded {}: {}".format(
+            deployment["members"][0]["member_id"], model_paths[0].name
         )
-    else:
-        # Compatibility path for injected/test deployments using an in-memory model.
-        predictor = deployment["predictor"]
+    )
     return PatchInferenceEngine(
         predictor,
         deployment["patch_config"],
@@ -187,6 +183,20 @@ def _copy_final_outputs(work_dir: Path, output_dir: Path) -> None:
         )
     for name in FINAL_OUTPUT_DIRS:
         shutil.copytree(work_dir / name, output_dir / name)
+
+
+def _print_log_tail(log_path: Path) -> None:
+    """Write the last lines of the pr2mask log to stderr."""
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return
+    tail = lines[-LOG_TAIL_LINES:]
+    sys.stdout.flush()
+    print(f"Last {len(tail)} lines of {log_path}:", file=sys.stderr)
+    for line in tail:
+        print(line, file=sys.stderr)
+    sys.stderr.flush()
 
 
 def _publish_log(log_path: Path, output_dir: Path) -> None:
@@ -284,23 +294,27 @@ def _run_postprocessing(
     )
 
     log_path = work_dir / LOG_NAME
-    with log_path.open("w", encoding="utf-8") as log:
-        for label, command in commands:
-            print(f"{label}:")
-            subprocess.run(
-                command,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=True,
-            )
-    _tag_pr2mask_labels(work_dir, deployment, use_tta=use_tta)
-    write_redcap_output(
-        work_dir,
-        input_dir,
-        deployment,
-        model_version=_model_version(deployment, version),
-    )
-    _copy_final_outputs(work_dir, output_dir)
+    try:
+        with log_path.open("w", encoding="utf-8") as log:
+            for label, command in commands:
+                print(f"{label}:")
+                subprocess.run(
+                    command,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                )
+        _tag_pr2mask_labels(work_dir, deployment, use_tta=use_tta)
+        write_redcap_output(
+            work_dir,
+            input_dir,
+            deployment,
+            model_version=_model_version(deployment, version),
+        )
+        _copy_final_outputs(work_dir, output_dir)
+    except Exception:
+        _print_log_tail(log_path)
+        raise
     _publish_log(log_path, output_dir)
 
 
@@ -328,7 +342,7 @@ def run_inference(
     print("Vestibular Schwannoma PACS Segmentation")
     print("=" * 60)
 
-    deployment = load_deployment(model_type)
+    deployment = describe_deployment(model_type)
     model_instance_base(deployment["bundle_sha256"])
     patch_config = deployment["patch_config"]
     label = _deployment_label(deployment)
@@ -336,14 +350,6 @@ def run_inference(
     print(f"Patch size: {patch_config.patch_size}")
 
     engine = _create_inference_engine(deployment)
-    if use_tta and not isinstance(engine, ParallelEnsemblePatchInferenceEngine):
-        # Older fastMONAI treats any flip set as all 8 flips, so fail instead of
-        # silently running a different TTA than the one recorded in the outputs.
-        if not hasattr(vision_patch, "_resolve_tta"):
-            raise RuntimeError(
-                f"fastMONAI {fastMONAI.__version__} cannot run a TTA flip subset for "
-                "single-model deployments; upgrade fastMONAI or run with --no-tta"
-            )
     print(f"Running patch inference (TTA={TTA_DESCRIPTION if use_tta else 'off'})...")
     segmentation, probabilities = engine.predict_mask_and_probabilities(
         str(input_dir), tta=TTA_FLIP_AXES if use_tta else False

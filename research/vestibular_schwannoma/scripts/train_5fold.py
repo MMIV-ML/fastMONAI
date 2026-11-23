@@ -58,10 +58,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pandas as pd
 import torch
-
-from fastMONAI.vision_all import MedDataset, MedMask, ZNormalization, preprocess_dataset
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -70,7 +67,6 @@ if str(RESEARCH_ROOT) not in sys.path:
     sys.path.insert(0, str(RESEARCH_ROOT))
 
 from vestibular_schwannoma.workflow.config import (  # noqa: E402
-    CROSS_VALIDATION_FOLDS,
     ExperimentConfig,
     make_patch_config,
 )
@@ -82,10 +78,15 @@ from vestibular_schwannoma.workflow.results import (  # noqa: E402
     aggregate_results,
     build_model_comparison,
 )
-from vestibular_schwannoma.workflow.training import run_training_sweep  # noqa: E402
+from vestibular_schwannoma.workflow.training import (  # noqa: E402
+    load_training_index,
+    preprocess_training_data,
+    run_training_sweep,
+)
 
 
-DEFAULT_MODELS = ("unet", "dynunet", "segmamba")
+_DEFAULTS = ExperimentConfig()
+DEFAULT_MODELS = _DEFAULTS.model_keys
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -106,45 +107,46 @@ def _parser() -> argparse.ArgumentParser:
         "--folds",
         nargs="+",
         type=int,
-        default=list(CROSS_VALIDATION_FOLDS),
+        default=list(_DEFAULTS.folds),
         help="Held-out folds to run (default: 1 2 3 4 5).",
     )
-    parser.add_argument("--epochs", type=int, default=500)
-    parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--epochs", type=int, default=_DEFAULTS.epochs)
+    parser.add_argument("--batch-size", type=int, default=_DEFAULTS.batch_size)
+    parser.add_argument(
+        "--learning-rate", type=float, default=_DEFAULTS.learning_rate
+    )
+    parser.add_argument("--seed", type=int, default=_DEFAULTS.training_seed)
     parser.add_argument(
         "--foreground-probability",
         type=float,
-        default=0.8,
+        default=_DEFAULTS.foreground_sampling_probability,
         help=(
-            "Probability of sampling a foreground-centred patch. The default 0.8 "
-            "preserves the original 80%% foreground / 20%% background control. "
-            "Pass 0.7 for the planned 70%% / 30%% comparison."
+            "Probability of sampling a foreground-centred patch (default: "
+            "%(default)s). Pass 0.7 for the planned 70%% / 30%% comparison."
         ),
     )
     parser.add_argument(
         "--samples-per-volume",
         type=int,
-        default=4,
-        help="Patches extracted from each volume per epoch (default: 4).",
+        default=_DEFAULTS.samples_per_volume,
+        help="Patches extracted from each volume per epoch (default: %(default)s).",
     )
     parser.add_argument(
         "--queue-workers",
         type=int,
-        default=4,
-        help="CPU workers that fill the training patch queue (default: 4).",
+        default=_DEFAULTS.queue_num_workers,
+        help="CPU workers that fill the training patch queue (default: %(default)s).",
     )
     parser.add_argument(
         "--queue-length",
         type=int,
-        default=300,
-        help="Maximum patches buffered in RAM (default: 300).",
+        default=_DEFAULTS.queue_length,
+        help="Maximum patches buffered in RAM (default: %(default)s).",
     )
     parser.add_argument(
         "--preprocess-workers",
         type=int,
-        default=min(32, os.cpu_count() or 1),
+        default=_DEFAULTS.preprocess_workers,
         help="CPU workers used for one-time preprocessing (default: up to 32).",
     )
     parser.add_argument(
@@ -189,40 +191,6 @@ def _project_path(path: Path) -> Path:
     return path if path.is_absolute() else PROJECT_ROOT / path
 
 
-def _load_and_validate_dataset(data_csv: Path, folds: tuple[int, ...]) -> pd.DataFrame:
-    if not data_csv.is_file():
-        raise FileNotFoundError(f"Dataset CSV not found: {data_csv}")
-    frame = pd.read_csv(data_csv)
-    required = {"case_id", "t1_img_path", "t1_seg_path", "fold"}
-    missing_columns = sorted(required - set(frame.columns))
-    if missing_columns:
-        raise ValueError(f"Dataset CSV is missing columns: {missing_columns}")
-    if frame["case_id"].isna().any() or frame["case_id"].duplicated().any():
-        raise ValueError("case_id values must be present and unique")
-    if frame[["t1_img_path", "t1_seg_path", "fold"]].isna().any().any():
-        raise ValueError("Image paths, mask paths, and fold values must be present")
-
-    available_folds = set(map(int, frame["fold"].unique()))
-    missing_folds = sorted(set(folds) - available_folds)
-    if missing_folds:
-        raise ValueError(f"Dataset does not contain requested folds: {missing_folds}")
-
-    missing_files = []
-    for column in ("t1_img_path", "t1_seg_path"):
-        for value in frame[column]:
-            path = Path(value)
-            if not path.is_file():
-                missing_files.append(str(path))
-                if len(missing_files) == 10:
-                    break
-        if len(missing_files) == 10:
-            break
-    if missing_files:
-        shown = "\n  ".join(missing_files)
-        raise FileNotFoundError(f"Missing dataset files (first 10):\n  {shown}")
-    return frame
-
-
 def _print_plan(
     experiment: ExperimentConfig,
     data_csv: Path,
@@ -264,8 +232,6 @@ def main(argv: list[str] | None = None) -> int:
         learning_rate=args.learning_rate,
         use_tta=True,
         compile_models=not args.no_compile,
-        target_spacing=(0.4102, 0.4102, 1.5),
-        patch_size=(256, 256, 48),
         preprocess_workers=args.preprocess_workers,
         samples_per_volume=args.samples_per_volume,
         queue_num_workers=args.queue_workers,
@@ -284,30 +250,12 @@ def main(argv: list[str] | None = None) -> int:
         experiment.model_keys,
         skip_unavailable=args.skip_unavailable,
     )
-    train_df = _load_and_validate_dataset(data_csv, experiment.folds)
+    train_df = load_training_index(data_csv, experiment.folds)
     print(f"Validated {len(train_df)} cases")
     print(train_df["fold"].value_counts().sort_index().to_string())
 
-    normalization = [ZNormalization(masking_method="foreground")]
-    label_dataset = MedDataset(
-        img_list=train_df["t1_seg_path"].tolist(),
-        dtype=MedMask,
-        max_workers=experiment.preprocess_workers,
-    )
-    dataset_version = label_dataset.fingerprint
-    if dataset_version is None:
-        raise RuntimeError("Could not fingerprint the segmentation masks")
-
-    preprocessing_result = preprocess_dataset(
-        train_df,
-        img_col="t1_img_path",
-        mask_col="t1_seg_path",
-        output_dir=str(preprocessed_dir),
-        target_spacing=list(experiment.target_spacing),
-        apply_reorder=True,
-        transforms=normalization,
-        max_workers=experiment.preprocess_workers,
-        dataset_version=dataset_version,
+    normalization, dataset_version, preprocessing_result = preprocess_training_data(
+        train_df, experiment, preprocessed_dir
     )
     print(f"Dataset version: {dataset_version}")
     print(f"Preprocessing cache: {preprocessing_result.cache_version}")

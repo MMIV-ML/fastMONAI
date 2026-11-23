@@ -52,6 +52,7 @@ from deployment_models import (
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+EXPECTED_OUTPUT_SPEC = make_output_spec("multiclass_segmentation", classes=2)
 
 
 @dataclass(frozen=True)
@@ -139,11 +140,10 @@ def _validate_inference_config(value: dict) -> None:
             "PACS deployment requires keep_largest_component=False so all predicted "
             "candidate regions are retained"
         )
-    expected_output = make_output_spec("multiclass_segmentation", classes=2)
-    if value.get("output") != expected_output:
+    if value.get("output") != EXPECTED_OUTPUT_SPEC:
         raise ValueError(
             "PACS deployment requires two-logit multiclass segmentation "
-            f"output={expected_output!r}, got {value.get('output')!r}"
+            f"output={EXPECTED_OUTPUT_SPEC!r}, got {value.get('output')!r}"
         )
     # read_safetensors_metadata already validated the exact inference field set.
 

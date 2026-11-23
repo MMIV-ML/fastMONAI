@@ -29,9 +29,9 @@ python scripts/prepare_data.py verify
 `download` fetches the 7.8 GB [crossMoDA 2022 training archive](https://zenodo.org/records/6504722)
 and the 239 Queen Square T1 series (about 15.5 GB) from
 [NCI Imaging Data Commons](https://portal.imaging.datacommons.cancer.gov/collections/vestibular_schwannoma_seg/)
-with `idc-index` 0.12.5 (IDC v24). No account or credentials are needed. Downloads are
-checksum-verified and resume when rerun. Files go to `data/raw/`; existing sources are never
-changed.
+with `idc-index` 0.12.5 (IDC v24). No account or credentials are needed. The crossMoDA
+archive is checked against its published MD5 and each IDC series against its instance count;
+downloads resume when rerun. Files go to `data/raw/`; existing sources are never changed.
 
 To use the [TCIA Data Retriever](https://github.com/TCIA/data-retriever) instead:
 
@@ -104,7 +104,7 @@ python scripts/prepare_data.py freeze-reference \
 ```
 
 All 344 pairs were verified from the original downloads. The IDC route was tested on cases 1,
-4 and 12. Tests:
+4 and 12. Tests (need `pip install pytest`):
 
 ```bash
 python -m pytest -q tests/workflow/test_data_preparation.py \
