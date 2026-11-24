@@ -2,9 +2,12 @@
 
 ROR/PACS container that runs the five-fold DynUNet ensemble on a CE-T1w series. CPU only:
 each of the five models runs in its own worker with three threads, so it needs at least 15
-CPU threads. TTA is on by default and averages the original and one copy flipped
-anterior-posterior and inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`). For the
-general workflow see
+CPU threads. When the launcher assigns the container 16 CPUs or fewer (`--cpuset-cpus`), each
+worker is tied to three of them. Otherwise Linux runs the threads on CPUs that are free, so
+several containers can run at once on one host.
+
+TTA is on by default and averages the original and one copy flipped anterior-posterior and
+inferior-superior (`TTA_FLIP_AXES` in `parallel_inference.py`). For the general workflow see
 [Research PACS deployment with ROR](../../../RESEARCH_PACS_DEPLOYMENT.md).
 
 ## Build a release
@@ -91,7 +94,7 @@ There is no direct uploader; the PACS imports the file.
 - **Empty mask:** instance 201 with blank columns, so REDCap shows the model ran. It is routed
   by the source PatientID and ReferringPhysicianName (`EventName:` removed), like pr2mask.
 - **`model_version`** is added to every instance, for example
-  `dynunet 5-fold, fastmonai-vsseg:20261110T082650Z`. The field is on the REDCap form, not in
+  `dynunet 5-fold, fastmonai-vsseg:20261123T144532Z`. The field is on the REDCap form, not in
   pr2mask; the exporter also adds it to `output_data_dictionary.zip`.
 - **Mask text.** pr2mask's `mask_base64_gzip_compressed` covers the whole scan at 16 bits per
   voxel: about 84,000 characters at 512x512x120 and 105,000 at 512x448x176. REDCap may cut

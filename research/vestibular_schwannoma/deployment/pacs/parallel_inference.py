@@ -20,6 +20,8 @@ from fastMONAI.vision_patch import PatchInferenceEngine, _resolve_tta
 
 
 THREADS_PER_MODEL = 3
+# A launcher that assigns CPUs to the container (a cpuset) gives at most this many.
+MAX_ASSIGNED_CPUS = 16
 WORKER_STARTUP_TIMEOUT_SECONDS = 600
 WORKER_FORWARD_TIMEOUT_SECONDS = 900
 WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30
@@ -37,8 +39,14 @@ TTA_DESCRIPTION = "original + one flip along anterior-posterior and inferior-sup
 
 def assign_worker_cpus(
     available_cpus, worker_count: int, threads_per_model: int = THREADS_PER_MODEL
-) -> list[tuple[int, ...]]:
-    """Return disjoint fixed-size CPU sets for ensemble workers."""
+) -> list[tuple[int, ...] | None]:
+    """Return disjoint fixed-size CPU sets for ensemble workers, or None for each.
+
+    With more than MAX_ASSIGNED_CPUS available, the launcher assigned none: the
+    workers are then tied to no CPUs and the kernel runs their threads on CPUs
+    that are free. Tying them to the lowest ones would put every container of a
+    host on the same CPUs.
+    """
     if worker_count < 1:
         raise ValueError("worker_count must be positive")
     if threads_per_model < 1:
@@ -51,6 +59,8 @@ def assign_worker_cpus(
             f"available CPU threads ({threads_per_model} per model), found "
             f"{len(available)}"
         )
+    if len(available) > MAX_ASSIGNED_CPUS:
+        return [None] * worker_count
     return [
         available[index : index + threads_per_model]
         for index in range(0, required, threads_per_model)
@@ -68,6 +78,7 @@ def _ensemble_worker(
     member_id,
     model_path,
     cpu_set,
+    thread_count,
     input_path,
     input_shape,
     output_path,
@@ -81,8 +92,8 @@ def _ensemble_worker(
     input_array = None
     output_array = None
     try:
-        os.sched_setaffinity(0, set(cpu_set))
-        thread_count = len(cpu_set)
+        if cpu_set is not None:
+            os.sched_setaffinity(0, set(cpu_set))
         os.environ["OMP_NUM_THREADS"] = str(thread_count)
         os.environ["MKL_NUM_THREADS"] = str(thread_count)
         torch.set_num_threads(thread_count)
@@ -105,7 +116,7 @@ def _ensemble_worker(
         ready_queue.put(
             {
                 "member_id": member_id,
-                "cpu_set": list(cpu_set),
+                "cpu_set": cpu_set,
                 "threads": torch.get_num_threads(),
             }
         )
@@ -227,10 +238,15 @@ class ParallelEnsemblePatchInferenceEngine(PatchInferenceEngine):
             except queue.Empty:
                 pass
         for worker in sorted(ready, key=lambda item: item["member_id"]):
-            cpus = ",".join(str(cpu) for cpu in worker["cpu_set"])
+            cpu_set = worker["cpu_set"]
+            placement = (
+                "not tied to CPUs"
+                if cpu_set is None
+                else "on CPUs " + ",".join(str(cpu) for cpu in cpu_set)
+            )
             print(
                 f"  Ready {worker['member_id']}: {worker['threads']} threads "
-                f"on CPUs {cpus}"
+                f"{placement}"
             )
 
     def _dispatch(self, barrier, command, command_value, error_queue):
@@ -311,6 +327,7 @@ class ParallelEnsemblePatchInferenceEngine(PatchInferenceEngine):
                         member_id,
                         str(model_path),
                         cpu_set,
+                        self.threads_per_model,
                         str(input_path),
                         input_shape,
                         str(output_path),
