@@ -1298,7 +1298,7 @@ class ModelTrackingCallback(Callback):
         return metrics
     
     def _save_model_artifacts(self, temp_dir: Path) -> None:
-        """Save weights-only .pth and Safetensors model artifacts."""
+        """Save the final and best Safetensors model artifacts."""
         compiled_model = self.learn.model
         self.learn.model = unwrap_compiled_model(compiled_model)
 
@@ -1311,11 +1311,6 @@ class ModelTrackingCallback(Callback):
             print(f"Logged {role} model: {model_path.name}")
 
         try:
-            weights_path = temp_dir / "final_weights"
-            self.learn.save(str(weights_path), with_opt=False)
-            weights_file = f"{weights_path}.pth"
-            if os.path.exists(weights_file):
-                mlflow.log_artifact(weights_file, "model")
             log_safetensors('final')
 
             from fastai.callback.tracker import TrackerCallback
@@ -1332,13 +1327,6 @@ class ModelTrackingCallback(Callback):
                 self.learn.load(best_model_cb.fname, with_opt=False)
                 self.learn.model = unwrap_compiled_model(compiled_model)
                 print(f"Loaded best model weights ({best_model_cb.fname}) for artifact export")
-
-                best_weights_path = temp_dir / "best_weights"
-                self.learn.save(str(best_weights_path), with_opt=False)
-                best_weights_file = f"{best_weights_path}.pth"
-                if os.path.exists(best_weights_file):
-                    mlflow.log_artifact(best_weights_file, "model")
-                    print("Logged best model weights: best_weights.pth")
                 log_safetensors('best')
         finally:
             self.learn.model = compiled_model
