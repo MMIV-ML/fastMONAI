@@ -94,7 +94,7 @@ There is no direct uploader; the PACS imports the file.
 - **Empty mask:** instance 201 with blank columns, so REDCap shows the model ran. It is routed
   by the source PatientID and ReferringPhysicianName (`EventName:` removed), like pr2mask.
 - **`model_version`** is added to every instance, for example
-  `dynunet 5-fold, fastmonai-vsseg:20261110T082650Z`. The field is on the REDCap form, not in
+  `dynunet 5-fold, fastmonai-vsseg:20261123T144532Z`. The field is on the REDCap form, not in
   pr2mask; the exporter also adds it to `output_data_dictionary.zip`.
 - **Mask text.** pr2mask's `mask_base64_gzip_compressed` covers the whole scan at 16 bits per
   voxel: about 84,000 characters at 512x512x120 and 105,000 at 512x448x176. REDCap may cut

@@ -14,9 +14,14 @@ LABEL "com.ror.vendor"="MMIV.no" \
 ENV REPORT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 ENV DCMDICTPATH=/dcmtk/dcmdata/data/dicom.dic:/dcmtk/dcmdata/data/private.dic
 
-# Create the environment:
+# Python prints progress lines to the container log as they happen.
+ENV PYTHONUNBUFFERED=1
+
+# Create the environment and remove the conda and pip download caches.
 COPY requirements.yml .
-RUN conda env create -f requirements.yml
+RUN conda env create -f requirements.yml && \
+    conda clean --all --yes && \
+    rm -rf /root/.cache/pip
 
 # VERSION is the required image and runtime stamp used for DICOM provenance.
 # Declared after the conda layer so a new version does not rebuild the environment.
